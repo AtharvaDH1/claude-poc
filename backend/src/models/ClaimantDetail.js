@@ -1,0 +1,31 @@
+const { DataTypes } = require('sequelize')
+const sequelize = require('../config/database')
+
+module.exports = sequelize.define('ClaimantDetail', {
+  CLAIM_ID:           { type: DataTypes.STRING(255), primaryKey: true },
+  NAME:               { type: DataTypes.STRING(255) },
+  CLIENT_ID:          { type: DataTypes.STRING(100) },
+  DOB:                { type: DataTypes.DATEONLY },
+  AGE:                { type: DataTypes.INTEGER },
+  GENDER:             { type: DataTypes.STRING(20),  defaultValue: 'Male' },
+  EMAIL_ID:           { type: DataTypes.STRING(255) },
+  MOBILE_NO:          { type: DataTypes.STRING(20) },
+  NATIONALITY:        { type: DataTypes.STRING(50),  defaultValue: 'Indian' },
+  PAN_NO:             { type: DataTypes.STRING(25) },
+  PAN_VALID_FLAG:     { type: DataTypes.STRING(20) },
+  COUNTRY:            { type: DataTypes.STRING(100), defaultValue: 'India' },
+  STATE:              { type: DataTypes.STRING(100) },
+  PINCODE:            { type: DataTypes.STRING(15) },
+  CITY:               { type: DataTypes.STRING(100) },
+  FLAT:               { type: DataTypes.STRING(100) },
+  ROAD:               { type: DataTypes.STRING(200) },
+  AREA:               { type: DataTypes.STRING(200) },
+  ROLE:               { type: DataTypes.STRING(50) },
+  RELATION:           { type: DataTypes.STRING(100) },
+  OCCUPATION:         { type: DataTypes.STRING(100) },
+  POLITICALLY_EXPOSED:{ type: DataTypes.STRING(5) },
+  ID_NUMBER:          { type: DataTypes.STRING(100) },
+  STATUS:             { type: DataTypes.STRING(20) },
+  TEL_NO:             { type: DataTypes.STRING(20) },
+  OTHER_MOBILE_NO:    { type: DataTypes.STRING(20) },
+}, { tableName: 'ClaimantDetail', timestamps: false, freezeTableName: true })

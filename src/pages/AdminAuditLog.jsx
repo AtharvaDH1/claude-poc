@@ -1,0 +1,151 @@
+import { useState, useEffect } from 'react'
+import AppLayout from '../layouts/AppLayout'
+import { AUDIT_LOGS } from '../services/mockServices'
+import { getAuditLogs } from '../services/userService'
+import { Search, Download, X } from 'lucide-react'
+
+const T = { primary:'#1D4ED8', card:'#fff', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
+
+const ACTION_COLORS = {
+  'Login':          { bg:'#EFF6FF', color:T.primary,   border:'#BFDBFE' },
+  'Logout':         { bg:'#F8FAFC', color:T.textSubtle, border:T.border  },
+  'Claim Registered':{ bg:'#ECFDF5', color:'#059669',   border:'#A7F3D0' },
+  'Claim Approved': { bg:'#ECFDF5', color:'#059669',   border:'#A7F3D0' },
+  'Claim Rejected': { bg:'#FEF2F2', color:'#DC2626',   border:'#FECACA' },
+  'Claim Viewed':   { bg:'#FFFBEB', color:'#D97706',   border:'#FDE68A' },
+  'User Created':   { bg:'#F5F3FF', color:'#7C3AED',   border:'#DDD6FE' },
+}
+
+const ROLE_COLORS = {
+  'Pre Assessor': { bg:'#EFF6FF', color:T.primary },
+  'Assessor':     { bg:'#F5F3FF', color:'#7C3AED' },
+  'Verifier':     { bg:'#ECFDF5', color:'#059669'  },
+  'Admin':        { bg:'#FEF2F2', color:'#DC2626'  },
+  'System':       { bg:'#F8FAFC', color:T.textSubtle },
+}
+
+export default function AdminAuditLog() {
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('All')
+  const [actionFilter, setActionFilter] = useState('All')
+  const [hovRow, setHovRow] = useState(null)
+  const [logs, setLogs] = useState(AUDIT_LOGS)
+
+  useEffect(() => {
+    getAuditLogs({ limit: 100 }).then(data => {
+      if (data.logs?.length) {
+        setLogs(data.logs.map((l, i) => ({
+          id: l.id || i+1,
+          user: l.USERNAME || l.user || 'Unknown',
+          role: Array.isArray(l.roles) ? l.roles[0] : (l.roles || 'User'),
+          action: l.action || (l.LOGOUT_AT ? 'Logout' : 'Login'),
+          ip: l.ipAddress || l.ip || '—',
+          timestamp: l.LOGIN_AT ? new Date(l.LOGIN_AT).toLocaleString('en-IN') : '—',
+          session: l.session_id || l.SESSION_ID || '—',
+        })))
+      }
+    }).catch(() => {})
+  }, [])
+
+  const roles = ['All', ...new Set(logs.map(l => l.role))]
+  const actions = ['All', ...new Set(logs.map(l => l.action))]
+
+  const filtered = logs.filter(l => {
+    const q = search.toLowerCase()
+    const mQ = !q || l.user.toLowerCase().includes(q) || l.action.toLowerCase().includes(q) || l.session.includes(q)
+    const mR = roleFilter === 'All' || l.role === roleFilter
+    const mA = actionFilter === 'All' || l.action === actionFilter
+    return mQ && mR && mA
+  })
+
+  const stats = {
+    totalSessions: new Set(logs.map(l => l.session)).size,
+    logins: logs.filter(l => l.action === 'Login').length,
+    claimActions: logs.filter(l => l.action.startsWith('Claim')).length,
+  }
+
+  return (
+    <AppLayout>
+      <div style={{ padding:'24px', fontFamily:'Inter,sans-serif' }}>
+        <div style={{ marginBottom:'24px' }}>
+          <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em', margin:'0 0 4px' }}>Audit Logs</h1>
+          <p style={{ fontSize:'13px', color:T.textMuted, fontWeight:500 }}>Complete login, logout and activity trail for all users.</p>
+        </div>
+
+        {/* Summary */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'14px', marginBottom:'20px' }}>
+          {[
+            { label:'Total Events', value:logs.length, color:T.primary, bg:'#EFF6FF' },
+            { label:'Active Sessions', value:stats.totalSessions, color:'#059669', bg:'#ECFDF5' },
+            { label:'Logins Today', value:stats.logins, color:'#7C3AED', bg:'#F5F3FF' },
+            { label:'Claim Actions', value:stats.claimActions, color:'#D97706', bg:'#FFFBEB' },
+          ].map(s => (
+            <div key={s.label} style={{ background:T.card, borderRadius:'10px', padding:'16px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
+              <div style={{ fontSize:'28px', fontWeight:900, color:s.color }}>{s.value}</div>
+              <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'4px', fontWeight:600 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', padding:'14px 18px', marginBottom:'16px', display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center' }}>
+          <div style={{ flex:1, minWidth:'200px', display:'flex', alignItems:'center', gap:'8px', padding:'0 12px', height:'38px', borderRadius:'8px', background:'#F8FAFC', border:`1.5px solid ${T.border}` }}>
+            <Search size={14} style={{ color:T.textSubtle, flexShrink:0 }}/>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search user, action, session..."
+              style={{ flex:1, background:'none', border:'none', outline:'none', fontSize:'13px', color:T.textPrimary, fontWeight:500, fontFamily:'Inter,sans-serif' }}/>
+            {search && <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:T.textSubtle, display:'flex' }}><X size={13}/></button>}
+          </div>
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+            style={{ padding:'0 12px', height:'38px', borderRadius:'8px', border:`1.5px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:500, color:T.textSecondary, fontFamily:'Inter,sans-serif', outline:'none', cursor:'pointer' }}>
+            {roles.map(r => <option key={r}>{r}</option>)}
+          </select>
+          <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+            style={{ padding:'0 12px', height:'38px', borderRadius:'8px', border:`1.5px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:500, color:T.textSecondary, fontFamily:'Inter,sans-serif', outline:'none', cursor:'pointer' }}>
+            {actions.map(a => <option key={a}>{a}</option>)}
+          </select>
+          <button style={{ display:'flex', alignItems:'center', gap:'7px', padding:'0 16px', height:'38px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', color:T.textSecondary, fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
+            onMouseEnter={e => e.currentTarget.style.background='#EFF6FF'} onMouseLeave={e => e.currentTarget.style.background='#F8FAFC'}>
+            <Download size={14}/> Export CSV
+          </button>
+        </div>
+
+        {/* Table */}
+        <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', overflow:'hidden' }}>
+          <div style={{ padding:'14px 18px', borderBottom:`1px solid ${T.borderSubtle}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ fontWeight:700, fontSize:'14px', color:T.textPrimary }}>Audit Trail</div>
+            <div style={{ fontSize:'12px', color:T.textMuted, fontWeight:500 }}>{filtered.length} of {logs.length} records</div>
+          </div>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                  {['#','Timestamp','User','Role','Action','IP Address','Session ID'].map(h => (
+                    <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((log, i) => {
+                  const ac = ACTION_COLORS[log.action] || { bg:'#F8FAFC', color:T.textSubtle, border:T.border }
+                  const rc = ROLE_COLORS[log.role] || { bg:'#F8FAFC', color:T.textSubtle }
+                  return (
+                    <tr key={log.id} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background:hovRow===i?'#F8FAFC':'', transition:'background 0.1s' }}
+                      onMouseEnter={() => setHovRow(i)} onMouseLeave={() => setHovRow(null)}>
+                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textSubtle, fontWeight:600 }}>{log.id}</td>
+                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontWeight:500, whiteSpace:'nowrap', fontFamily:'monospace' }}>{log.timestamp}</td>
+                      <td style={{ padding:'11px 14px', fontSize:'13px', fontWeight:700, color:T.textSecondary }}>{log.user}</td>
+                      <td style={{ padding:'11px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'2px 9px', borderRadius:'99px', background:rc.bg, color:rc.color }}>{log.role}</span></td>
+                      <td style={{ padding:'11px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background:ac.bg, border:`1px solid ${ac.border}`, color:ac.color }}>{log.action}</span></td>
+                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontFamily:'monospace' }}>{log.ip}</td>
+                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontFamily:'monospace' }}>{log.session}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </AppLayout>
+  )
+}
