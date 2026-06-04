@@ -1,0 +1,668 @@
+const IntimationDetail = require("../models/IntimationDetail");
+const TrapScore = require("../models/TrapScore")
+const CauseEvent = require("../models/CauseEvent");
+const PayeeDetail = require("../models/PayeeDetail");
+const ClaimantDetail = require("../models/ClaimantDetail");
+const LifeAssuredDetail = require("../models/LifeAssuredDetail");
+const ContactDetail = require("../models/ContactDetail");
+const EagleScreen = require("../models/EagleScreen");
+const Requirement = require("../models/Requirement");
+const RequirementTable = require("../models/RequirementTable");
+const DecisionAccessor = require("../models/DecisionAccessor");
+const DecisionSystem = require("../models/DecisionSystem");
+const DecisionVerificationAndSummary = require("../models/DecisionVerificationAndSummary");
+const sequelize = require("../config/sequelize");
+const ClaimSequence = require("../models/ClaimSequence");
+const StatusHistory = require("../models/StatusHistory")
+const RiderDetailsTable=require("../models/RiderDetailsTable")
+
+const { camelToSnakeCase, snakeToCamelCase } = require("../util/convertCase");
+const ClaimQuestions = require("../models/ClaimsQuestions");
+const Claim = require("../models/Claim");
+
+const trapScoreService = require('../services/trapScoreService');
+const { notifyClaimRegistered } = require('../services/claimRegistrationNotifyService');
+const SystemAssessorRemark = require("../models/SystemAssessorRemark");
+
+// simrans tables 
+const AgentHistoryTable=require('../models/AgentRepudiationHistory');
+const HospitalDetailsTable=require('../models/HospitalDetails')
+const DoctorDetailsTable=require('../models/DoctorDetails')
+const ProofDetailsTable=require('../models/ProofDetails')
+const InsuranceProofDetailsTable=require('../models/InsuranceProofDetails')
+const WitnessDetailsTable=require('../models/WitnessDetails')
+const IncomeDetailsTable=require('../models/IncomeDetails')
+const ReqCommonDetailsTable=require('../models/ReqCommonDetails')
+const ReqRiderDetailsTable=require('../models/ReqRiderDetails')
+const ReqEmailTable=require('../models/ReqEmail')
+const ReqLetterTable=require('../models/ReqLetter')
+
+const SmsScript = require("../models/SmsScript");
+const Telecalling = require("../models/Telecalling");
+const CaseTrigger = require("../models/CaseTrigger");
+const SystemRemark = require("../models/SystemRemark");
+const PriorityFlag = require("../models/PriorityFlag");
+const ParallelPolicy = require("../models/ParallelPolicy");
+
+
+const registerClaim = async (req, res) => {
+  const transaction = await sequelize.transaction(); // Start transaction
+  console.log('registerClaimController >> registerClaim request received');
+  try {
+    const {
+      intimationDetails,
+      causeEvent,
+      payeeDetails, // = [],
+      claimantDetails, // = [],
+      lifeAssuredDetails, // = [],
+      contactDetails, // = [],
+      eagleScreen, // = [],
+      requirements, // = [],
+      requirementTable,
+      systemDetails, // = [],
+      accessorDetails, // = [],
+      verifierDetails, // = [],
+      claimQuestions, // = [],
+      systemAssessorRemarks, // = [],
+      trapScoreData, // = [],
+      policyID, // = [],
+      createdBy,
+
+      //tables here by simran
+      agentHistoryTable, // = [],
+      hospitalDetailsTable, // = [],
+      doctorDetailsTable, // = [],
+      proofDetailsTable, // = [],
+      insuranceProofDetailsTable, // = [],
+      witnessDetailsTable, // = [],
+      incomeDetailsTable, // = [],
+
+      reqCommonDetailsTable, // = [],
+      reqRiderDetailsTable, // = [],
+      reqEmailTable  = [],
+      reqLetterTable = [],
+
+      //tables here by sujal
+      smsData = [],
+
+      telecalling ,//= [],
+      caseTrigger , //= [],
+      systemRemarks , //= [],
+      fraudFlags , //doubt
+      priorityFlag , //= [],
+
+      unregisteredPolicies , //= [],//parallel policies
+      stpPolicies , //= [],//doubt
+      nonStpPolicies , //= [],//doubt
+
+      riderDetailsTable1 // = []
+    } = req.body;
+
+    // console.log(smsData)
+    // console.log(telecalling)
+    // console.log(caseTrigger)
+    // console.log(systemRemarks)
+    // console.log(fraudFlags)
+    // console.log(priorityFlag)
+    // console.log(unregisteredPolicies)
+
+    const modifiedBy = createdBy;
+
+    const claimSeq = await ClaimSequence.findOne({
+      where: { ID: 1 },
+      transaction,
+    });
+
+    if (!claimSeq) {
+      throw new Error("Claim sequence not found");
+    }
+
+    const { SEQ_NO } = claimSeq;
+    const claimNumber = `CL${SEQ_NO}`;
+
+    console.log({ message: `Your claim number is ${claimNumber}` });
+
+    const intimationDetailsSnake = camelToSnakeCase({
+      ...intimationDetails,
+      createdBy,
+      modifiedBy,
+    });
+    const causeEventSnake = camelToSnakeCase({
+      ...causeEvent,
+      createdBy,
+      modifiedBy,
+    });
+    const payeeDetailSnake = camelToSnakeCase({
+      ...payeeDetails,
+      createdBy,
+      modifiedBy,
+    });
+
+    const payeeDetail = payeeDetails.map((payee) => (camelToSnakeCase({ ...payee, createdBy, modifiedBy })))
+
+    const claimantDetailsSnake = camelToSnakeCase({
+      ...claimantDetails,
+      createdBy,
+      modifiedBy,
+    });
+
+    const claimantDetail = claimantDetails.map((claimant) => (camelToSnakeCase({ ...claimant, createdBy, modifiedBy })))
+
+    const lifeAssuredDetailsSnake = camelToSnakeCase({
+      ...lifeAssuredDetails,
+      createdBy,
+      modifiedBy,
+    });
+    const contactDetailsSnake = camelToSnakeCase({
+      ...contactDetails,
+      createdBy,
+      modifiedBy,
+    });
+    const eagleScreenSnake = camelToSnakeCase({
+      ...eagleScreen,
+      createdBy,
+      modifiedBy,
+    });
+
+    const requirementsSnake = camelToSnakeCase({
+      ...requirements,
+      createdBy,
+      modifiedBy,
+    });
+
+    const systemAssessorSnake = camelToSnakeCase({
+      ...systemAssessorRemarks,
+      createdBy,
+      modifiedBy
+    })
+
+    // const requirementTableSnake = camelToSnakeCase({
+    //   ...requirementTable,
+    //   createdBy,
+    //   modifiedBy,
+    // });
+
+    const systemSnake = camelToSnakeCase({
+      ...systemDetails,
+      createdBy,
+      modifiedBy,
+    });
+
+    const accessorSnake = camelToSnakeCase({
+      ...accessorDetails,
+      createdBy,
+      modifiedBy,
+    });
+    const verifierSnake = camelToSnakeCase({
+      ...verifierDetails,
+      createdBy,
+      modifiedBy,
+    });
+    const claimQuestionsSnake = camelToSnakeCase({
+      ...claimQuestions,
+      createdBy,
+      modifiedBy,
+    });
+
+
+    let trapScoreDataStore = trapScoreData;
+
+    if (!trapScoreData) {
+      console.log("message")
+      const data = {
+        //24 values excluding comments
+        gender: lifeAssuredDetails.gender,
+        avlSA: null,//
+        ageAtDeath: lifeAssuredDetails.ageAtDeath,
+        policyAge: contactDetails.policyAge,
+        education: lifeAssuredDetails.Education,
+        state: lifeAssuredDetails.State,
+        productCategory: null,//
+        occCategory: lifeAssuredDetails.occCategory,
+        advStatus: null,//
+        claimRepudiate: contactDetails.claimsRupidiate,
+        causeOfDeath: null,//
+        placeOfClaim: null,//
+        firPMReceived: intimationDetails.firPmReceived,
+        declareByDR: intimationDetails.declaredByDoctor,
+        cityFlag: null,
+        pincodeFlag: null,
+        nullRemark: "SUCCESS",
+        umCode: contactDetails.umCode,
+        advisorCode: contactDetails.advisorCode,
+        advisorCategory: null,//
+        advisorClub: null,//
+        dateOfDisability: null,//
+        claimType: intimationDetails.claimType,
+        source: intimationDetails.source,
+        intimationDate: intimationDetails.intimationDate,
+        dateOfDeath: intimationDetails.dateOfDeathReg,
+        typeOfClaim: causeEvent.typeOfClaim,
+        productCode: contactDetails.productCode,
+        // added city and pincode to check fraud master 
+        city: lifeAssuredDetails.city,
+        pin: lifeAssuredDetails.pincode,
+      }
+
+      trapScoreDataStore = await trapScoreService.getTrapScore(data)
+    }
+    console.log(trapScoreDataStore)
+
+    const trapScoreSnake = camelToSnakeCase({
+      ...trapScoreDataStore,
+      assessorId: createdBy,
+    })
+    console.log(trapScoreSnake)
+
+    const claim = await Claim.create(
+      {
+        ...intimationDetailsSnake,
+        ...causeEventSnake,
+        ...payeeDetailSnake,
+        ...claimantDetailsSnake,
+        ...lifeAssuredDetailsSnake,
+        ...contactDetailsSnake,
+        ...eagleScreenSnake,
+        ...requirementsSnake,
+        // ...requirementTableSnake,
+        ...systemSnake,
+        ...accessorSnake,
+        ...verifierSnake,
+        // createdBy,
+        // modifiedBy,
+        CLAIM_NUMBER: claimNumber,
+        POLICY_ID: policyID,
+        STATUS: "Pending Assessor Allocation",
+        ROLE: "Assessor"
+      },
+      { transaction }
+    );
+
+    intimationDetailsSnake.CLAIM_ID = claim.CLAIM_ID;
+
+    const intimation = await IntimationDetail.create(intimationDetailsSnake, { transaction });
+
+    trapScoreSnake.CLAIM_ID = claim.CLAIM_ID
+    const trap = await TrapScore.create(trapScoreSnake, { transaction });
+
+    causeEventSnake.CLAIM_ID = claim.CLAIM_ID;
+    const cause = await CauseEvent.create(causeEventSnake, { transaction });
+
+
+    const payee = []
+
+    payeeDetail.forEach(async (val, index) => {
+      val.CLAIM_ID = claim.CLAIM_ID;
+      payee.push(await PayeeDetail.create(val, { transaction }));
+    })
+
+
+    const claimant = []
+    claimantDetail.forEach(async (val, index) => {
+      val.CLAIM_ID = claim.CLAIM_ID;
+      claimant.push(await ClaimantDetail.create(val, { transaction }))
+    })
+
+    lifeAssuredDetailsSnake.CLAIM_ID = claim.CLAIM_ID;
+    const lifeAssured = await LifeAssuredDetail.create(
+      lifeAssuredDetailsSnake,
+      { transaction }
+    );
+
+    contactDetailsSnake.CLAIM_ID = claim.CLAIM_ID;
+    const contact = await ContactDetail.create(contactDetailsSnake, {
+      transaction,
+    });
+
+    eagleScreenSnake.CLAIM_ID = claim.CLAIM_ID;
+    const eagle = await EagleScreen.create(eagleScreenSnake, { transaction });
+
+    requirementsSnake.CLAIM_ID = claim.CLAIM_ID;
+    const require = await Requirement.create(requirementsSnake, { transaction });
+
+    // requirementTableSnake.CLAIM_ID = claim.CLAIM_ID;
+    // const requiretable = await RequirementTable.create(requirementTableSnake, { transaction });
+
+    claimQuestionsSnake.CLAIM_ID = claim.CLAIM_ID;
+    const questions = await ClaimQuestions.create(claimQuestionsSnake, {
+      transaction,
+    });
+
+    systemAssessorSnake.CLAIM_ID = claim.CLAIM_ID
+    const sysRemark = await SystemAssessorRemark.create(systemAssessorSnake, {
+      transaction
+    })
+
+    systemSnake.CLAIM_ID = claim.CLAIM_ID;
+    const system = await DecisionSystem.create(systemSnake, { transaction });
+
+    accessorSnake.CLAIM_ID = claim.CLAIM_ID;
+    const accessor = await DecisionAccessor.create(accessorSnake, {
+      transaction,
+    });
+
+    verifierSnake.CLAIM_ID = claim.CLAIM_ID;
+    const verifier = await DecisionVerificationAndSummary.create(
+      verifierSnake,
+      { transaction }
+    );
+
+    // requirement table has multiple records for single claim id therefore map array to store
+    const requirementTablePromises = requirementTable.map(async (reqItem) => {
+      const requirementTableSnake = camelToSnakeCase({ ...reqItem, createdBy, modifiedBy });
+      requirementTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      return RequirementTable.create(requirementTableSnake, { transaction });
+    });
+    const requirementTableResults = await Promise.all(requirementTablePromises);
+
+    const smsDataResults = await Promise.all(smsData.map( async (sms)=>{
+      const smsSnake = camelToSnakeCase(sms)
+      smsSnake.CLAIM_ID = claim.CLAIM_ID
+      smsSnake.CREATED_BY = createdBy
+      smsSnake.MODIFIED_BY = modifiedBy
+      return await SmsScript.create(smsSnake, {transaction})
+    }))
+
+    const telecallingResult = await Promise.all(telecalling.map(async (row) => {
+      const rowSnake = camelToSnakeCase(row);
+      rowSnake.CLAIM_ID = claim.CLAIM_ID;
+      rowSnake.CALL_TO = row.callTo;
+      rowSnake.CREATED_BY = createdBy;
+      rowSnake.MODIFIED_BY = modifiedBy;
+    
+      // Insert row into the Telecalling table
+      return await Telecalling.create(rowSnake, { transaction });
+    }));
+
+    const caseTriggerResult = await Promise.all(caseTrigger.map( async (row)=>{
+      const rowSnake = camelToSnakeCase(row)
+      rowSnake.CLAIM_ID = claim.CLAIM_ID
+      rowSnake.CREATEDBY = createdBy
+      rowSnake.MODIFIEDBY = modifiedBy
+      return await CaseTrigger.create(rowSnake, {transaction})
+    }))
+
+    const systemRemarkResult =await Promise.all( systemRemarks.map(async (row)=>{
+      const rowSnake = camelToSnakeCase(row)
+      rowSnake.CLAIM_ID = claim.CLAIM_ID
+      rowSnake.CREATEDBY = createdBy
+      rowSnake.MODIFIEDBY = modifiedBy
+      return await SystemRemark.create(rowSnake, {transaction})
+    }))
+
+
+    const priorityFlagResult = await Promise.all(priorityFlag.map(async (row) => {
+      const rowSnake = camelToSnakeCase(row)
+      rowSnake.CLAIM_ID = claim.CLAIM_ID
+      rowSnake.CREATEDBY = createdBy
+      rowSnake.MODIFIEDBY = modifiedBy
+      return await PriorityFlag.create(rowSnake, {transaction})
+    }))
+
+
+    const unregisteredPoliciesResult =await Promise.all( unregisteredPolicies.map(async (row) => {
+      const rowSnake = camelToSnakeCase(row)
+      rowSnake.CLAIM_ID = claim.CLAIM_ID
+      rowSnake.POLICY_NUMBER = row.policyNo
+      return await ParallelPolicy.create(rowSnake, {transaction})
+    }))
+    
+
+    // agent repudiation history table 
+    const AgentHistoryTablePromises = agentHistoryTable.map(async (agentItem) => {
+      const agentHistoryData = {
+        ...agentItem, 
+        CLAIM_ID: claim.CLAIM_ID, 
+        CREATED_BY: createdBy, // Add CREATED_BY
+        MODIFIED_BY: modifiedBy // Add MODIFIED_BY
+      };
+    
+      return AgentHistoryTable.create(agentHistoryData, { transaction });});
+    const AgentHistoryTableResults = await Promise.all(AgentHistoryTablePromises);
+
+
+    //hospital details table in eagle screen
+    const HospitalDetailsTablePromises = hospitalDetailsTable.map(async (hospitalItem) => {
+      const HospitalDetailsTableSnake = camelToSnakeCase({ ...hospitalItem, createdBy, modifiedBy });
+      HospitalDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      return HospitalDetailsTable.create(HospitalDetailsTableSnake, { transaction });
+    });
+    // console.log(HospitalDetailsTablePromises)
+    const HospitalDetailsTableResults = await Promise.all(HospitalDetailsTablePromises);
+
+    // doctor details tab in eagle screen
+    const DoctorDetailsTablePromises = doctorDetailsTable.map(async (doctorItem) => {
+      const DoctorDetailsTableSnake = camelToSnakeCase({ ...doctorItem, createdBy, modifiedBy });
+      DoctorDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; 
+      return DoctorDetailsTable.create(DoctorDetailsTableSnake, { transaction });
+    });
+    // console.log(DoctorDetailsTablePromises);
+    const DoctorDetailsTableResults = await Promise.all(DoctorDetailsTablePromises);
+    
+
+    // for proof details tab in eagle screen
+    const ProofDetailsTablePromises = proofDetailsTable.map(async (proofItem) => {
+      const ProofDetailsTableSnake = camelToSnakeCase({ ...proofItem, createdBy, modifiedBy });
+      ProofDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      return ProofDetailsTable.create(ProofDetailsTableSnake, { transaction });
+    });
+    const ProofDetailsTableResults = await Promise.all(ProofDetailsTablePromises);
+    
+    
+    // for insurance proof details table in eagle screen
+    const InsuranceProofDetailsTablePromises = insuranceProofDetailsTable.map(async (insuranceProofItem) => {
+      const InsuranceProofDetailsTableSnake = camelToSnakeCase({ ...insuranceProofItem, createdBy, modifiedBy });
+      InsuranceProofDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      return InsuranceProofDetailsTable.create(InsuranceProofDetailsTableSnake, { transaction });
+    });
+    const InsuranceProofDetailsTableResults = await Promise.all(InsuranceProofDetailsTablePromises);
+    
+    // for witness details tab in eagle screen
+    const WitnessDetailsTablePromises = witnessDetailsTable.map(async (witnessItem) => {
+      const WitnessDetailsTableSnake = camelToSnakeCase({ ...witnessItem, createdBy, modifiedBy });
+      WitnessDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return WitnessDetailsTable.create(WitnessDetailsTableSnake, { transaction });
+    });
+    
+    const WitnessDetailsTableResults = await Promise.all(WitnessDetailsTablePromises);
+    
+
+    // for income details tab in eagle screen
+    const IncomeDetailsTablePromises = incomeDetailsTable.map(async (incomeItem) => {
+      const IncomeDetailsTableSnake = camelToSnakeCase({ ...incomeItem, createdBy, modifiedBy });
+      IncomeDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return IncomeDetailsTable.create(IncomeDetailsTableSnake, { transaction });
+    });
+    
+    const IncomeDetailsTableResults = await Promise.all(IncomeDetailsTablePromises);
+    
+
+    // requirement tab 1-common details table
+    const ReqCommonDetailsPromises = reqCommonDetailsTable.map(async (reqCommonItem) => {
+      const ReqCommonDetailsSnake = camelToSnakeCase({ ...reqCommonItem, createdBy, modifiedBy });
+      ReqCommonDetailsSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return ReqCommonDetailsTable.create(ReqCommonDetailsSnake, { transaction });
+    });
+    
+    const ReqCommonDetailsResults = await Promise.all(ReqCommonDetailsPromises);
+    
+    //requirement tab 1-rider details table
+    const ReqRiderDetailsPromises = reqRiderDetailsTable.map(async (reqRiderItem) => {
+      const ReqRiderDetailsSnake = camelToSnakeCase({ ...reqRiderItem, createdBy, modifiedBy });
+      ReqRiderDetailsSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return ReqRiderDetailsTable.create(ReqRiderDetailsSnake, { transaction });
+    });
+    
+    const ReqRiderDetailsResults = await Promise.all(ReqRiderDetailsPromises);
+
+
+    //requirement tab 2-email table
+    const ReqEmailTablePromises = reqEmailTable.map(async (reqEmailItem) => {
+      const ReqEmailTableSnake = camelToSnakeCase({ ...reqEmailItem, createdBy, modifiedBy });
+      ReqEmailTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return ReqEmailTable.create(ReqEmailTableSnake, { transaction });
+    });
+    
+    const ReqEmailTableResults = await Promise.all(ReqEmailTablePromises);
+    
+    //requirement tab 2-letter table
+    const ReqLetterTablePromises = reqLetterTable.map(async (reqLetterItem) => {
+      const ReqLetterTableSnake = camelToSnakeCase({ ...reqLetterItem, createdBy, modifiedBy });
+      ReqLetterTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return ReqLetterTable.create(ReqLetterTableSnake, { transaction });
+    });
+    
+    const ReqLetterTableResults = await Promise.all(ReqLetterTablePromises);
+
+    //rider details in contract-same table will be for system and assesor tab rider details
+    const RiderDetailsTablePromises = riderDetailsTable1.map(async (riderItem) => {
+      const RiderDetailsTableSnake = camelToSnakeCase({ ...riderItem, createdBy, modifiedBy });
+      RiderDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      return RiderDetailsTable.create(RiderDetailsTableSnake, { transaction });
+    });
+    
+    const RiderDetailsTableResults = await Promise.all(RiderDetailsTablePromises);
+    
+
+    const status = {
+      "CLAIM_NUMBER": claimNumber,
+      "POLICY_NUMBER": policyID,
+      "MODIFIED_BY": modifiedBy,
+      "CREATED_BY": createdBy,
+      "STATUS": "Pending Assessor Allocation"
+    }
+
+    const status_history = await StatusHistory.create(status,{transaction})
+
+    // Update the claimSequence table for the next sequence number
+    await ClaimSequence.update(
+      { SEQ_NO: (parseInt(claimSeq.SEQ_NO) + 1).toString() },
+      { where: { ID: 1 }, transaction }
+    );
+
+    await transaction.commit(); // Commit transaction
+
+    // Notify customer — direct WhatsApp/email API (same as Postman); not dependent on RabbitMQ worker
+    try {
+      const pick = (...vals) =>
+        vals.find((v) => v != null && String(v).trim() !== '' && String(v).trim() !== 'null');
+
+      const mobileNo = pick(
+        lifeAssuredDetailsSnake.MOBILE_NO1,
+        lifeAssuredDetailsSnake.MOBILE_NO,
+        lifeAssuredDetails?.mobileNo1,
+        lifeAssuredDetails?.mobileNo,
+        contactDetails?.mobileNoChange,
+        contactDetailsSnake.MOBILE_NO_CHANGE
+      );
+      const customerName = pick(
+        lifeAssuredDetailsSnake.NAME,
+        lifeAssuredDetails?.name,
+        lifeAssuredDetails?.Name
+      );
+      const lifeAssuredEmail = pick(
+        lifeAssuredDetailsSnake.EMAIL_ID1,
+        lifeAssuredDetailsSnake.EMAIL,
+        lifeAssuredDetails?.emailId1,
+        lifeAssuredDetails?.email,
+        contactDetails?.emailIdChange,
+        contactDetailsSnake.EMAIL_ID_CHANGE
+      );
+      const sendMail =
+        verifierDetails?.sendMail === true ||
+        verifierDetails?.sendMail === 'true' ||
+        verifierSnake?.SEND_MAIL === true ||
+        verifierSnake?.SEND_MAIL === 'true' ||
+        req.body.sendMail === true;
+
+      console.log('registerClaim >> notify', {
+        claimNumber,
+        mobileNo: mobileNo ? '***' + String(mobileNo).slice(-4) : null,
+        customerName,
+        lifeAssuredEmail,
+        sendMail,
+      });
+
+      await notifyClaimRegistered({
+        mobileNo,
+        name: customerName,
+        claimNo: claimNumber,
+        email: lifeAssuredEmail,
+        sendEmail: sendMail,
+      });
+    } catch (err) {
+      console.error('registerClaim >> Registration notify error:', err.message || err);
+    }
+
+    res.status(201).json({
+      message: "Register claim created successfully",
+      claimId: intimation.CLAIM_ID,
+      claimNumber: claimNumber,
+      data: {
+        intimation,
+        cause,
+        payee,
+        claimant,
+        lifeAssured,
+        contact,
+        eagle,
+        require,
+        requirementTableResults,
+        questions,
+        sysRemark,
+        system,
+        accessor,
+        verifier,
+        claim,
+
+        AgentHistoryTableResults,
+        HospitalDetailsTableResults,
+        DoctorDetailsTableResults,
+        ProofDetailsTableResults,
+        InsuranceProofDetailsTableResults,
+        WitnessDetailsTableResults,
+        IncomeDetailsTableResults,
+
+        ReqCommonDetailsResults,
+        ReqRiderDetailsResults,
+        ReqEmailTableResults,
+        ReqLetterTableResults,
+
+        smsDataResults,
+
+        telecallingResult,
+        caseTriggerResult,
+        systemRemarkResult,
+        priorityFlagResult,
+
+        unregisteredPoliciesResult,
+
+        RiderDetailsTableResults
+      },
+    });
+  } catch (error) {
+    // Rollback the transaction in case of error.
+    // Wrap rollback in its own try/catch so a closed connection doesn't crash the process.
+    try {
+      if (transaction && transaction.finished !== "commit") {
+        await transaction.rollback();
+      }
+    } catch (rollbackErr) {
+      console.error(
+        "registerClaim >> rollback failed:",
+        rollbackErr?.message || rollbackErr
+      );
+    }
+
+    console.error("registerClaim >> error object:", error);
+    const exposeDetail = process.env.NODE_ENV !== "production";
+    res.status(500).json({
+      message: "Internal server error",
+      error: exposeDetail
+        ? error.message || String(error)
+        : "An error occurred while saving the claim. Please try again or contact support.",
+    });
+  }
+};
+
+module.exports = { registerClaim };

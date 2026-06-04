@@ -8,7 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-backend/node_modules
+life-claim-backend/node_modules
+life-claim-frontend/node_modules
 dist
 dist-ssr
 *.local
@@ -18,11 +19,12 @@ dist-ssr
 .env.local
 .env.production
 .env.development
-backend/.env
+life-claim-backend/.env
+life-claim-frontend/.env
 
 # Build output
-build/
-backend/logs/
+life-claim-frontend/build/
+life-claim-backend/logs/
 
 # Editor directories and files
 .vscode/*

@@ -11,20 +11,13 @@ A modern, full-stack life insurance claims management system built with React + 
 
 ```
 claude-poc/
-├── src/                    # React frontend
-│   ├── pages/              # All pages
-│   ├── components/         # Shared components
-│   ├── layouts/            # AppLayout (sidebar + topbar)
-│   ├── services/           # API service layer
-│   ├── context/            # Auth context
-│   └── data/               # Mock data fallback
-├── backend/                # Node.js backend
+├── life-claim-frontend/   # React + Vite
+│   ├── src/
+│   ├── public/
+│   ├── index.html
+│   └── package.json
+├── life-claim-backend/    # Node.js + Express
 │   └── src/
-│       ├── controllers/    # Route handlers
-│       ├── models/         # Sequelize models
-│       ├── middleware/      # Auth, rate limit, error
-│       ├── routes/         # All API routes
-│       └── services/       # Business logic
 └── README.md
 ```
 
@@ -50,6 +43,7 @@ claude-poc/
 
 ### Frontend
 ```bash
+cd life-claim-frontend
 npm install
 cp .env.example .env   # set VITE_API_URL
 npm run dev            # runs on http://localhost:5174
@@ -57,7 +51,7 @@ npm run dev            # runs on http://localhost:5174
 
 ### Backend
 ```bash
-cd backend
+cd life-claim-backend
 npm install
 cp .env.example .env   # set DB_PASSWORD and other vars
 npm start              # runs on http://localhost:3009
