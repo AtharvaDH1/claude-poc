@@ -90,8 +90,13 @@ export async function CaseAssignmentService(processedData) {
         const { username } = getAuthenticatedUser();
         const policyNumberAndUsername = await getPolicyNumberAndUsername();
 
-        const dbPolicyNumber = policyNumberAndUsername.data.responsePolicyNumber;
-        const dbUsername = policyNumberAndUsername.data.responseUsername;
+        const payload = policyNumberAndUsername?.data || policyNumberAndUsername;
+        const dbPolicyNumber = (payload?.responsePolicyNumber || []).map((p) =>
+            typeof p === 'string' ? p : p.policy_number || p.POLICY_NUMBER
+        ).filter(Boolean);
+        const dbUsername = (payload?.responseUsername || []).map((u) =>
+            typeof u === 'string' ? u : u.username || u.USERNAME
+        ).filter(Boolean);
         console.log('services >> add >> caseAssignmentService >> dbPolicyNumber:', dbPolicyNumber);
         console.log('services >> add >> caseAssignmentService >> dbUsername:', dbUsername);
 
@@ -141,14 +146,14 @@ export async function CaseAssignmentService(processedData) {
 
         // If all data is valid, proceed with backend call
         if (validData.length > 0) {
-            const response = await wrapper.fetchWithToken(`/case-assignment/add`, {
+            const response = await wrapper.fetchWithToken(`/caseassignment/add`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     data: validData,
-                    uploadedBy: username
+                    uploadedBy: username,
                 })
             });
             
@@ -157,10 +162,13 @@ export async function CaseAssignmentService(processedData) {
             }
             
             const result = await response.json();
+            const body = result?.data ? result : { data: result }
+            const updated = body.data?.updated?.length ?? validData.length
+            const failed = body.data?.failed?.length ?? 0
             return {
                 success: true,
-                message: `Successfully processed ${validData.length} records`,
-                data: result
+                message: body.message || `Assigned ${updated} policy row(s)${failed ? `; ${failed} failed` : ''}.`,
+                data: body.data || body,
             };
         } else {
             throw new Error('No valid data found to process');

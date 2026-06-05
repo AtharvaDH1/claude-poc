@@ -1,10 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import authService from '../services/authService'
 import { AUTH_LOGOUT_CHANNEL } from '../util/authBroadcast'
+import { readEnv } from '../util/env'
 
 const AuthContext = createContext(null)
 
-const IDLE_MS = (parseInt(import.meta.env.VITE_IDLE_TIMEOUT_MINUTES) || 5) * 60 * 1000
+const IDLE_MS = (parseInt(readEnv('IDLE_TIMEOUT_MINUTES', '5'), 10) || 5) * 60 * 1000
 const WARN_MS = 60 * 1000
 
 function decodeTokenUser(token) {
@@ -56,8 +57,13 @@ export function AuthProvider({ children }) {
         if (!cancelled && auth?.preferred_username) {
           sessionStorage.setItem('loggedUser', auth.preferred_username)
         }
-      } catch {
-        if (!cancelled) clearSession()
+      } catch (err) {
+        if (!cancelled) {
+          if (err?.concurrentLogout) {
+            sessionStorage.setItem('auth_logout_reason', 'concurrent')
+          }
+          clearSession()
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -68,7 +74,14 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     try {
       bc.current = new BroadcastChannel(AUTH_LOGOUT_CHANNEL)
-      bc.current.onmessage = () => clearSession()
+      bc.current.onmessage = (ev) => {
+        if (!sessionStorage.getItem('token')) return
+        const reason = ev?.data?.reason || 'session'
+        if (!sessionStorage.getItem('auth_logout_reason')) {
+          sessionStorage.setItem('auth_logout_reason', reason)
+        }
+        clearSession()
+      }
     } catch {}
     return () => { try { bc.current?.close() } catch {} }
   }, [clearSession])
@@ -83,7 +96,7 @@ export function AuthProvider({ children }) {
       sessionStorage.setItem('auth_logout_reason', 'idle')
       await authService.logout({ logoutReason: 'idle' }).catch(() => {})
       clearSession()
-      try { bc.current?.postMessage('logout') } catch {}
+      try { bc.current?.postMessage({ type: 'logout', reason: 'idle' }) } catch {}
     }, IDLE_MS)
   }, [clearSession])
 
@@ -99,8 +112,27 @@ export function AuthProvider({ children }) {
     }
   }, [user, resetIdleTimer])
 
-  const login = useCallback(async (username, password) => {
-    const data = await authService.login(username, password)
+  useEffect(() => {
+    if (!user) return undefined
+    const intervalMs = Number(readEnv('SESSION_CHECK_INTERVAL_MS', '90000'), 10) || 90000
+    const tick = async () => {
+      try {
+        await authService.verifyServerSession()
+      } catch (err) {
+        if (err?.concurrentLogout) {
+          sessionStorage.setItem('auth_logout_reason', 'concurrent')
+          await authService.logout({ logoutReason: 'concurrent' }).catch(() => {})
+          clearSession()
+          try { bc.current?.postMessage({ type: 'logout', reason: 'concurrent' }) } catch {}
+        }
+      }
+    }
+    const id = setInterval(tick, intervalMs)
+    return () => clearInterval(id)
+  }, [user, clearSession])
+
+  const login = useCallback(async (username, password, captchaToken) => {
+    const data = await authService.login(username, password, captchaToken)
     const userData = decodeTokenUser(data.access_token)
     setUser(userData)
     return userData
@@ -110,7 +142,9 @@ export function AuthProvider({ children }) {
     sessionStorage.setItem('auth_logout_reason', reason)
     await authService.logout({ logoutReason: reason }).catch(() => {})
     clearSession()
-    if (broadcast) { try { bc.current?.postMessage('logout') } catch {} }
+    if (broadcast) {
+      try { bc.current?.postMessage({ type: 'logout', reason }) } catch {}
+    }
   }, [clearSession])
 
   const extendSession = useCallback(() => { resetIdleTimer(); setIdleWarning(false) }, [resetIdleTimer])
@@ -118,11 +152,19 @@ export function AuthProvider({ children }) {
   const hasRole = useCallback((required) => {
     if (!user?.roles?.length) return false
     const req = Array.isArray(required) ? required : [required]
-    return req.some(r => user.roles.includes(r))
+    const norm = (s) => String(s || '').toLowerCase()
+    return req.some((r) =>
+      user.roles.some((ur) => ur === r || norm(ur) === norm(r))
+    )
   }, [user])
 
+  const value = useMemo(
+    () => ({ user, loading, login, logout, idleWarning, extendSession, hasRole, authenticated: !!user }),
+    [user, loading, login, logout, idleWarning, extendSession, hasRole]
+  )
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, idleWarning, extendSession, hasRole, authenticated: !!user }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

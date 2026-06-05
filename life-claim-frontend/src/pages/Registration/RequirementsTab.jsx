@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { SubTabNav, Btn, T } from './shared'
 import { useToast } from '../../components/Toast'
+import { validateRequirements, showValidationToast } from '../../util/registrationValidation'
+import { getSystemRequirementService, requirementMasterService } from '../../services/statesService'
 
 const REQ_DOCS = {
   General: [
@@ -32,22 +34,58 @@ const REQ_DOCS = {
 export default function RequirementsTab({ data, update, onComplete, userRole }) {
   const toast = useToast()
   const [subTab, setSubTab] = useState('General')
+  const [reqDocs, setReqDocs] = useState(REQ_DOCS)
+  const [loadingReq, setLoadingReq] = useState(false)
   const showCommTab = userRole && userRole !== 'Pre Assessor'
 
   const reqStatus = data.reqStatus || {}
   const reqRemarks = data.reqRemarks || {}
+
+  useEffect(() => {
+    requirementMasterService().then((master) => {
+      if (!Array.isArray(master) || !master.length) return
+      const general = master.filter((m) => (m.category || m.CATEGORY || 'General') === 'General').map((m, i) => ({
+        id: m.id || i + 1,
+        name: m.document_name || m.DOCUMENT_NAME || m.name,
+        required: m.mandatory === 'Y' || m.MANDATORY === 'Y' || m.required,
+      }))
+      if (general.length) setReqDocs((prev) => ({ ...prev, General: general }))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!data.portfolioType || !data.claimRegistrationType) return
+    setLoadingReq(true)
+    getSystemRequirementService(
+      data.portfolioType,
+      data.claimRegistrationType || data.causeSubType,
+      data.premiumStatus || 'Active',
+      data.sumAssured
+    ).then((sys) => {
+      const list = sys?.requirements || sys?.data || sys
+      if (!Array.isArray(list) || !list.length) return
+      const additional = list.map((m, i) => ({
+        id: 100 + i,
+        name: m.document_name || m.name || m.DOCUMENT_NAME,
+        required: m.mandatory === 'Y' || m.required,
+      }))
+      setReqDocs((prev) => ({ ...prev, Additional: additional }))
+      toast('success', 'Requirements loaded', 'System requirements applied from portfolio rules.')
+    }).catch(() => {})
+      .finally(() => setLoadingReq(false))
+  }, [data.portfolioType, data.claimRegistrationType, data.sumAssured])
 
   const setStatus = (id, val) => update({ reqStatus:{ ...reqStatus, [id]:val } })
   const setRemark = (id, val) => update({ reqRemarks:{ ...reqRemarks, [id]:val } })
 
   const markAllReceived = () => {
     const updated = { ...reqStatus }
-    REQ_DOCS[subTab].forEach(d => { updated[d.id] = 'Received' })
+    (reqDocs[subTab] || []).forEach(d => { updated[d.id] = 'Received' })
     update({ reqStatus: updated })
     toast('success','Updated', `All ${subTab} documents marked as Received.`)
   }
 
-  const allDocs = Object.values(REQ_DOCS).flat()
+  const allDocs = Object.values(reqDocs).flat()
   const received = allDocs.filter(d => reqStatus[d.id] === 'Received').length
   const mandatoryDocs = allDocs.filter(d => d.required)
   const mandatoryReceived = mandatoryDocs.filter(d => reqStatus[d.id] === 'Received').length
@@ -75,6 +113,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
         ))}
       </div>
 
+      {loadingReq && <div style={{ fontSize:'12px', color:T.textMuted, marginBottom:'12px' }}>Loading system requirements…</div>}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px' }}>
         <SubTabNav
           tabs={showCommTab ? ['General','Additional','Supporting','Communication'] : ['General','Additional','Supporting']}
@@ -94,7 +133,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
             </tr>
           </thead>
           <tbody>
-            {REQ_DOCS[subTab].map((doc, i) => {
+            {(reqDocs[subTab] || []).map((doc, i) => {
               const s = reqStatus[doc.id] || 'Pending'
               const sc = statusColor(s)
               return (
@@ -173,7 +212,15 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
             ⚠️ {mandatoryDocs.length - mandatoryReceived} mandatory document(s) still pending
           </div>
         )}
-        <Btn variant='success' onClick={onComplete}>✓ Complete Requirements →</Btn>
+        <Btn variant='success' onClick={() => {
+          const { valid, missing } = validateRequirements(data, { allDocs })
+          if (!valid) {
+            showValidationToast(toast, missing, 'Requirements incomplete')
+            return
+          }
+          update({ _requirementsComplete: true })
+          onComplete()
+        }}>✓ Complete Requirements →</Btn>
       </div>
     </div>
   )

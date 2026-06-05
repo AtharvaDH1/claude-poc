@@ -213,15 +213,17 @@ const updateCapsAddDetailsCaseStatus = async (caseId, caseStatus, username) => {
 const getCapsAddDetailsPolicyNumberUsername = async () => {
  
     try{
-        const responsePolicyNumber = await CapsAddDetails.findAll({
+        const policyRows = await CapsAddDetails.findAll({
             attributes: ['policy_number']
         });
        
-        const responseUsername = await Users.findAll({
+        const userRows = await Users.findAll({
             attributes: ['username'],
         });
  
-        return {responsePolicyNumber, responseUsername};
+        const responsePolicyNumber = policyRows.map((r) => r.policy_number).filter(Boolean);
+        const responseUsername = userRows.map((r) => r.username).filter(Boolean);
+        return { responsePolicyNumber, responseUsername };
        // return responsePolicyNumber;
     }catch(err){
         console.error('DataAccess > capsAddDetailsDao.js > getCapsAddDetailsLpolicyNumber, Error getting data:', err);
@@ -230,9 +232,49 @@ const getCapsAddDetailsPolicyNumberUsername = async () => {
    
 }
  
-const UpdateCapsAddDetailsCaseAssignment = async(req, res) => {
-    console.log('dataAccess >> add >> capsAddDetailsDao.js ',);
- 
-}
- 
-module.exports = {insertCapsAddDetails, getCapsAddDetails, getCapsAddDetailsByDecision, updateCapsAddDetailsCaseStatus, getCapsAddDetailsPolicyNumberUsername}
+/** Bulk assign CAPS cases by policy number (Excel POLICY_ID + ASSIGNED_TO). */
+const bulkAssignCasesByPolicy = async (rows, uploadedBy) => {
+    const updated = [];
+    const failed = [];
+
+    for (const row of rows) {
+        const policyId = String(row.POLICY_ID || row.policy_id || '').trim();
+        const assignedTo = String(row.ASSIGNED_TO || row.assigned_to || '').trim();
+        if (!policyId || !assignedTo) {
+            failed.push({ policyId: policyId || '—', reason: 'Missing POLICY_ID or ASSIGNED_TO' });
+            continue;
+        }
+
+        let searchPolicy = policyId;
+        if (searchPolicy.length < 8 && /^\d+$/.test(searchPolicy)) {
+            searchPolicy = searchPolicy.padStart(8, '0');
+        }
+
+        const [affected] = await CapsAddDetails.update(
+            {
+                assigned_to: assignedTo,
+                assigned_by: uploadedBy,
+                modified_by: uploadedBy,
+                modified_on: new Date(),
+            },
+            { where: { policy_number: searchPolicy } }
+        );
+
+        if (affected > 0) {
+            updated.push({ policyId: searchPolicy, assignedTo, rowsUpdated: affected });
+        } else {
+            failed.push({ policyId: searchPolicy, reason: 'Policy not found in caps_add_details' });
+        }
+    }
+
+    return { updated, failed };
+};
+
+module.exports = {
+    insertCapsAddDetails,
+    getCapsAddDetails,
+    getCapsAddDetailsByDecision,
+    updateCapsAddDetailsCaseStatus,
+    getCapsAddDetailsPolicyNumberUsername,
+    bulkAssignCasesByPolicy,
+};

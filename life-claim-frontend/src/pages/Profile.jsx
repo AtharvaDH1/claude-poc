@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import AppLayout from '../layouts/AppLayout'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
-import api from '../services/api'
+import wrapper from '../util/ApiWrapper'
 import { User, Mail, Phone, Key, Shield, Save, Eye, EyeOff, Clock } from 'lucide-react'
 
 const T = { primary:'#1D4ED8', card:'#fff', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
@@ -60,15 +60,20 @@ export default function Profile() {
     e.preventDefault()
     setSavingProfile(true)
     try {
-      await api.put(`/user/${user?.username}`, {
-        first_Name: profileForm.firstName,
-        last_Name:  profileForm.lastName,
-        email:      profileForm.email,
-        phoneNumber: profileForm.phone,
+      const res = await wrapper.fetchWithToken(`/user/user/${user?.username}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_Name: profileForm.firstName,
+          last_Name: profileForm.lastName,
+          email: profileForm.email,
+          phoneNumber: profileForm.phone,
+        }),
       })
+      await res.json().catch(() => null)
       toast('success', 'Profile Updated', 'Your profile details have been saved.')
     } catch (err) {
-      toast('error', 'Update Failed', err.response?.data?.message || err.message)
+      toast('error', 'Update Failed', err.message)
     } finally { setSavingProfile(false) }
   }
 
@@ -79,12 +84,16 @@ export default function Profile() {
     if (pwForm.newPw !== pwForm.confirm) { toast('error','Mismatch','New passwords do not match.'); return }
     setSavingPw(true)
     try {
-      await api.put(`/user/${user?.username}`, { password: pwForm.newPw })
+      await wrapper.fetchWithToken(`/user/user/${user?.username}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwForm.newPw }),
+      })
       toast('success', 'Password Changed', 'Your password has been updated. Please log in again.')
       setPwForm({ current:'', newPw:'', confirm:'' })
       setTimeout(() => { logout(); navigate('/login') }, 2000)
     } catch (err) {
-      toast('error', 'Failed', err.response?.data?.message || err.message)
+      toast('error', 'Failed', err.message)
     } finally { setSavingPw(false) }
   }
 

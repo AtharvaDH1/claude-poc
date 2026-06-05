@@ -23,6 +23,7 @@ router.post('/pool', protect(hasAnyRole(assessorOrVerifier)), capsAssessmentPool
 router.post('/getCaseDetails', protect(hasAnyRole(assessorOrVerifier)), capsAssessmentPoolController.getCaseDetails);
 router.post('/refreshLifeAsiaData', protect(hasAnyRole(assessorOrVerifier)), capsAssessmentPoolController.refreshCaseData);
 router.post('/policynumberusername', protect(hasAnyRole(assessorOrVerifier)), capsAddDetailsController.getCapsAddDetailsPolicyNumberUsername);
+router.post('/add', protect(hasAnyRole(assessorOrVerifier)), capsAddDetailsController.addCaseAssignmentBulk);
 router.post('/applyExclusionRules', protect(hasAnyRole(assessorOrVerifier)), exclusionRulesController.applyExclusionRulesToCase);
 router.post('/applyExclusionRulesBatch', protect(hasAnyRole(assessorOrVerifier)), exclusionRulesController.applyExclusionRulesToMultipleCases);
 router.post('/refreshAssessorPoolCase', protect(hasAnyRole(assessorOrVerifier)), assessorPoolCasesController.refreshAssessorPoolCaseController);

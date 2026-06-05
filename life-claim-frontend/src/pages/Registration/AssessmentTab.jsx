@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { Field, Input, Select, Textarea, SubTabNav, Grid, Btn, InfoCard, T } from './shared'
-import { getAssessmentQuestions } from '../../services/masterService'
+import { getAssessmentQuestions, getSystemDecision } from '../../services/masterService'
+import { useToast } from '../../components/Toast'
+import { validateAssessment, showValidationToast } from '../../util/registrationValidation'
 
 export default function AssessmentTab({ data, update, onComplete, userRole }) {
+  const toast = useToast()
   const isAssessorPlus = userRole && userRole !== 'Pre Assessor'
+  const isPreAssessor = !isAssessorPlus
   const [subTab, setSubTab] = useState('Questions')
   const [questions, setQuestions] = useState([])
+  const [finishing, setFinishing] = useState(false)
 
   React.useEffect(() => {
     getAssessmentQuestions().then(setQuestions).catch(() => {})
@@ -128,6 +133,11 @@ export default function AssessmentTab({ data, update, onComplete, userRole }) {
       {/* ── REMARKS ── */}
       {subTab === 'Remarks' && (
         <div>
+          {isPreAssessor && (!data.caseTrigger || !data.priorityFlag) && (
+            <div style={{ marginBottom:'16px', fontSize:'12px', fontWeight:600, color:'#92400E', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:'8px', padding:'10px 14px' }}>
+              ⚠️ Case Trigger and Priority Flag are required before completing Assessment.
+            </div>
+          )}
           <Grid cols={2}>
             <Field label="Case Trigger">
               <Select value={data.caseTrigger} onChange={e=>update({caseTrigger:e.target.value})} options={['Yes','No','NA']}/>
@@ -208,7 +218,34 @@ export default function AssessmentTab({ data, update, onComplete, userRole }) {
             ⚠️ {questions.length - answeredCount} question(s) still unanswered
           </div>
         )}
-        <Btn variant='success' onClick={onComplete}>✓ Complete Assessment →</Btn>
+        <Btn variant='success' disabled={finishing} onClick={async ()=>{
+          const check = validateAssessment(data, { questions, isPreAssessor })
+          if (!check.valid) {
+            showValidationToast(toast, check.missing, 'Assessment incomplete')
+            if (check.missing.some((m) => m.includes('Remarks'))) setSubTab('Remarks')
+            else if (!allAnswered) setSubTab('Questions')
+            return
+          }
+          setFinishing(true)
+          try {
+            const res = await getSystemDecision({ ...data, sumAssured: data.sumAssured })
+            update({
+              sysRecommendation: res.recommendation,
+              sysPayableAmount: res.payableAmount,
+              sysReason: res.reason,
+              sysRiskScore: res.riskScore,
+              sysProcessedOn: res.processedOn,
+              systemDetails: res,
+            })
+            toast('success', 'System decision', 'System recommendation generated for this claim.')
+          } catch (e) {
+            toast('warning', 'System decision', e?.message || 'Could not generate system decision. You can retry from the Decision tab.')
+          } finally {
+            setFinishing(false)
+            update({ _assessmentComplete: true })
+            onComplete()
+          }
+        }}>{finishing ? 'Processing…' : '✓ Complete Assessment →'}</Btn>
       </div>
     </div>
   )

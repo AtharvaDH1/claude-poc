@@ -1,6 +1,8 @@
 import { API_URL } from '../util/config';
 import { notifyOtherTabsLogout } from '../util/authBroadcast';
 
+const REFRESH_BUFFER_SEC = 90;
+
 const writeLogoutAudit = async (token, meta = {}) => {
   if (!token) return;
   const logoutReason =
@@ -24,13 +26,26 @@ const writeLogoutAudit = async (token, meta = {}) => {
   }
 };
 
+function decodeJwtPayload(token) {
+  const base64Url = token.split('.')[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonPayload = decodeURIComponent(
+    atob(base64)
+      .split('')
+      .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+      .join('')
+  );
+  return JSON.parse(jsonPayload);
+}
+
 const authService = {
-  login: async (username, password) => {
+  login: async (username, password, captchaToken) => {
     const params = new URLSearchParams();
     params.append('client_id', 'life-claims-frontend');
     params.append('grant_type', 'password');
     params.append('username', username);
     params.append('password', password);
+    if (captchaToken) params.append('captchaToken', captchaToken);
 
     const res = await fetch(`${API_URL}/api/auth/keycloak/token`, {
       method: 'POST',
@@ -54,52 +69,118 @@ const authService = {
 
     const data = await res.json();
     sessionStorage.setItem('token', data.access_token);
-    sessionStorage.setItem('refreshToken', data.refresh_token);
+    if (data.refresh_token) {
+      sessionStorage.setItem('refreshToken', data.refresh_token);
+    }
     sessionStorage.setItem('loggedUser', username);
     return data;
   },
 
-  authenticate: async () => {
-    const token = sessionStorage.getItem('token');
-    if (!token) throw new Error("No token found");
+  refreshAccessToken: async () => {
+    const refreshToken = sessionStorage.getItem('refreshToken');
+    if (!refreshToken) return false;
 
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      const payload = JSON.parse(jsonPayload);
-      const currentTime = Math.floor(Date.now() / 1000);
+    const res = await fetch(`${API_URL}/api/auth/keycloak/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
 
-      if (payload.exp && payload.exp < currentTime) {
-        await writeLogoutAudit(token, { logoutReason: 'token_expired' });
-        throw new Error("Token expired");
-      }
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    if (!data?.access_token) return false;
 
-      return {
-        preferred_username: payload.preferred_username || payload.sub,
-        roles: payload.realm_access?.roles || []
-      };
-    } catch (error) {
-      console.error("Token validation error:", error);
-      throw new Error("Invalid token format");
+    sessionStorage.setItem('token', data.access_token);
+    if (data.refresh_token) {
+      sessionStorage.setItem('refreshToken', data.refresh_token);
     }
+    return true;
   },
 
-  getLastLogin: async () => {
-    const res = await fetch(`${API_URL}/api/auth/last-login`, {
+  verifyServerSession: async () => {
+    const token = sessionStorage.getItem('token');
+    if (!token) {
+      const err = new Error('No token found');
+      err.code = 'no_token';
+      throw err;
+    }
+
+    const res = await fetch(`${API_URL}/api/auth/session-check`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+    });
+
+    if (res.ok) return { ok: true };
+
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.message || 'Session invalid');
+    err.concurrentLogout = Boolean(data.concurrentLogout);
+    err.status = res.status;
+    throw err;
+  },
+
+  authenticate: async () => {
+    let token = sessionStorage.getItem('token');
+    if (!token) throw new Error('No token found');
+
+    let payload;
+    try {
+      payload = decodeJwtPayload(token);
+    } catch {
+      throw new Error('Invalid token format');
+    }
+
+    const currentTime = Math.floor(Date.now() / 1000);
+    const exp = payload.exp || 0;
+
+    if (exp && exp <= currentTime) {
+      const refreshed = await authService.refreshAccessToken();
+      if (refreshed) {
+        token = sessionStorage.getItem('token');
+        payload = decodeJwtPayload(token);
+      } else {
+        await writeLogoutAudit(token, { logoutReason: 'token_expired' });
+        throw new Error('Token expired');
+      }
+    } else if (exp && exp - currentTime < REFRESH_BUFFER_SEC) {
+      await authService.refreshAccessToken().catch(() => {});
+      const next = sessionStorage.getItem('token');
+      if (next) payload = decodeJwtPayload(next);
+    }
+
+    try {
+      await authService.verifyServerSession();
+    } catch (e) {
+      if (e.concurrentLogout) throw e;
+    }
+
+    return {
+      preferred_username: payload.preferred_username || payload.sub,
+      roles: payload.realm_access?.roles || [],
+    };
+  },
+
+  getLastLogin: async (username) => {
+    const q = username ? `?username=${encodeURIComponent(username)}` : '';
+    const res = await fetch(`${API_URL}/api/auth/last-login${q}`, {
       method: 'GET',
       credentials: 'include',
     });
 
     if (!res.ok) return null;
     const data = await res.json().catch(() => ({}));
-    return data.lastLoginAt || null;
+    return {
+      lastLoginAt: data.lastLoginAt || null,
+      username: data.username || null,
+    };
   },
 
   logout: async (opts = {}) => {
-    notifyOtherTabsLogout();
+    const hadToken = Boolean(sessionStorage.getItem('token'));
+    const broadcastReason = opts.logoutReason || opts.reason || 'session';
+    if (hadToken) notifyOtherTabsLogout(broadcastReason);
     try {
       const token = sessionStorage.getItem('token');
       await writeLogoutAudit(token, { logoutReason: opts.logoutReason || opts.reason });

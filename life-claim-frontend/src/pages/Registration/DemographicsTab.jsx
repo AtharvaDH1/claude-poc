@@ -1,17 +1,36 @@
 // DemographicsTab v2 — null-safe
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Field, Input, Select, Textarea, SectionHeader, Grid, Btn, SubTabNav, InfoCard, T } from './shared'
-import { fetchPolicyDetails as fetchPolicyAPI } from '../../services/policyService'
+import { fetchPolicyDetails as fetchPolicyAPI, fetchAgentRepudiation } from '../../services/policyService'
+import { getPortfolioService } from '../../services/statesService'
+import { getCountries } from '../../services/masterService'
 import { getCauseEvents, getTrapScore } from '../../services/masterService'
 import statesService from '../../services/statesService'
 import placeOfDeathService from '../../services/placeOfDeathService'
 import trapScoreService from '../../services/trapScoreService'
 import { useToast } from '../../components/Toast'
+import {
+  validateDemographicsSection,
+  validateDemographicsComplete,
+  validateDemographicsForTrap,
+  validateTrapScoreInputs,
+  validateRowFields,
+  validateClaimantDraft,
+  showValidationToast,
+} from '../../util/registrationValidation'
+import { computePolicyAge, syncDemographicsSections } from '../../util/buildRegistrationPayload'
+import { filterCauseEvents } from '../../util/normalizeCauseEvent'
+import {
+  getPolicyClients,
+  buildPayeeDetailsArray,
+  clientToPayeeRow,
+  findSelectedPayee,
+} from '../../util/policyClients'
 
 /* ── Cause of Death Modal ── */
-function CauseModal({ causes, onSelect, onClose }) {
+function CauseModal({ causes, loading, loadError, onSelect, onClose, onRetry }) {
   const [q, setQ] = useState('')
-  const filtered = causes.filter(c => !q || c.causeDescription.toLowerCase().includes(q.toLowerCase()) || c.causeCode.includes(q))
+  const filtered = filterCauseEvents(causes, q)
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)' }}>
       <div style={{ background:'#fff', borderRadius:'16px', width:'560px', maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 64px rgba(0,0,0,0.2)' }}>
@@ -24,27 +43,40 @@ function CauseModal({ causes, onSelect, onClose }) {
             style={{ width:'100%', height:'36px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'7px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box' }}
             onFocus={e=>e.target.style.borderColor=T.primary} onBlur={e=>e.target.style.borderColor=T.border}/>
         </div>
-        <div style={{ flex:1, overflowY:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead style={{ position:'sticky', top:0, background:'#FAFAFA' }}>
-              <tr style={{ borderBottom:`2px solid ${T.border}` }}>
-                {['Code','Description','Category','Sub Type'].map(h=>(
-                  <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(c=>(
-                <tr key={c.causeCode} onClick={()=>onSelect(c)} style={{ borderBottom:`1px solid ${T.borderSubtle}`, cursor:'pointer', transition:'background 0.1s' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='#EFF6FF'} onMouseLeave={e=>e.currentTarget.style.background=''}>
-                  <td style={{ padding:'10px 14px', fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{c.causeCode}</td>
-                  <td style={{ padding:'10px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{c.causeDescription}</td>
-                  <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{c.causeCategory}</td>
-                  <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{c.claimSubType}</td>
+        <div style={{ flex:1, overflowY:'auto', minHeight:'200px' }}>
+          {loading ? (
+            <div style={{ padding:'32px', textAlign:'center', fontSize:'13px', color:T.textMuted }}>Loading cause master…</div>
+          ) : loadError ? (
+            <div style={{ padding:'24px', textAlign:'center' }}>
+              <div style={{ fontSize:'13px', color:'#B45309', marginBottom:'12px' }}>{loadError}</div>
+              <Btn size='sm' onClick={onRetry}>Retry</Btn>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding:'32px', textAlign:'center', fontSize:'13px', color:T.textMuted }}>
+              {causes.length === 0 ? 'No causes returned from the server.' : 'No causes match your search.'}
+            </div>
+          ) : (
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead style={{ position:'sticky', top:0, background:'#FAFAFA' }}>
+                <tr style={{ borderBottom:`2px solid ${T.border}` }}>
+                  {['Code','Description','Category','Sub Type'].map(h=>(
+                    <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em' }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((c, i)=>(
+                  <tr key={`${c.causeCode || 'cause'}-${i}`} onClick={()=>onSelect(c)} style={{ borderBottom:`1px solid ${T.borderSubtle}`, cursor:'pointer', transition:'background 0.1s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='#EFF6FF'} onMouseLeave={e=>e.currentTarget.style.background=''}>
+                    <td style={{ padding:'10px 14px', fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{c.causeCode}</td>
+                    <td style={{ padding:'10px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{c.causeDescription}</td>
+                    <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{c.causeCategory || '—'}</td>
+                    <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{c.claimSubType || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -89,7 +121,7 @@ function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
 }
 
 /* ── Add Row Modal ── */
-function AddRowModal({ title, fields, onSave, onClose }) {
+function AddRowModal({ title, fields, onSave, onClose, onInvalid }) {
   const [form, setForm] = useState({})
   const set = (k,v) => setForm(p=>({...p,[k]:v}))
   return (
@@ -115,7 +147,11 @@ function AddRowModal({ title, fields, onSave, onClose }) {
         </div>
         <div style={{ padding:'14px 20px', borderTop:`1px solid ${T.border}`, display:'flex', justifyContent:'flex-end', gap:'10px' }}>
           <Btn variant='secondary' onClick={onClose}>Cancel</Btn>
-          <Btn onClick={()=>{ onSave(form); onClose() }}>Save Row</Btn>
+          <Btn onClick={()=>{
+            const { valid, missing } = validateRowFields(fields, form)
+            if (!valid) { onInvalid?.(missing); return }
+            onSave(form); onClose()
+          }}>Save Row</Btn>
         </div>
       </div>
     </div>
@@ -127,29 +163,92 @@ function AddRowModal({ title, fields, onSave, onClose }) {
 ════════════════════════════════════ */
 export default function DemographicsTab({ data, update, policy, setPolicy, onComplete }) {
   const toast = useToast()
-  const [open, setOpen] = useState('register')
-  const [completed, setCompleted] = useState(new Set())
+  const fromRegisterGate = Boolean(policy?.registerForm)
+  const [open, setOpen] = useState(fromRegisterGate ? 'intimation' : 'register')
+  const [completed, setCompleted] = useState(() => (fromRegisterGate ? new Set(['register']) : new Set()))
   const [causes, setCauses] = useState([])
+  const [loadingCauses, setLoadingCauses] = useState(false)
+  const [causeLoadError, setCauseLoadError] = useState('')
   const [showCauseModal, setShowCauseModal] = useState(false)
   const [loadingPolicy, setLoadingPolicy] = useState(false)
   const [addingRowFor, setAddingRowFor] = useState(null)
   const [generatingTrap, setGeneratingTrap] = useState(false)
   const [states, setStates] = useState([])
   const [placesOfDeath, setPlacesOfDeath] = useState([])
+  const [countries, setCountries] = useState([])
+
+  const policyClients = useMemo(() => getPolicyClients(policy), [policy])
+
+  const policyAgeInfo = useMemo(
+    () => computePolicyAge(data.dateOfDeathEvent, data.riskCommencementDate || policy?.riskCommencementDate),
+    [data.dateOfDeathEvent, data.riskCommencementDate, policy?.riskCommencementDate]
+  )
 
   useEffect(() => {
-    getCauseEvents().then(setCauses).catch(() => setCauses([]))
+    const today = new Date().toISOString().split('T')[0]
+    const patch = {}
+    if (!data.initiationDate) patch.initiationDate = today
+    if (!data.intimationDate) patch.intimationDate = today
+    if (fromRegisterGate && policy && !data.portfolioType && policy.productCode) {
+      getPortfolioService(policy.productCode, policy.productName, policy.sumAssured)
+        .then((pt) => { if (pt) update({ portfolioType: pt }) })
+        .catch(() => {})
+    }
+    if (Object.keys(patch).length) update(patch)
+  }, [])
+
+  useEffect(() => {
+    if (!policyAgeInfo.policyAgeLabel) return
+    if (data.policyAge !== policyAgeInfo.policyAgeLabel || data.policyAge1 !== policyAgeInfo.policyAge1) {
+      update({ policyAge: policyAgeInfo.policyAgeLabel, policyAge1: policyAgeInfo.policyAge1 })
+    }
+  }, [policyAgeInfo.policyAgeLabel, policyAgeInfo.policyAge1])
+
+  const loadCauses = async () => {
+    setLoadingCauses(true)
+    setCauseLoadError('')
+    try {
+      const list = await getCauseEvents()
+      setCauses(list)
+      if (!list.length) {
+        setCauseLoadError('Cause master list is empty. Check GET /api/cause-event and claims_poc.cause_of_claim.')
+      }
+      return list
+    } catch (e) {
+      setCauses([])
+      setCauseLoadError(e?.message || 'Could not load cause master list.')
+      return []
+    } finally {
+      setLoadingCauses(false)
+    }
+  }
+
+  useEffect(() => {
+    loadCauses().catch(() => {})
     statesService.getAllStates().then(list => {
       setStates(list.map(s => s.STATE_NAME || s.state_name || s.name || s).filter(Boolean))
     })
     placeOfDeathService().then(list => {
       setPlacesOfDeath(list.map(p => p.place || p.PLACE || p).filter(Boolean))
     })
+    getCountries().then((list) => {
+      setCountries((list || []).map((c) => c.COUNTRY_NAME || c.country_name || c.name || c).filter(Boolean))
+    }).catch(() => {})
   }, [])
 
   const toggle = (s) => setOpen(p => p===s ? null : s)
   const done = (s) => completed.has(s)
   const markDone = (s) => { setCompleted(p => new Set([...p, s])); toast('success','Section Saved', `${s} saved successfully.`) }
+
+  const tryContinue = (sectionId, nextSection) => {
+    const { valid, missing } = validateDemographicsSection(sectionId, data, { policy, fromRegisterGate })
+    if (!valid) {
+      showValidationToast(toast, missing, 'Complete required fields')
+      return
+    }
+    markDone(sectionId)
+    setOpen(nextSection)
+  }
 
   /* Policy fetch */
   const handlePolicySearch = async () => {
@@ -158,17 +257,137 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
     try {
       const p = await fetchPolicyAPI(data.policyId.trim())
       setPolicy(p)
-      update({ policyId:p.policyId, productCode:p.productCode, productName:p.productName, sumAssured:p.sumAssured, issueDate:p.issueDate, riskCommencementDate:p.riskCommencementDate, paidToDate:p.paidToDate, premiumStatus:p.premiumStatus, premiumFrequency:p.premiumFrequency, term:p.term, premPaidYrs:p.premPaidYrs, totalPremiumPaid:p.totalPremiumPaid, currentSA:p.currentSA, cashValue:p.cashValue, maturityValue:p.maturityValue, advisorCode:p.advisorCode, advisorStatus:p.advisorStatus, uwDecision:p.uwDecision })
+      let portfolioType = p.portfolioType
+      try {
+        portfolioType = await getPortfolioService(p.productCode, p.productName, p.sumAssured) || portfolioType
+      } catch { /* keep policy value */ }
+      update({ policyId:p.policyId, productCode:p.productCode, productName:p.productName, sumAssured:p.sumAssured, portfolioType, issueDate:p.issueDate, riskCommencementDate:p.riskCommencementDate, paidToDate:p.paidToDate, premiumStatus:p.premiumStatus, premiumFrequency:p.premiumFrequency, term:p.term, premPaidYrs:p.premPaidYrs, totalPremiumPaid:p.totalPremiumPaid, currentSA:p.currentSA, cashValue:p.cashValue, maturityValue:p.maturityValue, advisorCode:p.advisorCode, advisorStatus:p.advisorStatus, uwDecision:p.uwDecision })
+      if (p.advisorCode) {
+        fetchAgentRepudiation(p.advisorCode).then((ar) => {
+          if (ar) setPolicy((prev) => ({ ...prev, agentRepudiation: ar?.data || ar }))
+        }).catch(() => {})
+      }
       markDone('register'); setOpen('intimation')
       toast('success','Policy Loaded', `${p.policyId} — ${p.productName} loaded.`)
     } catch(e) { toast('error','Not Found', e.message) }
     finally { setLoadingPolicy(false) }
   }
 
-  const selectCause = (c) => { update({ causeCode:c.causeCode, causeDescription:c.causeDescription, causeCategory:c.causeCategory, causeSubType:c.claimSubType, claimRegistrationType:c.claimRegistrationType }); setShowCauseModal(false) }
+  const policyStatusOnEvent = () =>
+    data.policyStatusOnEvent || data.policyStatusOnDod || policy?.premiumStatus || 'IF'
+
+  const openCauseModal = async () => {
+    if (!data.dateOfDeathEvent) {
+      toast('warning', 'Intimation required', 'Complete Date of Death / Event in section 2 before selecting a cause.')
+      return
+    }
+    update({
+      causeEventDate: data.dateOfDeathEvent,
+      policyStatusOnEvent: policyStatusOnEvent(),
+      policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent(),
+    })
+    setShowCauseModal(true)
+    if (!causes.length) await loadCauses()
+  }
+
+  const applyPayeeSelection = (client) => {
+    const patch = {
+      selectedPayeeId: client.clientId,
+      payeeName: client.name,
+      payeeLastName: client.lastName,
+      payeeClientId: client.clientId,
+      payeeDob: client.dob,
+      payeeGender: client.gender,
+      payeeRole: client.role || '',
+      payeeIdNumber: client.idNumber,
+      payeePanNo: client.panNo,
+      payeeFlat: client.flat,
+      payeeRoad: client.road,
+      payeeArea: client.area,
+      payeeCity: client.city,
+      payeeState: client.state,
+      payeeCountry: client.country,
+      payeePincode: client.pincode,
+      payeeMobileNo: client.mobileNo,
+      payeeTelNo: client.telNo,
+      payeeEmailId: client.emailId,
+      payeeRiskIndicator: client.riskIndicator,
+    }
+    const merged = { ...data, ...patch }
+    update({
+      ...patch,
+      selectedPayee: clientToPayeeRow(client, merged),
+      payeeDetails: buildPayeeDetailsArray(policyClients, client.clientId, merged),
+    })
+  }
+
+  const updatePayeeField = (partial) => {
+    const next = { ...data, ...partial }
+    if (!next.selectedPayeeId) {
+      update(partial)
+      return
+    }
+    const client = findSelectedPayee(policyClients, next.selectedPayeeId)
+    update({
+      ...partial,
+      selectedPayee: clientToPayeeRow(client, next),
+      payeeDetails: buildPayeeDetailsArray(policyClients, next.selectedPayeeId, next),
+    })
+  }
+
+  const reloadPolicyClients = async () => {
+    const id = (policy?.policyId || data.policyId || '').trim()
+    if (!id) {
+      toast('warning', 'Policy required', 'Load a policy in section 1 first.')
+      return
+    }
+    setLoadingPolicy(true)
+    try {
+      const p = await fetchPolicyAPI(id)
+      setPolicy(p)
+      const clients = getPolicyClients(p)
+      if (!clients.length) {
+        toast('warning', 'No clients', 'Life Asia returned no ClientDetails for this policy.')
+      } else {
+        toast('success', 'Policy reloaded', `${clients.length} client(s) loaded for payee selection.`)
+      }
+    } catch (e) {
+      toast('error', 'Reload failed', e?.message || 'Could not reload policy.')
+    } finally {
+      setLoadingPolicy(false)
+    }
+  }
+
+  const selectCause = (c) => {
+    update({
+      typeOfClaim: c.typeOfClaim,
+      causeCode: c.causeCode,
+      causeDescription: c.causeDescription,
+      causeCategory: c.causeCategory,
+      causeOfClaim: c.causeOfClaim || c.causeDescription || c.causeCode,
+      causeSubType: c.claimSubType,
+      claimSubType: c.claimSubType,
+      claimRegistrationType: c.claimRegistrationType,
+      causeEventDate: data.dateOfDeathEvent || data.causeEventDate,
+      policyStatusOnEvent: policyStatusOnEvent(),
+      policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent(),
+    })
+    setShowCauseModal(false)
+    toast('success', 'Cause selected', c.causeDescription || c.causeCode)
+  }
 
   /* Trap score */
   const handleTrapScore = async () => {
+    const gate = validateDemographicsForTrap(data, { policy, fromRegisterGate })
+    if (!gate.valid) {
+      showValidationToast(toast, gate.missing, 'Complete mandatory sections first')
+      return
+    }
+    const trapCheck = validateTrapScoreInputs(data, policy, policyClients)
+    if (!trapCheck.valid) {
+      showValidationToast(toast, trapCheck.missing, 'Cannot generate trap score')
+      return
+    }
     setGeneratingTrap(true)
     try {
       let res
@@ -269,8 +488,8 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
 
   return (
     <div>
-      {/* 1. Register Form */}
-      {sec('register','1. Policy & Claim Setup','Search policy and select claim type',
+      {/* 1. Register Form — skipped when Life Asia gate already completed */}
+      {!fromRegisterGate && sec('register','1. Policy & Claim Setup','Search policy and select claim type',
         <div>
           <Grid cols={3}>
             <Field label="Policy Number" required>
@@ -297,7 +516,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('register'); setOpen('intimation') }} disabled={!policyLoaded}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('register','intimation')} disabled={!policyLoaded}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -305,14 +524,31 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {/* 2. Intimation Details */}
       {sec('intimation','2. Intimation Details','Dates, source and death certificate information',
         <div>
+          <div style={{ marginBottom:'16px', padding:'12px 14px', background:'#F8FAFC', borderRadius:'10px', border:`1px solid ${T.border}`, display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:'10px' }}>
+            {[['Claim type', data.claimType], ['Intimation type', data.informationType], ['Portfolio', data.portfolioType], ['Policy status', data.initialPolicyStatus || policy?.premiumStatus]].map(([k,v])=>(
+              <div key={k}><div style={{ fontSize:'10px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase' }}>{k}</div><div style={{ fontSize:'13px', fontWeight:700, color:T.textPrimary }}>{v||'—'}</div></div>
+            ))}
+          </div>
           <Grid cols={3}>
             <Field label="Intimation Date" required><Input type="date" value={data.intimationDate} onChange={e=>update({intimationDate:e.target.value})}/></Field>
             <Field label="Source" required><Select value={data.source} onChange={e=>update({source:e.target.value})} options={['Branch','Direct','Website','Email','WhatsApp','Agent','Hospital']}/></Field>
             <Field label="Bond Type" required><Select value={data.bondType} onChange={e=>update({bondType:e.target.value})} options={['Policy Bond','Indemnity Bond','Not Provided']}/></Field>
             <Field label="FIR / PM Received"><Select value={data.firPmReceived} onChange={e=>update({firPmReceived:e.target.value})} options={['Yes','No','Not Required']}/></Field>
-            <Field label="Declared by Doctor"><Select value={data.declaredByDoctor} onChange={e=>update({declaredByDoctor:e.target.value})} options={['Yes','No']}/></Field>
+            <Field label="Declared by Doctor" required><Select value={data.declaredByDoctor} onChange={e=>update({declaredByDoctor:e.target.value})} options={['','Yes','No']}/></Field>
             <Field label="WhatsApp Flag"><Select value={data.whatsappFlag} onChange={e=>update({whatsappFlag:e.target.value})} options={['Yes','No']}/></Field>
-            <Field label="Date of Death / Event" required><Input type="date" value={data.dateOfDeathEvent} onChange={e=>update({dateOfDeathEvent:e.target.value})}/></Field>
+            <Field label="Date of Death / Event" required>
+              <Input
+                type="date"
+                value={data.dateOfDeathEvent}
+                onChange={(e) => {
+                  const dateOfDeathEvent = e.target.value
+                  update({
+                    dateOfDeathEvent,
+                    policyStatusOnDod: data.policyStatusOnDod || policy?.premiumStatus || 'IF',
+                  })
+                }}
+              />
+            </Field>
             <Field label="Date of Death Registration" required><Input type="date" value={data.dateOfDeathReg} onChange={e=>update({dateOfDeathReg:e.target.value})}/></Field>
             <Field label="Date of Cremation"><Input type="date" value={data.dateOfCremation} onChange={e=>update({dateOfCremation:e.target.value})}/></Field>
             <Field label="Date of Accident"><Input type="date" value={data.dateOfAccident} onChange={e=>update({dateOfAccident:e.target.value})}/></Field>
@@ -339,7 +575,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </Grid>
           </div>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('intimation'); setOpen('cause') }}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('intimation','cause')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -348,25 +584,36 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {sec('cause','3. Declared Cause of Death / Event','Select cause from the cause event list',
         <div>
           <div style={{ marginBottom:'16px' }}>
-            <Btn variant='secondary' onClick={()=>setShowCauseModal(true)}>🔍 Search & Select Cause</Btn>
+            <Btn variant='secondary' onClick={openCauseModal}>🔍 Search & Select Cause</Btn>
           </div>
-          {data.causeCode ? (
+          {data.causeCode || data.causeOfClaim ? (
             <div style={{ padding:'14px', background:'#EFF6FF', borderRadius:'10px', border:'1px solid #BFDBFE', marginBottom:'16px' }}>
               <div style={{ fontSize:'12px', fontWeight:700, color:'#1E40AF', marginBottom:'8px' }}>Selected Cause</div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'10px' }}>
-                {[['Cause Code',data.causeCode],['Description',data.causeDescription],['Category',data.causeCategory],['Claim Sub Type',data.causeSubType],['Registration Type',data.claimRegistrationType]].map(([k,v])=>(
-                  <div key={k}><div style={{ fontSize:'10px', color:'#1D4ED8', fontWeight:700, textTransform:'uppercase' }}>{k}</div><div style={{ fontSize:'13px', fontWeight:700, color:T.textPrimary }}>{v||'—'}</div></div>
+                {[
+                  ['Type of Claim', data.typeOfClaim],
+                  ['Cause Code', data.causeCode],
+                  ['Cause of Claim', data.causeOfClaim || data.causeDescription],
+                  ['Description', data.causeDescription],
+                  ['Category', data.causeCategory],
+                  ['Claim Sub Type', data.causeSubType || data.claimSubType],
+                  ['Registration Type', data.claimRegistrationType],
+                ].map(([k, v]) => (
+                  <div key={k}>
+                    <div style={{ fontSize:'10px', color:'#1D4ED8', fontWeight:700, textTransform:'uppercase' }}>{k}</div>
+                    <div style={{ fontSize:'13px', fontWeight:700, color:T.textPrimary }}>{v || '—'}</div>
+                  </div>
                 ))}
               </div>
             </div>
           ) : <InfoCard type='warning'>No cause selected. Click "Search & Select Cause" above.</InfoCard>}
           <Grid cols={2}>
-            <Field label="Date of Event"><Input type="date" value={data.causeEventDate||data.dateOfDeathEvent} onChange={e=>update({causeEventDate:e.target.value})} readOnly={!!data.dateOfDeathEvent}/></Field>
-            <Field label="Policy Status on Event"><Input value={data.policyStatusOnEvent||data.policyStatusOnDod} readOnly={true} placeholder="Auto-filled"/></Field>
+            <Field label="Date of Event"><Input type="date" value={data.causeEventDate || data.dateOfDeathEvent} readOnly /></Field>
+            <Field label="Policy Status on Event"><Input value={data.policyStatusOnEvent || data.policyStatusOnDod || policyStatusOnEvent()} readOnly /></Field>
             <Field label="If Others – Specify" full><Input value={data.causeIfOthers} onChange={e=>update({causeIfOthers:e.target.value})} placeholder="Specify if cause is 'Others'"/></Field>
           </Grid>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('cause'); setOpen('payee') }} disabled={!data.causeCode}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('cause','payee')} disabled={!data.causeCode && !data.causeOfClaim}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -374,9 +621,24 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {/* 4. Payee Details */}
       {sec('payee','4. Payee Details','Select payee from policy clients',
         <div>
-          {!policy ? <InfoCard type='warning'>Please load a policy first (Section 1).</InfoCard> : (
+          {!policy ? (
+            <InfoCard type='warning'>Please load a policy first (Section 1).</InfoCard>
+          ) : policyClients.length === 0 ? (
+            <div>
+              <InfoCard type='warning'>
+                No policy clients found. Clients are loaded from Life Asia LifeAssured.ClientDetails when the policy is fetched in section 1.
+              </InfoCard>
+              <div style={{ marginTop:'12px' }}>
+                <Btn variant='secondary' onClick={reloadPolicyClients} disabled={loadingPolicy}>
+                  {loadingPolicy ? 'Reloading…' : 'Reload policy from Life Asia'}
+                </Btn>
+              </div>
+            </div>
+          ) : (
             <>
-              <div style={{ marginBottom:'14px', fontSize:'13px', fontWeight:600, color:T.textMuted }}>Select the payee from the policy clients below:</div>
+              <div style={{ marginBottom:'14px', fontSize:'13px', fontWeight:600, color:T.textMuted }}>
+                Select the payee from {policyClients.length} policy client{policyClients.length === 1 ? '' : 's'} below:
+              </div>
               <div style={{ border:`1px solid ${T.border}`, borderRadius:'10px', overflow:'hidden', marginBottom:'16px' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead><tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
@@ -386,19 +648,27 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                     ))}
                   </tr></thead>
                   <tbody>
-                    {(policy?.clients||[]).map(c=>(
-                      <tr key={c.clientId} style={{ borderBottom:`1px solid ${T.borderSubtle}`, cursor:'pointer', background: data.selectedPayeeId===c.clientId?'#EFF6FF':'' }}
-                        onClick={()=>update({ selectedPayeeId:c.clientId, payeeName:c.name, payeeLastName:c.lastName, payeeClientId:c.clientId, payeeDob:c.dob, payeeGender:c.gender, payeeRole:c.role, payeeIdNumber:c.idNumber, payeePanNo:c.panNo, payeeFlat:c.flat, payeeRoad:c.road, payeeArea:c.area, payeeCity:c.city, payeeState:c.state, payeeCountry:c.country, payeePincode:c.pincode, payeeMobileNo:c.mobileNo, payeeEmailId:c.emailId })}>
-                        <td style={{ padding:'9px 14px' }}><input type='radio' readOnly checked={data.selectedPayeeId===c.clientId} style={{ cursor:'pointer' }}/></td>
-                        <td style={{ padding:'9px 14px', fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{c.clientId}</td>
-                        <td style={{ padding:'9px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{c.name} {c.lastName}</td>
-                        <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.dob}</td>
-                        <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.gender}</td>
-                        <td style={{ padding:'9px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'2px 8px', borderRadius:'99px', background:'#EFF6FF', color:T.primary }}>{c.role}</span></td>
-                        <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.relation}</td>
-                        <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted, fontFamily:'monospace' }}>{c.mobileNo}</td>
-                      </tr>
-                    ))}
+                    {policyClients.map((c, i) => {
+                      const selected = data.selectedPayeeId === c.clientId
+                      const displayRole = selected ? (data.payeeRole ?? c.role) : c.role
+                      const displayRelation = selected ? (data.payeeRelation ?? c.relation) : c.relation
+                      return (
+                        <tr
+                          key={c.clientId || `client-${i}`}
+                          style={{ borderBottom:`1px solid ${T.borderSubtle}`, cursor:'pointer', background: selected ? '#EFF6FF' : '' }}
+                          onClick={() => applyPayeeSelection(c)}
+                        >
+                          <td style={{ padding:'9px 14px' }}><input type='radio' readOnly checked={selected} style={{ cursor:'pointer' }}/></td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{c.clientId || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{[c.name, c.lastName].filter(Boolean).join(' ') || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.dob || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.gender || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{displayRole || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{displayRelation || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted, fontFamily:'monospace' }}>{c.mobileNo || '—'}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -406,19 +676,26 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                 <div style={{ padding:'14px', background:'#EFF6FF', borderRadius:'10px', border:'1px solid #BFDBFE' }}>
                   <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, marginBottom:'10px' }}>Edit Payee Details</div>
                   <Grid cols={3}>
-                    <Field label="Relation with Life Assured" required><Select value={data.payeeRelation} onChange={e=>update({payeeRelation:e.target.value})} options={['Self','Spouse','Mother','Father','Son','Daughter','Brother','Sister','Relative - Others','Friend','Not Related']}/></Field>
-                    <Field label="Status" required><Select value={data.payeeStatus} onChange={e=>update({payeeStatus:e.target.value})} options={['Alive','Deceased']}/></Field>
-                    <Field label="PAN No"><Input value={data.payeePanNo} onChange={e=>update({payeePanNo:e.target.value})}/></Field>
-                    <Field label="Mobile No"><Input value={data.payeeMobileNo} onChange={e=>update({payeeMobileNo:e.target.value})} maxLength={10}/></Field>
-                    <Field label="Tel No"><Input value={data.payeeTelNo} onChange={e=>update({payeeTelNo:e.target.value})} maxLength={7}/></Field>
-                    <Field label="Email"><Input type="email" value={data.payeeEmailId} onChange={e=>update({payeeEmailId:e.target.value})}/></Field>
+                    <Field label="Relation with Life Assured" required>
+                      <Select value={data.payeeRelation || ''} onChange={e=>updatePayeeField({ payeeRelation: e.target.value })} options={['','Self','Spouse','Mother','Father','Son','Daughter','Brother','Sister','Relative - Others','Friend','Not Related']}/>
+                    </Field>
+                    <Field label="Status" required>
+                      <Select value={data.payeeStatus || ''} onChange={e=>updatePayeeField({ payeeStatus: e.target.value })} options={['','Alive','Deceased']}/>
+                    </Field>
+                    <Field label="Role">
+                      <Input value={data.payeeRole || ''} onChange={e=>updatePayeeField({ payeeRole: e.target.value })} placeholder="Optional role"/>
+                    </Field>
+                    <Field label="PAN No"><Input value={data.payeePanNo || ''} onChange={e=>updatePayeeField({ payeePanNo: e.target.value })}/></Field>
+                    <Field label="Mobile No"><Input value={data.payeeMobileNo || ''} onChange={e=>updatePayeeField({ payeeMobileNo: e.target.value })} maxLength={10}/></Field>
+                    <Field label="Tel No"><Input value={data.payeeTelNo || ''} onChange={e=>updatePayeeField({ payeeTelNo: e.target.value })} maxLength={7}/></Field>
+                    <Field label="Email"><Input type="email" value={data.payeeEmailId || ''} onChange={e=>updatePayeeField({ payeeEmailId: e.target.value })}/></Field>
                   </Grid>
                 </div>
               )}
             </>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('payee'); setOpen('claimant') }} disabled={!data.selectedPayeeId}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('payee','claimant')} disabled={!data.selectedPayeeId || !data.payeeRelation || !data.payeeStatus}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -426,9 +703,9 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {/* 5. Claimant Details */}
       {sec('claimant','5. Claimant Details','Add one or more claimants',
         <div>
-          <ClaimantSection data={data} update={update} policy={policy}/>
+          <ClaimantSection data={data} update={update} policy={policy} states={states} toast={toast}/>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('claimant'); setOpen('la') }}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('claimant','la')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -437,22 +714,22 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {sec('la','6. Life Assured Details','Details of the insured person',
         <div>
           <Grid cols={3}>
-            <Field label="Name" required><Input value={data.laName||(policy?.clients?.[0]?.name+' '+policy?.clients?.[0]?.lastName)} onChange={e=>update({laName:e.target.value})} readOnly={!!policy}/></Field>
-            <Field label="Client ID"><Input value={data.laClientId||(policy?.clients?.[0]?.clientId)} readOnly={true}/></Field>
-            <Field label="Date of Birth"><Input type="date" value={data.laDob||(policy?.clients?.[0]?.dob)} onChange={e=>update({laDob:e.target.value})} readOnly={!!policy}/></Field>
-            <Field label="Gender"><Select value={data.laGender||(policy?.clients?.[0]?.gender)} onChange={e=>update({laGender:e.target.value})} options={['Male','Female','Other']} readOnly={!!policy}/></Field>
-            <Field label="Risk Indicator"><Input value={data.laRiskIndicator||(policy?.clients?.[0]?.riskIndicator)} readOnly={true} placeholder="From policy"/></Field>
-            <Field label="Age at Death (Auto)"><Input value={data.laAgeAtDeath||( data.dateOfDeathEvent&&(data.laDob||policy?.clients?.[0]?.dob) ? `${new Date(data.dateOfDeathEvent).getFullYear() - new Date(data.laDob||policy?.clients?.[0]?.dob).getFullYear()} yrs`:'Auto-calc')} readOnly={true}/></Field>
+            <Field label="Name" required><Input value={data.laName||(policyClients[0] ? [policyClients[0].name, policyClients[0].lastName].filter(Boolean).join(' ') : '')} onChange={e=>update({laName:e.target.value})} readOnly={!!policy}/></Field>
+            <Field label="Client ID"><Input value={data.laClientId||(policyClients[0]?.clientId)} readOnly={true}/></Field>
+            <Field label="Date of Birth"><Input type="date" value={data.laDob||(policyClients[0]?.dob)} onChange={e=>update({laDob:e.target.value})} readOnly={!!policy}/></Field>
+            <Field label="Gender"><Select value={data.laGender||(policyClients[0]?.gender)} onChange={e=>update({laGender:e.target.value})} options={['Male','Female','Other']} readOnly={!!policy}/></Field>
+            <Field label="Risk Indicator"><Input value={data.laRiskIndicator||(policyClients[0]?.riskIndicator)} readOnly={true} placeholder="From policy"/></Field>
+            <Field label="Age at Death (Auto)"><Input value={data.laAgeAtDeath||( data.dateOfDeathEvent&&(data.laDob||policyClients[0]?.dob) ? `${new Date(data.dateOfDeathEvent).getFullYear() - new Date(data.laDob||policyClients[0]?.dob).getFullYear()} yrs`:'Auto-calc')} readOnly={true}/></Field>
             <Field label="ID Proof Type"><Select value={data.laIdProofType} onChange={e=>update({laIdProofType:e.target.value})} options={['Aadhaar','PAN','Passport','Voter ID','Others']}/></Field>
-            <Field label="ID Number"><Input value={data.laIdNumber||(policy?.clients?.[0]?.idNumber)} onChange={e=>update({laIdNumber:e.target.value})}/></Field>
-            <Field label="Mobile No"><Input value={data.laMobileNo||(policy?.clients?.[0]?.mobileNo)} onChange={e=>update({laMobileNo:e.target.value})} maxLength={10}/></Field>
-            <Field label="Email"><Input type="email" value={data.laEmailId||(policy?.clients?.[0]?.emailId)} onChange={e=>update({laEmailId:e.target.value})}/></Field>
-            <Field label="Flat/House No"><Input value={data.laFlat||(policy?.clients?.[0]?.flat)} onChange={e=>update({laFlat:e.target.value})} readOnly={!!policy}/></Field>
-            <Field label="Road / Street"><Input value={data.laRoad||(policy?.clients?.[0]?.road)} onChange={e=>update({laRoad:e.target.value})} readOnly={!!policy}/></Field>
-            <Field label="Area / Locality"><Input value={data.laArea||(policy?.clients?.[0]?.area)} onChange={e=>update({laArea:e.target.value})} readOnly={!!policy}/></Field>
-            <Field label="City"><Input value={data.laCity||(policy?.clients?.[0]?.city)} onChange={e=>update({laCity:e.target.value})} readOnly={!!policy}/></Field>
-            <Field label="State"><Select value={data.laState||(policy?.clients?.[0]?.state)} onChange={e=>update({laState:e.target.value})} options={states} readOnly={!!policy}/></Field>
-            <Field label="Pincode"><Input value={data.laPincode||(policy?.clients?.[0]?.pincode)} onChange={e=>update({laPincode:e.target.value})} maxLength={6} readOnly={!!policy}/></Field>
+            <Field label="ID Number"><Input value={data.laIdNumber||(policyClients[0]?.idNumber)} onChange={e=>update({laIdNumber:e.target.value})}/></Field>
+            <Field label="Mobile No"><Input value={data.laMobileNo||(policyClients[0]?.mobileNo)} onChange={e=>update({laMobileNo:e.target.value})} maxLength={10}/></Field>
+            <Field label="Email"><Input type="email" value={data.laEmailId||(policyClients[0]?.emailId)} onChange={e=>update({laEmailId:e.target.value})}/></Field>
+            <Field label="Flat/House No"><Input value={data.laFlat||(policyClients[0]?.flat)} onChange={e=>update({laFlat:e.target.value})} readOnly={!!policy}/></Field>
+            <Field label="Road / Street"><Input value={data.laRoad||(policyClients[0]?.road)} onChange={e=>update({laRoad:e.target.value})} readOnly={!!policy}/></Field>
+            <Field label="Area / Locality"><Input value={data.laArea||(policyClients[0]?.area)} onChange={e=>update({laArea:e.target.value})} readOnly={!!policy}/></Field>
+            <Field label="City"><Input value={data.laCity||(policyClients[0]?.city)} onChange={e=>update({laCity:e.target.value})} readOnly={!!policy}/></Field>
+            <Field label="State"><Select value={data.laState||(policyClients[0]?.state)} onChange={e=>update({laState:e.target.value})} options={states} readOnly={!!policy}/></Field>
+            <Field label="Pincode"><Input value={data.laPincode||(policyClients[0]?.pincode)} onChange={e=>update({laPincode:e.target.value})} maxLength={6} readOnly={!!policy}/></Field>
           </Grid>
           <div style={{ marginTop:'20px', paddingTop:'16px', borderTop:`1px solid ${T.border}` }}>
             <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'14px' }}>Occupation Details</div>
@@ -466,7 +743,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </Grid>
           </div>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('la'); setOpen('contract') }}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('la','contract')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -497,7 +774,8 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <Field label="UW Decision Date"><Input value={data.uwDecisionDate||policy?.uwDecisionDate} readOnly={true}/></Field>
             <Field label="Advisor Code"><Input value={data.advisorCode||policy?.advisorCode} readOnly={true}/></Field>
             <Field label="Advisor Status"><Input value={data.advisorStatus||policy?.advisorStatus} readOnly={true}/></Field>
-            <Field label="Name Change Declared"><Select value={data.nameChangeDecl} onChange={e=>update({nameChangeDecl:e.target.value})} options={['Yes','No']}/></Field>
+            <Field label="Policy Age (auto)" required><Input value={data.policyAge || policyAgeInfo.policyAgeLabel || ''} readOnly placeholder="Set Date of Death in Intimation"/></Field>
+            <Field label="Name Change Declared" required><Select value={data.nameChangeDecl || ''} onChange={e=>update({nameChangeDecl:e.target.value})} options={['','Yes','No']}/></Field>
             <Field label="E-Kit Printed"><Select value={data.ekitPrinted||(policy?.ekitPrinted)} onChange={e=>update({ekitPrinted:e.target.value})} options={['Yes','No']}/></Field>
             <Field label="Assignment"><Input value={data.assignment||policy?.assignment} readOnly={true}/></Field>
             <Field label="Sales Channel"><Input value={data.salesChannel||policy?.salesChannel} readOnly={true}/></Field>
@@ -529,7 +807,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('contract'); setOpen('eagle') }}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('contract','eagle')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
@@ -557,36 +835,65 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <DynamicTable title="Income Document Details" columns={INCOME_COLS} rows={data.incomeDetails||[]} onAdd={()=>setAddingRowFor('income')} onDelete={i=>delRow('incomeDetails',i)}/>
           </div>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>{ markDone('eagle'); setOpen('trap') }}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('eagle','trap')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 9. Trap Score */}
-      {sec('trap','9. Trap Score Details','Automated fraud risk scoring',
+      {sec('trap','9. Trap Score Details','Automated fraud risk scoring — required before Requirements',
         <div>
           {data.trapScore ? (
-            <div style={{ marginBottom:'16px', padding:'16px', borderRadius:'10px', background:'#F0FDF4', border:'1px solid #A7F3D0' }}>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'12px', marginBottom:'12px' }}>
+            <div style={{ marginBottom:'20px', padding:'16px', borderRadius:'10px', background:'#F0FDF4', border:'1px solid #A7F3D0' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px', marginBottom:'12px' }}>
                 {[['Trap Score',data.trapScore],['Risk Level',data.trapRisk],['Generated On',data.trapDate]].map(([k,v])=>(
                   <div key={k}><div style={{ fontSize:'10px', fontWeight:700, color:'#047857', textTransform:'uppercase' }}>{k}</div><div style={{ fontSize:'16px', fontWeight:900, color:'#065F46', marginTop:'2px' }}>{v}</div></div>
                 ))}
               </div>
               {data.trapRemarks && <div style={{ fontSize:'12px', color:'#065F46', fontWeight:500 }}>Remarks: {data.trapRemarks}</div>}
             </div>
-          ) : <InfoCard type='info'>No trap score generated yet. Click the button below to generate it.</InfoCard>}
-          <div style={{ marginTop:'16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <Btn variant='warning' onClick={handleTrapScore} disabled={generatingTrap}>
-              {generatingTrap ? '⏳ Generating...' : '🎯 Generate Trap Score'}
-            </Btn>
-            {data.trapScore && <Btn onClick={()=>{ markDone('trap'); setOpen('agent') }}>Save & Continue →</Btn>}
-          </div>
+          ) : (
+            <div style={{ marginBottom:'20px', padding:'18px 20px', borderRadius:'12px', background:'linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%)', border:'2px solid #F59E0B', boxShadow:'0 4px 14px rgba(245,158,11,0.15)' }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'12px', marginBottom:'14px' }}>
+                <span style={{ fontSize:'28px', lineHeight:1 }}>🎯</span>
+                <div>
+                  <div style={{ fontSize:'15px', fontWeight:800, color:'#92400E', marginBottom:'4px' }}>
+                    Trap score required
+                  </div>
+                  <div style={{ fontSize:'13px', color:'#B45309', lineHeight:1.5 }}>
+                    Complete Intimation, Cause, Payee, Claimant, and Contract sections first, then click the button below. You cannot proceed to Requirements without a generated trap score.
+                  </div>
+                </div>
+              </div>
+              <Btn
+                variant='warning'
+                size='lg'
+                onClick={handleTrapScore}
+                disabled={generatingTrap}
+                style={{ width:'100%', maxWidth:'420px' }}
+              >
+                {generatingTrap ? '⏳ Generating trap score…' : '🎯 Generate Trap Score'}
+              </Btn>
+            </div>
+          )}
+          {data.trapScore && (
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'12px' }}>
+              <Btn variant='warning' size='md' onClick={handleTrapScore} disabled={generatingTrap}>
+                {generatingTrap ? '⏳ Regenerating…' : '↻ Regenerate Trap Score'}
+              </Btn>
+              <Btn onClick={()=>tryContinue('trap','agent')}>Save & Continue →</Btn>
+            </div>
+          )}
         </div>
       )}
 
       {/* 10. Agent Repudiation History */}
       {sec('agent','10. Agent Repudiation History','Historical repudiation records for this advisor',
         <div>
+          <InfoCard type="info">Life Assured, Eagle Screen, and Agent Repudiation are optional for advancing — but trap score needs life assured gender/DOB from policy or section 6.</InfoCard>
+          <div style={{ marginTop:'12px', marginBottom:'12px', maxWidth:'320px' }}>
+            <Field label="Advisor history count (optional)"><Input value={data.advisorHistoryCount || ''} onChange={e=>update({ advisorHistoryCount: e.target.value })}/></Field>
+          </div>
           {!policy?.agentRepudiation?.length ? (
             <InfoCard type='success'>No repudiation history found for Advisor Code: {data.advisorCode||'N/A'}.</InfoCard>
           ) : (
@@ -612,25 +919,46 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn variant='success' onClick={()=>{ markDone('agent'); onComplete() }}>✓ Complete Demographics</Btn>
+            <Btn variant='success' onClick={()=>{
+              const { valid, missing } = validateDemographicsComplete(data, { policy, fromRegisterGate })
+              if (!valid) {
+                showValidationToast(toast, missing, 'Complete mandatory demographics sections')
+                return
+              }
+              markDone('agent')
+              update({
+                ...syncDemographicsSections(data, policy),
+                _demographicsComplete: true,
+              })
+              onComplete()
+            }}>✓ Next: Requirements →</Btn>
           </div>
         </div>
       )}
 
       {/* Modals */}
-      {showCauseModal && <CauseModal causes={causes} onSelect={selectCause} onClose={()=>setShowCauseModal(false)}/>}
-      {addingRowFor==='hospital' && <AddRowModal title="Hospital Detail" fields={HOSPITAL_FIELDS} onSave={r=>addRow('hospitalDetails',r)} onClose={()=>setAddingRowFor(null)}/>}
-      {addingRowFor==='doctor' && <AddRowModal title="Doctor Detail" fields={DOCTOR_FIELDS} onSave={r=>addRow('doctorDetails',r)} onClose={()=>setAddingRowFor(null)}/>}
-      {addingRowFor==='proof' && <AddRowModal title="Proof / Document" fields={PROOF_FIELDS} onSave={r=>addRow('proofDetails',r)} onClose={()=>setAddingRowFor(null)}/>}
-      {addingRowFor==='witness'   && <AddRowModal title="Witness Detail"          fields={WITNESS_FIELDS}    onSave={r=>addRow('witnessDetails',r)}   onClose={()=>setAddingRowFor(null)}/>}
-      {addingRowFor==='insProof'  && <AddRowModal title="Insurance Proof Detail"  fields={INS_PROOF_FIELDS}  onSave={r=>addRow('insProofDetails',r)}  onClose={()=>setAddingRowFor(null)}/>}
-      {addingRowFor==='income'    && <AddRowModal title="Income Document Detail"  fields={INCOME_FIELDS}     onSave={r=>addRow('incomeDetails',r)}    onClose={()=>setAddingRowFor(null)}/>}
+      {showCauseModal && (
+        <CauseModal
+          causes={causes}
+          loading={loadingCauses}
+          loadError={causeLoadError}
+          onSelect={selectCause}
+          onClose={() => setShowCauseModal(false)}
+          onRetry={loadCauses}
+        />
+      )}
+      {addingRowFor==='hospital' && <AddRowModal title="Hospital Detail" fields={HOSPITAL_FIELDS} onInvalid={(m)=>showValidationToast(toast,m,'Row incomplete')} onSave={r=>addRow('hospitalDetails',r)} onClose={()=>setAddingRowFor(null)}/>}
+      {addingRowFor==='doctor' && <AddRowModal title="Doctor Detail" fields={DOCTOR_FIELDS} onInvalid={(m)=>showValidationToast(toast,m,'Row incomplete')} onSave={r=>addRow('doctorDetails',r)} onClose={()=>setAddingRowFor(null)}/>}
+      {addingRowFor==='proof' && <AddRowModal title="Proof / Document" fields={PROOF_FIELDS} onInvalid={(m)=>showValidationToast(toast,m,'Row incomplete')} onSave={r=>addRow('proofDetails',r)} onClose={()=>setAddingRowFor(null)}/>}
+      {addingRowFor==='witness'   && <AddRowModal title="Witness Detail"          fields={WITNESS_FIELDS}    onInvalid={(m)=>showValidationToast(toast,m,'Row incomplete')} onSave={r=>addRow('witnessDetails',r)}   onClose={()=>setAddingRowFor(null)}/>}
+      {addingRowFor==='insProof'  && <AddRowModal title="Insurance Proof Detail"  fields={INS_PROOF_FIELDS}  onInvalid={(m)=>showValidationToast(toast,m,'Row incomplete')} onSave={r=>addRow('insProofDetails',r)}  onClose={()=>setAddingRowFor(null)}/>}
+      {addingRowFor==='income'    && <AddRowModal title="Income Document Detail"  fields={INCOME_FIELDS}     onInvalid={(m)=>showValidationToast(toast,m,'Row incomplete')} onSave={r=>addRow('incomeDetails',r)}    onClose={()=>setAddingRowFor(null)}/>}
     </div>
   )
 }
 
 /* ── Claimant Section (inline) ── */
-function ClaimantSection({ data, update, policy }) {
+function ClaimantSection({ data, update, policy, states = [], toast }) {
   const [sameAsPayee, setSameAsPayee] = useState(false)
   const [form, setForm] = useState({})
   const set = (k,v) => setForm(p=>({...p,[k]:v}))
@@ -638,14 +966,37 @@ function ClaimantSection({ data, update, policy }) {
   const handleSameAsPayee = (checked) => {
     setSameAsPayee(checked)
     if (checked && data.selectedPayeeId) {
-      setForm({ clientId:data.payeeClientId, name:data.payeeName, dob:data.payeeDob, gender:data.payeeGender, flat:data.payeeFlat, road:data.payeeRoad, area:data.payeeArea, city:data.payeeCity, state:data.payeeState, pincode:data.payeePincode, mobileNo:data.payeeMobileNo, emailId:data.payeeEmailId, panNo:data.payeePanNo, idNumber:data.payeeIdNumber })
+      const payee = data.selectedPayee || {}
+      setForm({
+        clientId: data.payeeClientId || payee.clientId,
+        name: data.payeeName || payee.name,
+        lastName: data.payeeLastName || payee.lastName,
+        dob: data.payeeDob || payee.dob,
+        gender: data.payeeGender || payee.gender,
+        relation: data.payeeRelation || payee.relationWithLifeAsr,
+        flat: data.payeeFlat || payee.flat,
+        road: data.payeeRoad || payee.road,
+        area: data.payeeArea || payee.area,
+        city: data.payeeCity || payee.city,
+        state: data.payeeState || payee.state,
+        pincode: data.payeePincode || payee.pinCode,
+        mobileNo: data.payeeMobileNo || payee.mobileNo,
+        emailId: data.payeeEmailId || payee.emailId,
+        panNo: data.payeePanNo || payee.panNo,
+        idNumber: data.payeeIdNumber || payee.idNumber,
+      })
     } else setForm({})
   }
 
   const addClaimant = () => {
-    if (!form.name || !form.mobileNo) return
+    const { valid, missing } = validateClaimantDraft(form)
+    if (!valid) {
+      showValidationToast(toast, missing, 'Add claimant')
+      return
+    }
     update({ claimants:[...(data.claimants||[]), {...form}] })
     setForm({}); setSameAsPayee(false)
+    toast?.('success', 'Claimant added', `${form.name} added to the claimant list.`)
   }
 
   return (
@@ -656,8 +1007,8 @@ function ClaimantSection({ data, update, policy }) {
       </div>
       <Grid cols={3}>
         <Field label="Name" required><Input value={form.name} onChange={e=>set('name',e.target.value)} readOnly={sameAsPayee}/></Field>
-        <Field label="Client ID"><Input value={form.clientId} onChange={e=>set('clientId',e.target.value)} readOnly={sameAsPayee}/></Field>
-        <Field label="Date of Birth"><Input type="date" value={form.dob} onChange={e=>set('dob',e.target.value)} readOnly={sameAsPayee}/></Field>
+        <Field label="Client ID" required><Input value={form.clientId} onChange={e=>set('clientId',e.target.value)} readOnly={sameAsPayee}/></Field>
+        <Field label="Date of Birth" required><Input type="date" value={form.dob} onChange={e=>set('dob',e.target.value)} readOnly={sameAsPayee}/></Field>
         <Field label="Gender" required><Select value={form.gender} onChange={e=>set('gender',e.target.value)} options={['Male','Female','Other']} readOnly={sameAsPayee}/></Field>
         <Field label="Role" required><Select value={form.role} onChange={e=>set('role',e.target.value)} options={['Proposer','Nominee','Appointee','Joint Life','Joint Payee','Life Assured','Others']}/></Field>
         <Field label="Relation with Life Assured" required><Select value={form.relation} onChange={e=>set('relation',e.target.value)} options={['Self','Spouse','Mother','Father','Son','Daughter','Brother','Sister','Relative - Others','Friend','Not Related']}/></Field>
@@ -667,12 +1018,12 @@ function ClaimantSection({ data, update, policy }) {
         <Field label="PAN Validity"><Select value={form.panValidFlag} onChange={e=>set('panValidFlag',e.target.value)} options={['Valid','Not Valid','Not Available']}/></Field>
         <Field label="Politically Exposed"><Select value={form.politicallyExposed} onChange={e=>set('politicallyExposed',e.target.value)} options={['Yes','No']}/></Field>
         <Field label="Occupation"><Input value={form.occupation} onChange={e=>set('occupation',e.target.value)} readOnly={sameAsPayee}/></Field>
-        <Field label="Flat / House"><Input value={form.flat} onChange={e=>set('flat',e.target.value)} readOnly={sameAsPayee}/></Field>
-        <Field label="Road / Street"><Input value={form.road} onChange={e=>set('road',e.target.value)} readOnly={sameAsPayee}/></Field>
-        <Field label="Area"><Input value={form.area} onChange={e=>set('area',e.target.value)} readOnly={sameAsPayee}/></Field>
+        <Field label="Flat / House" required><Input value={form.flat} onChange={e=>set('flat',e.target.value)} readOnly={sameAsPayee}/></Field>
+        <Field label="Road / Street" required><Input value={form.road} onChange={e=>set('road',e.target.value)} readOnly={sameAsPayee}/></Field>
+        <Field label="Area" required><Input value={form.area} onChange={e=>set('area',e.target.value)} readOnly={sameAsPayee}/></Field>
         <Field label="City" required><Input value={form.city} onChange={e=>set('city',e.target.value)} readOnly={sameAsPayee}/></Field>
-        <Field label="State"><Select value={form.state} onChange={e=>set('state',e.target.value)} options={states} readOnly={sameAsPayee}/></Field>
-        <Field label="Pincode"><Input value={form.pincode} onChange={e=>set('pincode',e.target.value)} maxLength={6} readOnly={sameAsPayee}/></Field>
+        <Field label="State" required><Select value={form.state} onChange={e=>set('state',e.target.value)} options={states} readOnly={sameAsPayee}/></Field>
+        <Field label="Pincode" required><Input value={form.pincode} onChange={e=>set('pincode',e.target.value)} maxLength={6} readOnly={sameAsPayee}/></Field>
       </Grid>
       <div style={{ marginTop:'12px', display:'flex', justifyContent:'flex-end' }}>
         <Btn variant='secondary' onClick={addClaimant}>+ Add Claimant to List</Btn>

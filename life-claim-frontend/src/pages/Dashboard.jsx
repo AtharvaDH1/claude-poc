@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { Navigate } from 'react-router-dom'
+import { isAdminOnlyUser, hasAdminRole, postLoginPath } from '../util/loginHelpers'
+import { openClaimWorkspace } from '../util/navigation'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import dashboardService from '../services/dashboardService'
@@ -10,7 +13,7 @@ import {
   Download, Eye, Edit3,
   Trash2, TrendingUp, TrendingDown, ClipboardList,
   AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, IndianRupee,
-  Plus, FileText, X, Search, Star
+  Plus, FileText, X, Search, Star, CheckSquare
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -296,7 +299,7 @@ function DeleteConfirm({ claim, onConfirm, onCancel }) {
    MAIN DASHBOARD
 ══════════════════════════════════════════ */
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, hasRole } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -467,9 +470,39 @@ export default function Dashboard() {
     </div>
   )
 
+  if (isAdminOnlyUser(user?.roles)) {
+    return <Navigate to={postLoginPath(user?.roles)} replace />
+  }
+
   return (
     <AppLayout pageTitle="Dashboard">
       <div style={{ padding:'24px' }}>
+
+          {/* Quick actions */}
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'10px', marginBottom:'20px' }}>
+            <button type="button" onClick={() => navigate('/claim-search')}
+              style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+              <Search size={14} /> Search Claims
+            </button>
+            {hasRole('Pre Assessor') && (
+              <button type="button" onClick={() => navigate('/policy-search')}
+                style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+                <Plus size={14} /> Register New Claim
+              </button>
+            )}
+            {hasRole(['Assessor', 'Verifier']) && (
+              <button type="button" onClick={() => navigate('/my-task')}
+                style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+                <CheckSquare size={14} /> My Tasks
+              </button>
+            )}
+            {hasAdminRole(user?.roles) && (
+              <button type="button" onClick={() => navigate('/admin')}
+                style={{ padding:'9px 16px', borderRadius:'8px', border:'none', background:T.primary, fontSize:'12px', fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.25)' }}>
+                Go to Admin Overview
+              </button>
+            )}
+          </div>
 
           {/* Page heading */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'20px' }}>
@@ -481,7 +514,7 @@ export default function Dashboard() {
                 Here's an overview of all claims activity.
               </p>
             </div>
-            <button onClick={handleExport}
+            <button type="button" onClick={handleExport}
               style={{ display:'flex', alignItems:'center', gap:'7px', padding:'9px 18px', borderRadius:'8px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(29,78,216,0.3)', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
               onMouseEnter={e => { e.currentTarget.style.background=T.primaryHover; e.currentTarget.style.transform='translateY(-1px)' }}
               onMouseLeave={e => { e.currentTarget.style.background=T.primary; e.currentTarget.style.transform='' }}>
@@ -709,7 +742,7 @@ export default function Dashboard() {
                           <td style={{ padding:'12px 16px' }}>
                             <div style={{ display:'flex', gap:'4px', opacity:0, transition:'opacity 0.15s' }} className="row-actions">
                               {[
-                                { I:Eye,    hc:'#1D4ED8', hb:'#EFF6FF', fn: () => toast('info','View Claim',`Opening ${claim.id}...`) },
+                                { I:Eye,    hc:'#1D4ED8', hb:'#EFF6FF', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) },
                                 { I:Edit3,  hc:'#059669', hb:'#ECFDF5', fn: () => toast('info','Edit Claim',`Editing ${claim.id}...`) },
                                 { I:Trash2, hc:'#DC2626', hb:'#FEF2F2', fn: () => setDeleteClaim(claim) },
                               ].map(({I,hc,hb,fn},i)=>(

@@ -81,8 +81,6 @@ const authorizePreviewNodeAccess = async (req, res, next) => {
       return res.status(400).json({ message: 'Document node ID is required.' });
     }
 
-    if (isAdmin(roles)) return next();
-
     const [rows] = await db.execute(
       'SELECT claimId FROM claims_poc.UploadedDocuments WHERE AlfrescoFileId = ? LIMIT 1',
       [nodeId]
@@ -93,6 +91,12 @@ const authorizePreviewNodeAccess = async (req, res, next) => {
     }
 
     const claimNumber = String(rows[0].claimId).trim();
+
+    if (isAdmin(roles) || hasOperationalClaimRole(roles)) {
+      req.claimNumber = claimNumber;
+      return next();
+    }
+
     const allowed = await hasClaimAccess(username, roles, claimNumber);
     if (!allowed) {
       return res

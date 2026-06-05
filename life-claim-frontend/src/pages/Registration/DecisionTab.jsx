@@ -3,12 +3,18 @@ import { Field, Input, Select, Textarea, SubTabNav, Grid, Btn, InfoCard, T } fro
 import { getSystemDecision } from '../../services/masterService'
 import { registerClaim as registerClaimAPI } from '../../services/claimsService'
 import { useToast } from '../../components/Toast'
+import {
+  validatePreAssessorSubmit,
+  validateAssessorSubmit,
+  showValidationToast,
+} from '../../util/registrationValidation'
+import { buildRegistrationPayload } from '../../util/buildRegistrationPayload'
 import { useNavigate } from 'react-router-dom'
 
 const fmtRs = n => n ? `₹${Number(n)>=1e7?(Number(n)/1e7).toFixed(1)+'Cr':Number(n)>=1e5?(Number(n)/1e5).toFixed(1)+'L':Number(n).toLocaleString('en-IN')}` : '—'
 
 /* ── Success Modal ── */
-function SuccessModal({ claimNo, onClose, onAnother }) {
+function SuccessModal({ claimNo, onViewClaim, onAnother }) {
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }}>
       <div style={{ background:'#fff', borderRadius:'20px', width:'460px', padding:'40px', textAlign:'center', boxShadow:'0 32px 80px rgba(0,0,0,0.25)' }}>
@@ -23,22 +29,30 @@ function SuccessModal({ claimNo, onClose, onAnother }) {
         </div>
         <div style={{ display:'flex', gap:'10px' }}>
           <button onClick={onAnother} style={{ flex:1, padding:'11px', borderRadius:'10px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', color:T.textSecondary, fontFamily:'Inter,sans-serif' }}>Register Another</button>
-          <button onClick={onClose} style={{ flex:1, padding:'11px', borderRadius:'10px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)' }}>View Dashboard</button>
+          <button onClick={onViewClaim} style={{ flex:1, padding:'11px', borderRadius:'10px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)' }}>View Claim</button>
         </div>
       </div>
     </div>
   )
 }
 
-export default function DecisionTab({ data, update, policy }) {
+const ALL_DECISION_TABS = ['System Decision', 'Accessor Decision', 'Verification', 'Summary']
+const PRE_ASSESSOR_TABS = ['System Decision', 'Summary']
+
+export default function DecisionTab({ data, update, policy, isPreAssessor = false }) {
   const toast = useToast()
   const navigate = useNavigate()
-  const [subTab, setSubTab] = useState('System Decision')
+  const decisionTabs = isPreAssessor ? PRE_ASSESSOR_TABS : ALL_DECISION_TABS
+  const [subTab, setSubTab] = useState(decisionTabs[0])
   const [loadingSys, setLoadingSys] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [claimNo, setClaimNo] = useState(null)
 
   const handleGenSystemDecision = async () => {
+    if (!data._demographicsComplete) {
+      toast('warning', 'Demographics incomplete', 'Complete the Demographics tab before generating system decision.')
+      return
+    }
     setLoadingSys(true)
     try {
       const res = await getSystemDecision({ ...data, sumAssured: data.sumAssured||policy?.sumAssured })
@@ -48,15 +62,44 @@ export default function DecisionTab({ data, update, policy }) {
     finally { setLoadingSys(false) }
   }
 
+  const submitCheck = isPreAssessor
+    ? validatePreAssessorSubmit(data, { policy, fromRegisterGate: Boolean(policy?.registerForm) })
+    : validateAssessorSubmit(data, { policy })
+
   const handleSubmit = async () => {
-    if (!data.accessorDecision) { toast('warning','Missing','Please enter the Accessor Decision before submitting.'); return }
+    if (!submitCheck.valid) {
+      showValidationToast(toast, submitCheck.missing, 'Cannot register claim')
+      return
+    }
     setSubmitting(true)
+    const payload = buildRegistrationPayload({
+      ...data,
+      createdBy: data.createdBy || sessionStorage.getItem('loggedUser') || '',
+      verifierDetails: {
+        ...(data.verifierDetails || {}),
+        sendMail: data.sendMail !== 'No' && data.verifierDetails?.sendMail !== false,
+      },
+      systemDetails: data.systemDetails || {
+        sysRecommendation: data.sysRecommendation,
+        sysPayableAmount: data.sysPayableAmount,
+        sysReason: data.sysReason,
+        sysRiskScore: data.sysRiskScore,
+        sysProcessedOn: data.sysProcessedOn,
+      },
+    }, policy)
     try {
-      const res = await registerClaimAPI(data)
-      setClaimNo(res.claimNo || res.claimNumber || res.message)
-    } catch(e) { toast('error','Submission Failed',e.message) }
-    finally { setSubmitting(false) }
+      const res = await registerClaimAPI(payload)
+      const num = res?.claimNo || res?.claimNumber || res?.data?.claimNumber
+      if (!num) throw new Error(res?.message || res?.error || 'Registration failed')
+      setClaimNo(num)
+    } catch (e) {
+      toast('error', 'Submission Failed', e?.message || 'Server is unavailable. Try again later.')
+    } finally {
+      setSubmitting(false)
+    }
   }
+
+  const canSubmit = submitCheck.valid
 
   const summaryItems = [
     { title:'Policy & Claim Setup', items:[ ['Policy ID',data.policyId], ['Claim Type',data.claimType], ['Product',data.productName||policy?.productName], ['Sum Assured',fmtRs(data.sumAssured||policy?.sumAssured)] ] },
@@ -64,12 +107,14 @@ export default function DecisionTab({ data, update, policy }) {
     { title:'Claimant', items:[ ['Name',data.claimantName||(data.claimants?.[0]?.name)], ['Relation',data.claimants?.[0]?.relation], ['Mobile',data.claimants?.[0]?.mobileNo] ] },
     { title:'Requirements', items:[ ['Documents Received', Object.values(data.reqStatus||{}).filter(v=>v==='Received').length.toString()], ['Pending', Object.values(data.reqStatus||{}).filter(v=>v==='Pending').length.toString()] ] },
     { title:'Assessment', items:[ ['Questions Answered', Object.keys(data.assessmentAnswers||{}).length.toString()], ['Case Trigger',data.caseTrigger||'—'], ['Priority Flag',data.priorityFlag||'—'] ] },
-    { title:'Decision', items:[ ['System Recommendation',data.sysRecommendation||'Not generated'], ['Accessor Decision',data.accessorDecision||'Pending'], ['Payable Amount',fmtRs(data.accessorAmount||data.sysPayableAmount)] ] },
+    { title:'Decision', items: isPreAssessor
+      ? [['System Recommendation',data.sysRecommendation||'Not generated'], ['Payable Amount',fmtRs(data.sysPayableAmount)], ['Trap Score',data.trapScore||'—']]
+      : [['System Recommendation',data.sysRecommendation||'Not generated'], ['Accessor Decision',data.accessorDecision||'Pending'], ['Payable Amount',fmtRs(data.accessorAmount||data.sysPayableAmount)]] },
   ]
 
   return (
     <div style={{ padding:'24px' }}>
-      <SubTabNav tabs={['System Decision','Accessor Decision','Verification','Summary']} active={subTab} onChange={setSubTab}/>
+      <SubTabNav tabs={decisionTabs} active={subTab} onChange={setSubTab}/>
 
       {/* ── SYSTEM DECISION ── */}
       {subTab === 'System Decision' && (
@@ -204,14 +249,35 @@ export default function DecisionTab({ data, update, policy }) {
           </div>
 
           {/* Submit */}
-          <div style={{ padding:'20px', background: data.accessorDecision?'#ECFDF5':'#FFFBEB', borderRadius:'12px', border:`1px solid ${data.accessorDecision?'#A7F3D0':'#FDE68A'}` }}>
-            {!data.accessorDecision ? (
-              <div style={{ fontSize:'13px', fontWeight:600, color:'#92400E' }}>⚠️ Please complete the Accessor Decision before submitting the claim.</div>
+          {isPreAssessor && (
+            <div style={{ marginBottom:'16px' }}>
+              <Grid cols={2}>
+                <Field label="Send notification email">
+                  <Select value={data.sendMail ?? 'Yes'} onChange={e=>update({ sendMail: e.target.value, verifierDetails: { ...(data.verifierDetails||{}), sendMail: e.target.value !== 'No' } })} options={['Yes','No']}/>
+                </Field>
+              </Grid>
+            </div>
+          )}
+          <div style={{ padding:'20px', background: canSubmit?'#ECFDF5':'#FFFBEB', borderRadius:'12px', border:`1px solid ${canSubmit?'#A7F3D0':'#FDE68A'}` }}>
+            {!canSubmit ? (
+              <div>
+                <div style={{ fontSize:'13px', fontWeight:700, color:'#92400E', marginBottom:'8px' }}>
+                  ⚠️ Complete the following before registering:
+                </div>
+                <ul style={{ margin:0, paddingLeft:'18px', fontSize:'12px', fontWeight:600, color:'#B45309', lineHeight:1.7 }}>
+                  {submitCheck.missing.slice(0, 6).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                  {submitCheck.missing.length > 6 && (
+                    <li>…and {submitCheck.missing.length - 6} more item(s)</li>
+                  )}
+                </ul>
+              </div>
             ) : (
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div>
                   <div style={{ fontSize:'14px', fontWeight:700, color:'#065F46' }}>Ready to Submit</div>
-                  <div style={{ fontSize:'12px', color:'#047857', marginTop:'2px' }}>All sections complete. Click to register this claim.</div>
+                  <div style={{ fontSize:'12px', color:'#047857', marginTop:'2px' }}>All wizard sections complete. This creates the claim in MySQL (single submit).</div>
                 </div>
                 <Btn variant='success' size='lg' onClick={handleSubmit} disabled={submitting}>
                   {submitting ? '⏳ Registering...' : '📤 Register Claim'}
@@ -223,7 +289,11 @@ export default function DecisionTab({ data, update, policy }) {
       )}
 
       {claimNo && (
-        <SuccessModal claimNo={claimNo} onClose={()=>navigate('/dashboard')} onAnother={()=>{ setClaimNo(null); navigate('/registration') }}/>
+        <SuccessModal
+          claimNo={claimNo}
+          onViewClaim={() => navigate(`/registration-fetch/${claimNo}`)}
+          onAnother={() => { setClaimNo(null); navigate('/policy-search') }}
+        />
       )}
     </div>
   )

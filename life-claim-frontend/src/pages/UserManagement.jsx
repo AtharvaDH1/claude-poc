@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import { getUsers, createUser, updateUser, deleteUser } from '../services/userService'
+import { getRoles } from '../services/masterService'
+import roleService from '../services/roleService'
 import { useEffect } from 'react'
 import { Users, Plus, Edit3, Trash2, X, Save, Search } from 'lucide-react'
 
@@ -39,7 +41,8 @@ function Modal({ title, onClose, children }) {
   )
 }
 
-function UserForm({ data, onChange, onSave, onClose, title }) {
+function UserForm({ data, onChange, onSave, onClose, title, roleOptions = [] }) {
+  const roles = roleOptions.length ? roleOptions : Object.keys(ROLE_COLORS)
   const inp = (label, key, opts={}) => (
     <div key={key}>
       <label style={{ display:'block', fontSize:'12px', fontWeight:600, color:T.textSecondary, marginBottom:'5px' }}>{label}</label>
@@ -63,7 +66,7 @@ function UserForm({ data, onChange, onSave, onClose, title }) {
         {inp('Full Name','name',{ placeholder:'e.g. Priya Sharma' })}
         {inp('Username','username',{ placeholder:'e.g. psharma' })}
         {inp('Email Address','email',{ type:'email', placeholder:'email@dhdigital.co.in' })}
-        {inp('Role','role',{ options:Object.keys(ROLE_COLORS) })}
+        {inp('Role','role',{ options: roles })}
         {inp('Status','status',{ options:['Active','Inactive'] })}
       </div>
       <div style={{ padding:'16px 20px', borderTop:`1px solid ${T.border}`, display:'flex', justifyContent:'flex-end', gap:'10px' }}>
@@ -109,6 +112,16 @@ export default function UserManagement() {
   const [deleteUser, setDeleteUser] = useState(null)
   const [newUser, setNewUser] = useState(BLANK)
   const [hovRow, setHovRow] = useState(null)
+  const [roleOptions, setRoleOptions] = useState(Object.keys(ROLE_COLORS))
+  const [newRoleName, setNewRoleName] = useState('')
+  const [showAddRole, setShowAddRole] = useState(false)
+
+  useEffect(() => {
+    getRoles().then((r) => {
+      const names = (r || []).map((x) => x.role_name || x.name || x.ROLE_NAME || x).filter(Boolean)
+      if (names.length) setRoleOptions(names)
+    }).catch(() => {})
+  }, [])
 
   // Load real users from backend
   useEffect(() => {
@@ -180,11 +193,12 @@ export default function UserManagement() {
             <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em', margin:'0 0 4px' }}>User Management</h1>
             <p style={{ fontSize:'13px', color:T.textMuted, fontWeight:500 }}>Manage user accounts, roles, and access permissions.</p>
           </div>
-          <button onClick={()=>setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 20px', borderRadius:'8px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)', transition:'all 0.15s' }}
-            onMouseEnter={e=>{ e.currentTarget.style.background=T.primaryHover; e.currentTarget.style.transform='translateY(-1px)' }}
-            onMouseLeave={e=>{ e.currentTarget.style.background=T.primary; e.currentTarget.style.transform='' }}>
-            <Plus size={15}/> Add User
-          </button>
+          <div style={{ display:'flex', gap:'8px' }}>
+            <button type="button" onClick={() => setShowAddRole(true)} style={{ padding:'10px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', color:T.textSecondary }}>+ Role</button>
+            <button type="button" onClick={()=>setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 20px', borderRadius:'8px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)' }}>
+              <Plus size={15}/> Add User
+            </button>
+          </div>
         </div>
 
         {/* Summary cards */}
@@ -284,11 +298,31 @@ export default function UserManagement() {
         </div>
       </div>
 
+      {showAddRole && (
+        <Modal title="Add role" onClose={() => setShowAddRole(false)}>
+          <div style={{ padding: '20px' }}>
+            <input value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} placeholder="Role name" style={{ width: '100%', height: '40px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${T.border}`, fontFamily: 'Inter,sans-serif' }} />
+          </div>
+          <div style={{ padding: '16px 20px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" onClick={() => setShowAddRole(false)} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Cancel</button>
+            <button type="button" onClick={async () => {
+              if (!newRoleName.trim()) return
+              try {
+                await roleService.addRoles({ role_name: newRoleName.trim() })
+                setRoleOptions((p) => [...p, newRoleName.trim()])
+                toast('success', 'Role added', newRoleName)
+                setNewRoleName('')
+                setShowAddRole(false)
+              } catch (e) { toast('error', 'Failed', e.message) }
+            }} style={{ padding: '9px 22px', borderRadius: '8px', border: 'none', background: T.primary, color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Save role</button>
+          </div>
+        </Modal>
+      )}
       {showAdd && (
-        <UserForm title="Add New User" data={newUser} onChange={(k,v)=>setNewUser(p=>({...p,[k]:v}))} onSave={handleAdd} onClose={()=>{ setShowAdd(false); setNewUser(BLANK) }}/>
+        <UserForm title="Add New User" data={newUser} roleOptions={roleOptions} onChange={(k,v)=>setNewUser(p=>({...p,[k]:v}))} onSave={handleAdd} onClose={()=>{ setShowAdd(false); setNewUser(BLANK) }}/>
       )}
       {editUser && (
-        <UserForm title="Edit User" data={editUser} onChange={(k,v)=>setEditUser(p=>({...p,[k]:v}))} onSave={handleEdit} onClose={()=>setEditUser(null)}/>
+        <UserForm title="Edit User" data={editUser} roleOptions={roleOptions} onChange={(k,v)=>setEditUser(p=>({...p,[k]:v}))} onSave={handleEdit} onClose={()=>setEditUser(null)}/>
       )}
       {deleteUser && (
         <DeleteConfirm user={deleteUser} onConfirm={handleDelete} onCancel={()=>setDeleteUser(null)}/>

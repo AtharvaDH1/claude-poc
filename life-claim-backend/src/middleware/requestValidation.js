@@ -36,6 +36,9 @@ const validateKeycloakTokenBody = validateBody((body) => {
   if (!password || !maxLen(password, 256)) {
     errors.password = 'Password is required and must be <= 256 chars.';
   }
+  if (body.captchaToken !== undefined && !maxLen(body.captchaToken, 4096)) {
+    errors.captchaToken = 'captchaToken is too long.';
+  }
   return errors;
 });
 

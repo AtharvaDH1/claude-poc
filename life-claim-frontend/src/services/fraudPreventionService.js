@@ -17,7 +17,7 @@ const fraudPreventionService = async (pincode, city) => {
 
     if (!response.ok) {
         const errorText = await response.text();
-        return `Server error: ${response.status} - ${errorText}`;
+        throw new Error(`Rule 1 check failed: ${response.status} - ${errorText}`);
     }
     const fraudPreventionData = await response.json();
     console.log('Services >> fruadPreventionService.js >> fraudPreventionData > ', fraudPreventionData);
@@ -64,9 +64,11 @@ const ruleThreeService = async (source) => {
     return ruleThreeData;
 }
 
-//To get the data for rule 4
+// Rule 4 — body: { numbers: { LA_number1, LA_number2 } }
 const ruleFourService = async (numbers) => {
-    console.log('Services >> FraudPreventionService.js >> ruleFourService Methed called');
+    const payload = numbers?.LA_number1 != null || numbers?.LA_number2 != null
+      ? { numbers }
+      : { numbers: { LA_number1: numbers?.[0] || '', LA_number2: numbers?.[1] || '' } }
     try {
         const ruleFourResponse = await wrapper.fetchWithToken(`/fraudprevention/mobile_Number_Check`,
             {
@@ -74,7 +76,7 @@ const ruleFourService = async (numbers) => {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ numbers })
+                body: JSON.stringify(payload)
             }
         );
 
@@ -93,18 +95,17 @@ const ruleFourService = async (numbers) => {
 }
 
 // To add the Accessor feedback for visible rules 
-const addAccessorFeedback = async (feedback, claimNumber) => {
-    const username = sessionStorage.getItem('loggedUser');
+const addAccessorFeedback = async (feedback, claimNumber, roleOverride, usernameOverride) => {
+    const username = usernameOverride || sessionStorage.getItem('loggedUser');
 
     console.log('Services >> FraudPreventionService.js >> addAccessorFeedback Methed called ', feedback, '\n Username > ', username, '\n Claim Number > ', claimNumber);
 
     try {
-        console.log('Services >> FraudPreventionService.js >> About to call userDetailsService.getUserById');
-        const userDetails = await userDetailsService.getUserById(username);
-        console.log('Services >> FraudPreventionService.js >> userDetails > ', userDetails);
-        const role = userDetails.roles[0];
-        console.log('Services >> FraudPreventionService.js >> role > ', role);
-        console.log('Before Response...');
+        let role = roleOverride;
+        if (!role) {
+            const userDetails = await userDetailsService.getUserById(username);
+            role = userDetails?.roles?.[0] || 'Assessor';
+        }
         const addAccessorFeedbackResponse = await wrapper.fetchWithToken(`/fraudprevention/add_remarks_decisions`,
             {
                 method: 'POST',

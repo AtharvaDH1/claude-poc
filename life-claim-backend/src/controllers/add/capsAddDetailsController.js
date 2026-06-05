@@ -100,5 +100,33 @@ const getCapsAddDetailsPolicyNumberUsername = async (req, res, next) => {
     }
 }
 
-module.exports = { addExcelDataToTable, getCapsAddDetails, getCapsAddDetailsByDecision, updateCapsAddDetailsCaseStatusController, getCapsAddDetailsPolicyNumberUsername}
+const addCaseAssignmentBulk = async (req, res, next) => {
+    const { data, uploadedBy } = req.body;
+    const username = uploadedBy || req.user?.username || '';
+    console.log('capsAddDetailsController.js >> addCaseAssignmentBulk request received');
+
+    try {
+        if (!Array.isArray(data) || data.length === 0) {
+            return res.status(400).json({ success: false, message: 'Assignment data array is required.' });
+        }
+        const result = await CapsAddDetailsDoa.bulkAssignCasesByPolicy(data, username);
+        return res.status(200).json({
+            success: true,
+            message: `Assigned ${result.updated.length} policy row(s); ${result.failed.length} failed.`,
+            data: result,
+        });
+    } catch (e) {
+        console.error('Error in addCaseAssignmentBulk:', e);
+        internalError(res, e);
+    }
+};
+
+module.exports = {
+    addExcelDataToTable,
+    getCapsAddDetails,
+    getCapsAddDetailsByDecision,
+    updateCapsAddDetailsCaseStatusController,
+    getCapsAddDetailsPolicyNumberUsername,
+    addCaseAssignmentBulk,
+};
 

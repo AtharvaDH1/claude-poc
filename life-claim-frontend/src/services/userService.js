@@ -48,7 +48,7 @@ const userService = {
   },
 
   deleteUser: async (userId) => {
-    const response = await wrapper.fetchWithToken(`/users/${userId}`, {
+    const response = await wrapper.fetchWithToken(`/user/user/${userId}`, {
       method: 'DELETE',
     });
     const data = await response.json();

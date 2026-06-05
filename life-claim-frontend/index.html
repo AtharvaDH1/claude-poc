@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>claude-poc</title>
+    <!-- v2: no legacy CRA CSP (60.16). API via /api proxy; reCAPTCHA + Keycloak connect only. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://www.google.com https://www.gstatic.com https://www.recaptcha.net; frame-src 'self' https://www.google.com https://www.recaptcha.net; connect-src 'self' http://localhost:8081 https://www.google.com https://www.recaptcha.net https://192.168.60.62:3010 http://192.168.60.62:3010; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://www.gstatic.com; font-src 'self' https://fonts.gstatic.com"
+    />
+    <title>Life Claims</title>
   </head>
   <body>
     <div id="root"></div>

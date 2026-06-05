@@ -107,14 +107,21 @@ export function SubTabNav({ tabs, active, onChange }) {
   )
 }
 
-export function Btn({ children, onClick, variant='primary', size='md', disabled=false, type='button', icon }) {
-  const bg = { primary:T.primary, secondary:'#F8FAFC', success:T.success, danger:T.danger }[variant]
+export function Btn({ children, onClick, variant='primary', size='md', disabled=false, type='button', icon, style: styleOverride }) {
+  const bg = { primary:T.primary, secondary:'#F8FAFC', success:T.success, danger:T.danger, warning:T.warning }[variant]
   const col = variant==='secondary' ? T.textSecondary : '#fff'
   const brd = variant==='secondary' ? T.border : 'transparent'
-  const pad = size==='sm' ? '6px 14px' : size==='lg' ? '12px 28px' : '9px 20px'
+  const pad = size==='sm' ? '6px 14px' : size==='lg' ? '14px 32px' : '9px 20px'
+  const fontSize = size==='lg' ? '15px' : '13px'
+  const shadow = !disabled && {
+    primary: '0 4px 12px rgba(29,78,216,0.25)',
+    success: '0 4px 12px rgba(5,150,105,0.25)',
+    danger: '0 4px 12px rgba(220,38,38,0.2)',
+    warning: '0 4px 16px rgba(217,119,6,0.35)',
+  }[variant]
   return (
     <button type={type} onClick={onClick} disabled={disabled}
-      style={{ display:'flex', alignItems:'center', gap:'7px', padding:pad, borderRadius:'8px', border:`1px solid ${brd}`, background: disabled?'#CBD5E1':bg, color: disabled?'#94A3B8':col, fontSize:'13px', fontWeight:700, cursor:disabled?'not-allowed':'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s', whiteSpace:'nowrap', boxShadow: variant==='primary'&&!disabled?'0 4px 12px rgba(29,78,216,0.25)':variant==='success'&&!disabled?'0 4px 12px rgba(5,150,105,0.25)':variant==='danger'&&!disabled?'0 4px 12px rgba(220,38,38,0.2)':'none' }}
+      style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', padding:pad, borderRadius: size==='lg' ? '10px' : '8px', border:`1px solid ${brd}`, background: disabled?'#CBD5E1':bg, color: disabled?'#94A3B8':col, fontSize, fontWeight:700, cursor:disabled?'not-allowed':'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s', whiteSpace:'nowrap', boxShadow: shadow || 'none', ...styleOverride }}
       onMouseEnter={e=>{ if(!disabled&&variant!=='secondary') { e.currentTarget.style.filter='brightness(0.9)'; e.currentTarget.style.transform='translateY(-1px)' } }}
       onMouseLeave={e=>{ e.currentTarget.style.filter=''; e.currentTarget.style.transform='' }}>
       {children}

@@ -2,10 +2,20 @@
 
 A modern, full-stack life insurance claims management system built with React + Node.js/Express.
 
+## Environment
+
+Configured in **`life-claim-frontend/.env`** and **`life-claim-backend/.env`** (not in git for secrets). See **[ENV.md](./ENV.md)** for the full pairing table.
+
+- v2 backend: **port 3010** (v1 legacy: 3008)
+- Frontend dev: **http://localhost:5174** → proxies `/api` to `VITE_PROXY_TARGET`
+- `VITE_*` and `REACT_APP_*` are both supported on the frontend
+
+After editing `.env`, restart both `npm start` and `npm run dev`.
+
 ## Tech Stack
 
 **Frontend:** React 18, Vite, React Router v6, Recharts, Lucide Icons, Axios  
-**Backend:** Node.js, Express, Sequelize ORM, MySQL, JWT Auth, Multer  
+**Backend:** Node.js, Express, Sequelize ORM, MySQL, Keycloak, JWT Auth, Multer  
 
 ## Project Structure
 
@@ -33,7 +43,9 @@ claude-poc/
 | `/pool-selection` | Pool Selection | Assessor, Verifier |
 | `/my-task` | My Tasks | Assessor, Verifier |
 | `/add-screen` | Add Screen | Assessor, Verifier |
-| `/fraud-prevention` | Fraud Prevention | Assessor, Verifier, Admin |
+| `/inward` | Inward Mail (legacy inbox) | All |
+| `/hospital-contacts` | Hospital email/fax/phone | All |
+| `/case/:id` | ADD case detail (frontend) | Assessor, Verifier |
 | `/user-management` | User Management | Admin |
 | `/audit-log` | Audit Logs | Admin |
 | `/admin-reports` | Reports | Admin |
@@ -46,15 +58,15 @@ claude-poc/
 cd life-claim-frontend
 npm install
 cp .env.example .env   # set VITE_API_URL
-npm run dev            # runs on http://localhost:5174
+npm run dev            # runs on http://localhost:5174 (proxies /api to v2 backend)
 ```
 
-### Backend
+### Backend (v2 — parallel to v1 on port 3008)
 ```bash
 cd life-claim-backend
 npm install
-cp .env.example .env   # set DB_PASSWORD and other vars
-npm start              # runs on http://localhost:3009
+cp .env.example .env   # set PORT=3010, DB_PASSWORD, Keycloak, etc.
+npm start              # runs on https://192.168.60.62:3010 (or PORT from .env)
 ```
 
 ### Database
@@ -76,7 +88,9 @@ Password for all: `password123`
 - Role-based access control
 - Real-time dashboard with charts
 - Document upload (Alfresco DMS with fallback)
-- Fraud prevention rules engine
+- Per-claim fraud prevention (claim workspace modal)
+- Inward mail inbox & hospital contact management (legacy APIs)
+- Ask Me floating assistant (UI preview)
 - Admin audit logs & reports
 - Idle session timeout + cross-tab logout
 - Fully responsive with breadcrumbs & global loading bar

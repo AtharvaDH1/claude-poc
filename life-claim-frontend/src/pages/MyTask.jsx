@@ -1,185 +1,218 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import { useAuth } from '../context/AuthContext'
-import { CheckSquare, ExternalLink, CheckCircle, AlertTriangle, Clock } from 'lucide-react'
+import { CheckSquare, Eye, Search, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { getClaimsByUser } from '../services/claimsService'
-import { changeClaimStatus } from '../services/claimsService'
+import { getWorkflowPoolRoles } from '../util/workflowRoles'
+import ClaimHoverPreview from '../components/claim/ClaimHoverPreview'
 
 const T = {
   primary: '#1D4ED8', primaryHover: '#1E40AF',
-  pageBg: '#F1F5F9', card: '#FFFFFF',
-  border: '#E2E8F0', borderSubtle: '#F1F5F9',
+  card: '#FFFFFF', border: '#E2E8F0', borderSubtle: '#F1F5F9',
   textPrimary: '#0F172A', textSecondary: '#334155',
   textMuted: '#64748B', textSubtle: '#94A3B8',
 }
 
-const fmt = n => new Intl.NumberFormat('en-IN').format(n)
-const fmtRs = n => `₹${n >= 1e7 ? (n/1e7).toFixed(1)+'Cr' : n >= 1e5 ? (n/1e5).toFixed(1)+'L' : fmt(n)}`
+const PAGE_SIZE = 10
 
-const STATUS_STYLES = {
-  'In Progress':    { bg:'#EFF6FF', border:'#BFDBFE', color:'#1E40AF' },
-  'Pending Review': { bg:'#FFFBEB', border:'#FDE68A', color:'#92400E' },
-  'Completed':      { bg:'#ECFDF5', border:'#A7F3D0', color:'#065F46' },
+function statusBadgeStyle(status) {
+  const s = String(status || '').toLowerCase()
+  if (s.includes('pending assessor')) return { bg: '#FFFBEB', border: '#FDE68A', color: '#92400E' }
+  if (s.includes('pending verifier')) return { bg: '#EFF6FF', border: '#BFDBFE', color: '#1E40AF' }
+  if (s.includes('approved') || s.includes('allocation')) return { bg: '#ECFDF5', border: '#A7F3D0', color: '#065F46' }
+  if (s.includes('reject')) return { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B' }
+  return { bg: '#F8FAFC', border: T.border, color: T.textMuted }
 }
 
-const PRIORITY_STYLES = {
-  High:   { bg:'#FEF2F2', color:'#DC2626' },
-  Normal: { bg:'#EFF6FF', color:'#1D4ED8' },
-  Low:    { bg:'#ECFDF5', color:'#059669' },
+function mapTaskRow(c) {
+  const status = c.STATUS || c.CLAIM_STATUS || c.status || '—'
+  const role = c.role || c.ROLE || '—'
+  return {
+    claimId: c.CLAIM_NUMBER || c.id || c.claimNumber,
+    policyId: c.POLICY_ID || c.policy || '',
+    createdOn: (c.CREATED_AT || c.CREATED_ON || '').toString().split('T')[0] || '—',
+    createdBy: c.CREATED_BY || c.createdBy || '—',
+    status,
+    role,
+    claimType: c.CLAIM_TYPE || c.type || '',
+    assignedTo: c.ASSIGNED_TO || c.assignedTo || '',
+  }
 }
 
 export default function MyTask() {
   const navigate = useNavigate()
   const toast = useToast()
   const { user } = useAuth()
+  const workflowRoles = getWorkflowPoolRoles(user)
+
   const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
+  const [roleFilter, setRoleFilter] = useState('All Roles')
+  const [page, setPage] = useState(0)
+  const [hoverClaim, setHoverClaim] = useState(null)
+  const [mouse, setMouse] = useState({ x: 0, y: 0 })
+
+  const loggedUser = sessionStorage.getItem('loggedUser') || user?.username || ''
 
   useEffect(() => {
-    if (!user?.username) return
-    getClaimsByUser(user.username).then(data => {
-      const mapped = (data || []).map(c => ({
-        claimId:      c.CLAIM_NUMBER || c.id,
-        policyId:     c.POLICY_ID    || c.policy    || '',
-        claimant:     c.CREATED_BY   || c.claimant  || 'Unknown',
-        type:         c.CLAIM_TYPE   || c.type      || 'Death Claim',
-        assignedDate: (c.CREATED_AT  || '').toString().split('T')[0],
-        dueDate:      (c.MODIFIED_AT || '').toString().split('T')[0],
-        priority:     c.priority     || 'Normal',
-        status:       c.CLAIM_STATUS || c.status    || 'Pending',
-        daysOpen:     c.daysOpen     || 0,
-        amount:       c.amount       || 0,
-      }))
-      if (mapped.length) setTasks(mapped)
-    }).catch(() => toast('error', 'Load Failed', 'Could not load your tasks.'))
-  }, [user?.username, toast])
-  const [hovRow, setHovRow] = useState(null)
-  const today = '2025-06-02'
+    if (!loggedUser) return
+    setLoading(true)
+    getClaimsByUser(loggedUser)
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : data?.claims || []
+        setTasks(arr.map(mapTaskRow).filter((t) => t.claimId))
+      })
+      .catch(() => toast('error', 'Load Failed', 'Could not load your tasks.'))
+      .finally(() => setLoading(false))
+  }, [loggedUser, toast])
 
-  const isOverdue = (dueDate) => dueDate < today
-
-  const handleComplete = (task) => {
-    setTasks(prev => prev.map(t => t.claimId === task.claimId ? { ...t, status:'Completed' } : t))
-    changeClaimStatus(task.claimId, 'Approved', 'Task completed by assessor').catch(() => {})
-    toast('success', 'Task Completed', `${task.claimId} marked as completed.`)
+  const applySearch = () => {
+    const q = searchQ.trim()
+    setSearchApplied(q)
+    setPage(0)
+    if (q && !tasks.some((t) => String(t.claimId).toLowerCase() === q.toLowerCase())) {
+      toast('info', 'Not in list', 'That claim number is not in your loaded tasks.')
+    }
   }
+
+  const filtered = useMemo(() => {
+    let list = tasks
+    if (searchApplied) {
+      const q = searchApplied.toLowerCase()
+      list = list.filter((t) => String(t.claimId).toLowerCase().includes(q))
+    }
+    if (roleFilter !== 'All Roles') {
+      list = list.filter((t) => String(t.role).toLowerCase() === roleFilter.toLowerCase())
+    }
+    return list
+  }, [tasks, searchApplied, roleFilter])
+
+  const singleResultMode = searchApplied && filtered.length <= 1
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pageRows = singleResultMode ? filtered : filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(0)
+  }, [page, totalPages])
 
   const handleOpen = (task) => {
-    navigate(`/claim-view/${task.claimId}`)
+    navigate(`/registration-fetch/${encodeURIComponent(task.claimId)}`)
   }
 
-  const pending = tasks.filter(t => t.status !== 'Completed')
-  const completed = tasks.filter(t => t.status === 'Completed')
+  const roleOptions = ['All Roles', ...workflowRoles]
 
   return (
     <AppLayout pageTitle="My Tasks">
-      <div style={{ padding:'24px', fontFamily:'Inter,sans-serif' }}>
-
-        {/* Page header */}
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'24px' }}>
-          <div>
-            <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em', margin:0 }}>My Tasks</h1>
-            <p style={{ fontSize:'13px', color:T.textMuted, marginTop:'4px', fontWeight:500 }}>
-              Your assigned claims and their current status.
-            </p>
-          </div>
-          <div style={{ display:'flex', gap:'10px' }}>
-            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:'10px', background:T.card, border:`1px solid ${T.border}` }}>
-              <div style={{ fontSize:'20px', fontWeight:800, color:T.primary }}>{pending.length}</div>
-              <div style={{ fontSize:'11px', color:T.textMuted, fontWeight:600, marginTop:'2px' }}>Active</div>
-            </div>
-            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:'10px', background:'#ECFDF5', border:'1px solid #A7F3D0' }}>
-              <div style={{ fontSize:'20px', fontWeight:800, color:'#059669' }}>{completed.length}</div>
-              <div style={{ fontSize:'11px', color:'#065F46', fontWeight:600, marginTop:'2px' }}>Done</div>
-            </div>
-            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:'10px', background:'#FEF2F2', border:'1px solid #FECACA' }}>
-              <div style={{ fontSize:'20px', fontWeight:800, color:'#DC2626' }}>{tasks.filter(t => isOverdue(t.dueDate) && t.status!=='Completed').length}</div>
-              <div style={{ fontSize:'11px', color:'#991B1B', fontWeight:600, marginTop:'2px' }}>Overdue</div>
-            </div>
-          </div>
+      <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }} onMouseMove={(e) => setMouse({ x: e.clientX, y: e.clientY })}>
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '22px', fontWeight: 800, color: T.textPrimary, margin: 0 }}>My Task</h1>
+          <p style={{ fontSize: '13px', color: T.textMuted, marginTop: '4px' }}>
+            Claims linked to you (assigned, modified, or assessor/approver username). Open in work mode — no browse-only flag.
+          </p>
         </div>
 
-        {/* Tasks table */}
-        <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', overflow:'hidden' }}>
-          <div style={{ padding:'16px 20px', borderBottom:`1px solid ${T.borderSubtle}` }}>
-            <div style={{ fontWeight:700, fontSize:'14px', color:T.textPrimary }}>Assigned Claims</div>
-            <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'2px', fontWeight:500 }}>{tasks.length} total tasks</div>
+        <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '16px 20px', marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ flex: 1, minWidth: '220px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '40px', borderRadius: '8px', border: `1.5px solid ${T.border}`, background: '#F8FAFC' }}>
+            <Search size={14} style={{ color: T.textSubtle }} />
+            <input
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applySearch()}
+              placeholder="Search claim number (client-side)"
+              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: '13px', fontFamily: 'Inter,sans-serif' }}
+            />
+            {searchQ && (
+              <button type="button" onClick={() => { setSearchQ(''); setSearchApplied(''); setPage(0) }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.textSubtle }}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <button type="button" onClick={applySearch} style={{ padding: '0 18px', height: '40px', borderRadius: '8px', border: 'none', background: T.primary, color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+            Search
+          </button>
+          <select
+            value={roleFilter}
+            onChange={(e) => { setRoleFilter(e.target.value); setPage(0) }}
+            style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
+          >
+            {roleOptions.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '14px' }}>Your claims</div>
+              <div style={{ fontSize: '12px', color: T.textMuted }}>{filtered.length} shown · POST claimByUsername</div>
+            </div>
+            {!singleResultMode && filtered.length > PAGE_SIZE && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button type="button" disabled={safePage <= 0} onClick={() => setPage((p) => p - 1)} style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#fff', cursor: safePage <= 0 ? 'not-allowed' : 'pointer' }}>
+                  <ChevronLeft size={16} />
+                </button>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: T.textMuted }}>Page {safePage + 1} / {totalPages}</span>
+                <button type="button" disabled={safePage >= totalPages - 1} onClick={() => setPage((p) => p + 1)} style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#fff', cursor: safePage >= totalPages - 1 ? 'not-allowed' : 'pointer' }}>
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
           </div>
 
-          {tasks.length === 0 ? (
-            <div style={{ padding:'60px 24px', textAlign:'center' }}>
-              <div style={{ width:'56px', height:'56px', borderRadius:'16px', background:'#ECFDF5', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
-                <CheckSquare size={24} style={{ color:'#059669' }} />
-              </div>
-              <div style={{ fontWeight:700, fontSize:'16px', color:T.textPrimary, marginBottom:'8px' }}>All caught up!</div>
-              <div style={{ fontSize:'13px', color:T.textMuted }}>You have no assigned tasks. Go to Pool Selection to pick up new claims.</div>
+          {loading ? (
+            <div style={{ padding: '48px', textAlign: 'center', color: T.textMuted }}>Loading tasks…</div>
+          ) : pageRows.length === 0 ? (
+            <div style={{ padding: '48px', textAlign: 'center' }}>
+              <CheckSquare size={32} style={{ color: '#059669', margin: '0 auto 12px' }} />
+              <div style={{ fontWeight: 700, color: T.textPrimary }}>No tasks match</div>
+              <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>Assign claims from Pool Selection to see them here.</div>
             </div>
           ) : (
-            <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
-                    {['Claim ID','Claimant','Type','Assigned','Due Date','Priority','Status','Days Open','Amount','Actions'].map(h => (
-                      <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
+                  <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+                    {['Claim Number', 'Policy Number', 'Created On', 'Created By', 'Status', 'Role', 'Action'].map((h) => (
+                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {tasks.map((task, i) => {
-                    const overdue = isOverdue(task.dueDate) && task.status !== 'Completed'
-                    const statusStyle = STATUS_STYLES[task.status] || STATUS_STYLES['In Progress']
-                    const prStyle = PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.Normal
+                  {pageRows.map((task) => {
+                    const sc = statusBadgeStyle(task.status)
                     return (
-                      <tr key={task.claimId}
-                        style={{ borderBottom:`1px solid ${T.borderSubtle}`, background: overdue ? 'rgba(254,242,242,0.5)' : hovRow===i ? '#F8FAFC' : 'transparent', transition:'background 0.1s' }}
-                        onMouseEnter={() => setHovRow(i)}
-                        onMouseLeave={() => setHovRow(null)}>
-                        <td style={{ padding:'12px 16px' }}>
-                          <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{task.claimId}</div>
-                          <div style={{ fontSize:'11px', color:T.textSubtle, marginTop:'2px', fontFamily:'monospace' }}>{task.policyId}</div>
+                      <tr key={task.claimId} style={{ borderBottom: `1px solid ${T.borderSubtle}` }}>
+                        <td
+                          style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 700, color: T.primary, fontFamily: 'monospace' }}
+                          onMouseEnter={() => setHoverClaim(task)}
+                          onMouseLeave={() => setHoverClaim(null)}
+                        >
+                          {task.claimId}
                         </td>
-                        <td style={{ padding:'12px 16px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{task.claimant}</td>
-                        <td style={{ padding:'12px 16px', fontSize:'12px', color:T.textMuted, fontWeight:500, whiteSpace:'nowrap' }}>{task.type}</td>
-                        <td style={{ padding:'12px 16px', fontSize:'12px', color:T.textMuted, fontWeight:500 }}>{task.assignedDate}</td>
-                        <td style={{ padding:'12px 16px' }}>
-                          <div style={{ display:'flex', alignItems:'center', gap:'5px' }}>
-                            {overdue && <AlertTriangle size={12} style={{ color:'#DC2626', flexShrink:0 }} />}
-                            <span style={{ fontSize:'12px', fontWeight:700, color: overdue?'#DC2626':T.textMuted }}>{task.dueDate}</span>
-                          </div>
-                          {overdue && <div style={{ fontSize:'10px', color:'#DC2626', fontWeight:600, marginTop:'2px' }}>OVERDUE</div>}
-                        </td>
-                        <td style={{ padding:'12px 16px' }}>
-                          <span style={{ fontSize:'11px', fontWeight:700, padding:'3px 8px', borderRadius:'6px', background:prStyle.bg, color:prStyle.color }}>{task.priority}</span>
-                        </td>
-                        <td style={{ padding:'12px 16px' }}>
-                          <span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background:statusStyle.bg, border:`1px solid ${statusStyle.border}`, color:statusStyle.color }}>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', fontFamily: 'monospace', color: T.textMuted }}>{task.policyId}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{task.createdOn}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{task.createdBy}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '99px', background: sc.bg, border: `1px solid ${sc.border}`, color: sc.color }}>
                             {task.status}
                           </span>
                         </td>
-                        <td style={{ padding:'12px 16px' }}>
-                          <span style={{ fontSize:'12px', fontWeight:700, color: task.daysOpen > 7?'#D97706':T.textMuted }}>{task.daysOpen}d</span>
-                        </td>
-                        <td style={{ padding:'12px 16px', fontSize:'13px', fontWeight:700, color:T.textSecondary, whiteSpace:'nowrap' }}>{fmtRs(task.amount)}</td>
-                        <td style={{ padding:'12px 16px' }}>
-                          <div style={{ display:'flex', gap:'6px' }}>
-                            <button
-                              onClick={() => handleOpen(task)}
-                              style={{ display:'flex', alignItems:'center', gap:'5px', padding:'6px 12px', borderRadius:'7px', border:`1px solid ${T.border}`, background:'#F8FAFC', color:T.textSecondary, fontSize:'12px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s', whiteSpace:'nowrap' }}
-                              onMouseEnter={e => { e.currentTarget.style.background='#EFF6FF'; e.currentTarget.style.color=T.primary; e.currentTarget.style.borderColor=T.primary+'60' }}
-                              onMouseLeave={e => { e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textSecondary; e.currentTarget.style.borderColor=T.border }}>
-                              <ExternalLink size={11} /> Open
-                            </button>
-                            {task.status !== 'Completed' && (
-                              <button
-                                onClick={() => handleComplete(task)}
-                                style={{ display:'flex', alignItems:'center', gap:'5px', padding:'6px 12px', borderRadius:'7px', border:'none', background:'#ECFDF5', color:'#059669', fontSize:'12px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s', whiteSpace:'nowrap' }}
-                                onMouseEnter={e => { e.currentTarget.style.background='#059669'; e.currentTarget.style.color='#fff' }}
-                                onMouseLeave={e => { e.currentTarget.style.background='#ECFDF5'; e.currentTarget.style.color='#059669' }}>
-                                <CheckCircle size={11} /> Complete
-                              </button>
-                            )}
-                          </div>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 600, color: T.textSecondary }}>{task.role}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpen(task)}
+                            title="Open in work mode"
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '7px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
+                          >
+                            <Eye size={14} /> Open
+                          </button>
                         </td>
                       </tr>
                     )
@@ -189,6 +222,8 @@ export default function MyTask() {
             </div>
           )}
         </div>
+
+        <ClaimHoverPreview claim={hoverClaim} x={mouse.x} y={mouse.y} />
       </div>
     </AppLayout>
   )

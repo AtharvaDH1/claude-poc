@@ -49,6 +49,7 @@ const updateClaim = async (req, res) => {
       systemDetails = {},
       iibEnquiryTable = [],
       verifierDetails = {},
+      accessorDetails = {},
       claimQuestions = {},
       systemAssessorRemarks = {},
       modifiedBy,
@@ -362,6 +363,46 @@ const updateClaim = async (req, res) => {
       });
       itemSnake.CLAIM_ID = claimId;
       await CaseTriggerTable.create(itemSnake, { transaction });
+    }
+
+    if (accessorDetails && Object.keys(accessorDetails).length > 0) {
+      const accessorSnake = camelToSnakeCase({
+        ...accessorDetails,
+        modifiedBy,
+      });
+      const existingAccessor = await DecisionAccessor.findOne({
+        where: { CLAIM_ID: claimId },
+        transaction,
+      });
+      if (existingAccessor) {
+        await DecisionAccessor.update(accessorSnake, {
+          where: { CLAIM_ID: claimId },
+          transaction,
+        });
+      } else {
+        accessorSnake.CLAIM_ID = claimId;
+        await DecisionAccessor.create(accessorSnake, { transaction });
+      }
+    }
+
+    if (verifierDetails && Object.keys(verifierDetails).length > 0) {
+      const verifierSnake = camelToSnakeCase({
+        ...verifierDetails,
+        modifiedBy,
+      });
+      const existingVerifier = await DecisionVerificationAndSummary.findOne({
+        where: { CLAIM_ID: claimId },
+        transaction,
+      });
+      if (existingVerifier) {
+        await DecisionVerificationAndSummary.update(verifierSnake, {
+          where: { CLAIM_ID: claimId },
+          transaction,
+        });
+      } else {
+        verifierSnake.CLAIM_ID = claimId;
+        await DecisionVerificationAndSummary.create(verifierSnake, { transaction });
+      }
     }
 
      // Update and insert for riderDetailsTable

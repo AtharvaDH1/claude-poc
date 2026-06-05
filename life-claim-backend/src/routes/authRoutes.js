@@ -8,6 +8,7 @@ const { recordLogin, recordLogout } = require('../services/auditLogService');
 const { authTokenLimiter } = require('../middleware/rateLimiters');
 const userDao = require('../dataAccess/userDao');
 const keycloakLoginLockout = require('../services/keycloakLoginLockout');
+const { verifyRecaptchaToken } = require('../services/recaptchaService');
 const { validateKeycloakTokenBody, validateAuthenticateBody } = require('../middleware/requestValidation');
 
 const router = express.Router();
@@ -62,6 +63,16 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
   const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
   const tokenEndpoint = `${keycloakUrl.replace(/\/$/, '')}/realms/life-claims/protocol/openid-connect/token`;
   const loginUsername = req.body?.username;
+  const captchaToken = req.body?.captchaToken;
+
+  try {
+    await verifyRecaptchaToken(captchaToken);
+  } catch (captchaErr) {
+    return res.status(captchaErr.status || 400).json({
+      error: 'captcha_failed',
+      error_description: captchaErr.message || 'reCAPTCHA verification failed.',
+    });
+  }
 
   if (loginUsername && keycloakLoginLockout.enabled()) {
     const blocked = keycloakLoginLockout.isBlocked(loginUsername);
@@ -77,10 +88,18 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
   }
 
   try {
-    // Convert parsed req.body back to URL-encoded format for Keycloak
+    const keycloakBody = {
+      client_id: req.body.client_id,
+      grant_type: req.body.grant_type,
+      username: req.body.username,
+      password: req.body.password,
+    };
+    if (req.body.scope) keycloakBody.scope = req.body.scope;
+    if (req.body.client_secret) keycloakBody.client_secret = req.body.client_secret;
+
     const response = await axios.post(
       tokenEndpoint,
-      qs.stringify(req.body),
+      qs.stringify(keycloakBody),
       keycloakAxiosOptions()
     );
 
@@ -222,16 +241,28 @@ router.post('/authenticate', validateAuthenticateBody, async (req, res, next) =>
   }
 });
 
-// Public endpoint: return the latest successful login across the whole audit table.
+// Public endpoint: latest login (optional ?username= for per-user; else system-wide).
 router.get('/last-login', async (req, res, next) => {
   try {
-    const query = `
-      SELECT USERNAME, LOGIN_AT
-      FROM claims_poc.user_login_audit
-      ORDER BY LOGIN_AT DESC
-      LIMIT 1
-    `;
-    const [rows] = await db.execute(query);
+    const username = String(req.query?.username || '').trim();
+    let rows;
+    if (username) {
+      [rows] = await db.execute(
+        `SELECT USERNAME, LOGIN_AT
+         FROM claims_poc.user_login_audit
+         WHERE USERNAME = ?
+         ORDER BY LOGIN_AT DESC
+         LIMIT 1`,
+        [username]
+      );
+    } else {
+      [rows] = await db.execute(
+        `SELECT USERNAME, LOGIN_AT
+         FROM claims_poc.user_login_audit
+         ORDER BY LOGIN_AT DESC
+         LIMIT 1`
+      );
+    }
     return res.json({
       lastLoginAt: rows?.[0]?.LOGIN_AT || null,
       username: rows?.[0]?.USERNAME || null,
@@ -239,6 +270,68 @@ router.get('/last-login', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+/** Keycloak refresh_token grant (same proxy pattern as password login). */
+router.post('/keycloak/refresh', authTokenLimiter, async (req, res) => {
+  const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
+  const tokenEndpoint = `${keycloakUrl.replace(/\/$/, '')}/realms/life-claims/protocol/openid-connect/token`;
+  const refreshToken = String(req.body?.refresh_token || req.body?.refreshToken || '').trim();
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'invalid_request', message: 'refresh_token is required.' });
+  }
+  try {
+    const response = await axios.post(
+      tokenEndpoint,
+      qs.stringify({
+        client_id: 'life-claims-frontend',
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
+      keycloakAxiosOptions()
+    );
+    res.json(response.data);
+  } catch (error) {
+    if (error.response) {
+      return res.status(error.response.status).json(error.response.data);
+    }
+    res.status(503).json({
+      error: 'keycloak_unreachable',
+      message: 'Could not refresh session with Keycloak.',
+    });
+  }
+});
+
+/**
+ * Keycloak single-session: detect if this browser's session id was replaced by a newer login.
+ */
+router.get('/session-check', async (req, res) => {
+  if (!SINGLE_SESSION_ENFORCED) {
+    return res.json({ ok: true, singleSessionEnforced: false });
+  }
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+  const username = payload.preferred_username || payload.sub;
+  const sessionId = payload.sid || payload.jti || null;
+  if (!username || !sessionId) {
+    return res.json({ ok: true });
+  }
+  const user = await userDao.getUserByUsername(username);
+  const existing = user?.current_session_id || null;
+  if (existing && existing !== sessionId) {
+    return res.status(401).json({
+      message: 'Your session has expired because you logged in from another device.',
+      concurrentLogout: true,
+    });
+  }
+  return res.json({ ok: true, singleSessionEnforced: true });
 });
 
 module.exports = router;

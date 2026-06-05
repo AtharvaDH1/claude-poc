@@ -91,7 +91,7 @@ async function searchWithUserInput(attribute, value, caseType, page = 0, limit =
 
 async function approveData(selectedData, caseStatus) {  
     console.log('Service >> approveData called with data:', selectedData, 'Case Status:', caseStatus);
-    const caseId = (selectedData || []).map(item => item.CASE_ID);
+    const caseId = (selectedData || []).map((item) => item.CASE_ID ?? item.case_id ?? item.caseId).filter(Boolean);
 
     try {
         const username = getAuthenticatedUsername();
@@ -112,7 +112,7 @@ async function approveData(selectedData, caseStatus) {
 
 async function rejectData(selectedData, caseStatus) {
     console.log('Service >> rejectData called with data:', selectedData, 'Case Status:', caseStatus);
-    const caseId = (selectedData || []).map(item => item.CASE_ID);
+    const caseId = (selectedData || []).map((item) => item.CASE_ID ?? item.case_id ?? item.caseId).filter(Boolean);
     try {
         const username = getAuthenticatedUsername(); 
         const response = await wrapper.fetchWithToken(`/capsAddDetails/approver-approve`, {

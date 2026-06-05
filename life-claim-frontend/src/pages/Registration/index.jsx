@@ -7,6 +7,9 @@ import DemographicsTab from './DemographicsTab'
 import RequirementsTab from './RequirementsTab'
 import AssessmentTab from './AssessmentTab'
 import DecisionTab from './DecisionTab'
+import RegisterFormGate from './RegisterFormGate'
+import { isPreAssessorRole } from '../../util/preAssessor'
+import { useToast } from '../../components/Toast'
 
 const TABS = [
   { id:'demographics', label:'Demographics',  step:1, desc:'Policy, claimant & fraud details' },
@@ -26,18 +29,41 @@ export default function Registration() {
   const { claimId } = useParams()
   const isView      = !!claimId
   const { user }    = useAuth()
-  const userRole    = user?.role || 'Pre Assessor'
+  const toast       = useToast()
+  const userRole    = user?.roles?.includes('Pre Assessor') ? 'Pre Assessor' : (user?.role || 'Pre Assessor')
+  const isPreAssessor = isPreAssessorRole(userRole, user?.roles)
 
   const prefillPolicy = location.state?.policy || null
+  const prefillPolicyNo = location.state?.policyNumber || prefillPolicy?.policyId || ''
+
+  const [wizardStarted, setWizardStarted] = useState(Boolean(prefillPolicy?.productName || prefillPolicy?.registerForm))
 
   /* ── Single shared policyData state ── */
   const [policyData, setPolicyData] = useState({
-    policyId: prefillPolicy?.policyId || '',
-    claimType: '',
-    informationType: '',
-    // All other fields start empty — populated by each section
+    policyId: prefillPolicyNo || prefillPolicy?.policyId || '',
+    claimType: prefillPolicy?.registerForm?.claimType || 'Death',
+    informationType: prefillPolicy?.registerForm?.informationType || 'Written Information',
+    createdBy: sessionStorage.getItem('loggedUser') || user?.username || '',
   })
   const [policy, setPolicy] = useState(prefillPolicy || null)
+
+  const startWizard = ({ policy: p, policyData: pd }) => {
+    setPolicy(p)
+    const today = new Date().toISOString().split('T')[0]
+    setPolicyData((prev) => ({
+      ...prev,
+      ...pd,
+      initiationDate: today,
+      initialPolicyStatus: p?.premiumStatus || pd?.initialPolicyStatus,
+      createdBy: prev.createdBy || sessionStorage.getItem('loggedUser') || user?.username || '',
+      _demographicsComplete: false,
+      _requirementsComplete: false,
+      _assessmentComplete: false,
+    }))
+    setWizardStarted(true)
+    setCompletedTabs(new Set())
+    setActiveTab('demographics')
+  }
 
   /* update() merges partial changes into policyData */
   const update = (partial) => setPolicyData(prev => ({ ...prev, ...partial }))
@@ -68,12 +94,12 @@ export default function Registration() {
             </p>
           </div>
           <div style={{ display:'flex', gap:'8px' }}>
-            {prefillPolicy && (
+            {(policy?.policyId || prefillPolicy) && (
               <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:'8px', padding:'8px 14px', fontSize:'12px', fontWeight:700, color:T.primary }}>
-                📋 {prefillPolicy.policyId} — {prefillPolicy.productName}
+                📋 {(policy || prefillPolicy).policyId || policyData.policyId} — {(policy || prefillPolicy).productName || policyData.productName || 'Policy'}
               </div>
             )}
-            {policyData.policyId && !prefillPolicy && (
+            {policyData.policyId && !policy && !prefillPolicy && (
               <div style={{ background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:'8px', padding:'8px 14px', fontSize:'12px', fontWeight:700, color:'#059669' }}>
                 📋 {policyData.policyId}
               </div>
@@ -81,6 +107,12 @@ export default function Registration() {
           </div>
         </div>
 
+        {!wizardStarted && !isView ? (
+          <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
+            <RegisterFormGate initialPolicyNo={prefillPolicyNo} onProceed={startWizard} />
+          </div>
+        ) : (
+        <>
         {/* Tab navigator */}
         <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', overflow:'hidden', marginBottom:'4px' }}>
           <div style={{ display:'flex', borderBottom:`1px solid ${T.border}` }}>
@@ -90,7 +122,13 @@ export default function Registration() {
               const locked = !done && i > 0 && !isDone(TABS[i-1].id) && tab.id !== 'demographics'
               return (
                 <button key={tab.id}
-                  onClick={() => { if(!locked) setActiveTab(tab.id) }}
+                  onClick={() => {
+                    if (locked) {
+                      toast('warning', 'Section locked', `Complete "${TABS[i - 1].label}" before opening "${tab.label}".`)
+                      return
+                    }
+                    setActiveTab(tab.id)
+                  }}
                   style={{
                     flex:1, padding:'16px 12px', border:'none', cursor: locked?'not-allowed':'pointer',
                     borderBottom: active ? '3px solid #1D4ED8' : '3px solid transparent',
@@ -144,6 +182,7 @@ export default function Registration() {
                 data={policyData}
                 update={update}
                 policy={policy}
+                isPreAssessor={isPreAssessor}
               />
             )}
           </div>
@@ -158,6 +197,8 @@ export default function Registration() {
         <div style={{ marginTop:'6px', textAlign:'right', fontSize:'11px', color:'#94A3B8', fontWeight:600 }}>
           {completedTabs.size} of {TABS.length} sections complete
         </div>
+        </>
+        )}
       </div>
     </AppLayout>
   )

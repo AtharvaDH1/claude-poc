@@ -3,12 +3,9 @@ const bcrypt = require('bcrypt');
 const jwtUtil = require('../util/jwtUtil');
 const userDao = require('../dataAccess/userDao');
 const logger = require('../config/logConfig');
-const axios = require('axios'); // Added axios for reCAPTCHA verification
 const crypto = require('crypto'); // Added crypto for session generation
 const { recordLogin, recordLogout } = require('./auditLogService');
-const CAPTCHA_UNAVAILABLE_TOKEN = '__CAPTCHA_UNAVAILABLE__';
-const CAPTCHA_BYPASS_ALLOWED =
-  process.env.ALLOW_CAPTCHA_BYPASS === 'true' || process.env.NODE_ENV !== 'production';
+const { verifyRecaptchaToken } = require('./recaptchaService');
 const CLOSE_LOGOUT_GRACE_MS = Number(process.env.CLOSE_LOGOUT_GRACE_MS || 8000);
 const pendingCloseLogoutTimers = new Map();
 const SINGLE_SESSION_ENFORCED = process.env.SINGLE_SESSION_ENFORCED !== 'false';
@@ -21,9 +18,6 @@ const INVALID_LOGIN_MESSAGE = 'Invalid username or password.';
 // Precomputed bcrypt hash ("dummy-password") to reduce user-existence timing differences.
 const DUMMY_BCRYPT_HASH =
   '$2b$10$Mri4RirA9N5h7vRYxlyquO2K/W7hM90SEyoBdrf8At8x15blO7fTS';
-/** Google reCAPTCHA test key — dev fallback only; production should set RECAPTCHA_SECRET_KEY */
-const RECAPTCHA_TEST_SECRET_FALLBACK = '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
-
 const clearPendingCloseLogout = (sessionId) => {
   if (!sessionId) return;
   const timer = pendingCloseLogoutTimers.get(sessionId);
@@ -34,49 +28,9 @@ const clearPendingCloseLogout = (sessionId) => {
 };
 
 const loginUser = async (username, password, captchaToken, requestMeta = {}) => {
-  // 1. reCAPTCHA Verification — RECAPTCHA_SECRET_KEY in .env for production; otherwise Google's test secret (dev)
-  const recaptchaSecret =
-    process.env.RECAPTCHA_SECRET_KEY || RECAPTCHA_TEST_SECRET_FALLBACK;
-  if (isProduction && !process.env.RECAPTCHA_SECRET_KEY) {
-    logger.error(
-      '[security] RECAPTCHA_SECRET_KEY is not set — legacy login uses test key; set a production secret in .env'
-    );
-  }
-  if (!captchaToken || captchaToken === CAPTCHA_UNAVAILABLE_TOKEN) {
-    if (CAPTCHA_BYPASS_ALLOWED && captchaToken === CAPTCHA_UNAVAILABLE_TOKEN) {
-      logger.warn('reCAPTCHA bypass used (unavailable token)');
-    } else {
-      const err = new Error('reCAPTCHA verification required.');
-      err.status = 400;
-      throw err;
-    }
-  } else {
-    if (CAPTCHA_BYPASS_ALLOWED) {
-      // Bypass mode: skip Google entirely — no network call, no timeout
-      logger.warn('reCAPTCHA backend verification skipped (ALLOW_CAPTCHA_BYPASS=true)');
-    } else {
-      // Verify with Google
-      try {
-        const verifyRes = await axios.post(
-          'https://www.google.com/recaptcha/api/siteverify',
-          null,
-          { params: { secret: recaptchaSecret, response: captchaToken }, timeout: 5000 }
-        );
-        if (!verifyRes.data.success) {
-          const err = new Error('reCAPTCHA verification failed. Please try again.');
-          err.status = 400;
-          throw err;
-        }
-      } catch (captchaErr) {
-        if (captchaErr.status) throw captchaErr;
-        const err = new Error('reCAPTCHA service unavailable. Please try again later.');
-        err.status = 503;
-        throw err;
-      }
-    }
-  }
+  await verifyRecaptchaToken(captchaToken);
 
-  // 2. Proceed with user lookup
+  // Proceed with user lookup
   const user = await userDao.getUserByUsername(username);
   
   if (!user) {

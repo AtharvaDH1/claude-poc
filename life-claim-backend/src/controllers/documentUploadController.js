@@ -202,20 +202,18 @@ exports.uploadDocument = async (req, res, next) => {
             console.log('documentUploadController.js > uploadDocument folder lookup succeeded');
 
         const folderEntry = await getFolderByClaimNumberResponse.json();
-        var entries = folderEntry?.list?.entries;
-        // console.log('6 documentUploadController.js > uploadDocument :: folderEntry', folderEntry);
-        // console.log('6 documentUploadController.js > uploadDocument :: folderEntry.entries ', JSON.stringify(folderEntry));
+        const entries = folderEntry?.list?.entries || [];
 
-
-        var createdDocument;
-        var folderID;
-        /** Checking for the required Folder */
-        entries.forEach(async entry => {
-            entry = entry.entry;
-            if (entry.isFolder && entry.name === claimNumber) {
+        let createdDocument;
+        let folderID;
+        /** Resolve Alfresco folder for this claim number */
+        for (const item of entries) {
+            const entry = item?.entry;
+            if (entry?.isFolder && entry.name === claimNumber) {
                 folderID = entry.id;
+                break;
             }
-        });
+        }
         // console.log('7 documentUploadController.js > uploadDocument :: getFolderByClaimNumberResponse');
         // if folder does not exist for creating new folder based on ClaimNumber
         if (!folderID) {
@@ -244,11 +242,12 @@ exports.uploadDocument = async (req, res, next) => {
         if (folderID) {
             console.log('documentUploadController.js > uploadDocument folder resolved');
 
-            /** Checking if files exists */
-            const isDuplicate = await checkDuplicate(folderID, fileName, APITicket);
+            /** Duplicate check uses original filename (user-visible name in Alfresco) */
+            const isDuplicate = await checkDuplicate(folderID, originalName, APITicket);
             if (isDuplicate) {
+                await fs.promises.unlink(filePath).catch(() => {});
                 return res.status(409).json({
-                    message: "File with the same name already exists",
+                    message: "A file with this name already exists for this claim",
                     ...(exposeErrorDetails ? { detail: "Duplicate file detected" } : {})
                 });
             }
@@ -261,15 +260,15 @@ exports.uploadDocument = async (req, res, next) => {
                 }
                 const currentDate = new Date();
                 const form = new formData();
-                form.append('filedata', fs.createReadStream(filePath));
-                //form.append('fileData', file, `${claimNumber}${fileName}`);
-                const uploadRes = await axios.post(`http://${process.env.DOCUMENT_VIEWER_IP}/alfresco/api/-default-/public/alfresco/versions/1/nodes/${folderID}/children`,
+                form.append('filedata', fs.createReadStream(filePath), originalName);
+                await axios.post(`http://${process.env.DOCUMENT_VIEWER_IP}/alfresco/api/-default-/public/alfresco/versions/1/nodes/${folderID}/children`,
                     form,
                     {
                         headers: {
                             ...form.getHeaders(),
-                            Authorization: `Basic ${APITicket}`
-                        }
+                            Authorization: `Basic ${APITicket}`,
+                        },
+                        params: { overwrite: false },
                     })
                     .then(async (response) => {
                         try {

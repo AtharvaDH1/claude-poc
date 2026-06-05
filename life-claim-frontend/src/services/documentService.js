@@ -6,47 +6,54 @@ const normalizeArrayPayload = (payload) => {
   return [];
 };
 
+const FORBIDDEN_DOC_MSG = 'You are not allowed to view documents for this claim.';
+
+const parseServiceError = (err) => {
+  const raw = err?.message || String(err || '');
+  if (raw.includes('403') || raw.toLowerCase().includes('forbidden')) {
+    return new Error(FORBIDDEN_DOC_MSG);
+  }
+  return err instanceof Error ? err : new Error(raw || 'Request failed');
+};
+
 const documentService = {
-    /** get all the documentType exist in the 'DocumentList' table. */
-    getDocumentList: async () => {
+  getDocumentList: async () => {
+    try {
       const response = await wrapper.fetchWithToken(`/documents/documentList`);
       const payload = await response.json().catch(() => null);
-      const data = normalizeArrayPayload(payload);
-      console.log('documentService.js >> documentList >>', data);
-      return data;
-    },
+      return normalizeArrayPayload(payload);
+    } catch (e) {
+      throw parseServiceError(e);
+    }
+  },
 
-    /** get all the details from 'UploadedDocuments' table based on claimNumber */
-    getUploadedDocumentList: async(claimId) =>{
-      console.log('claimNumber Passing to Query',claimId);
+  getUploadedDocumentList: async (claimId) => {
+    try {
       const response = await wrapper.fetchWithToken('/uploaded/uploadedDocuments', {
-        method:'POST',
-        headers:{
-          'Content-Type': 'application/json',
-        },
-        body:JSON.stringify({claimId})
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claimId }),
       });
       const payload = await response.json().catch(() => null);
-      const claimNumberDocumentDetails = normalizeArrayPayload(payload);
-      console.log('documentService.js getDocumentCount UploadedDocuments  >>:<< ', claimNumberDocumentDetails);
-      return claimNumberDocumentDetails;
-    },
+      return normalizeArrayPayload(payload);
+    } catch (e) {
+      throw parseServiceError(e);
+    }
+  },
 
-    getUploadedDocumentListCount: async() =>{
-      const response = await wrapper.fetchWithToken('/uploaded/getDocumentCount');
-      const data = await response.json().catch(() => null);
-      console.log('documentService.js getDocumentCount data >>:<< ', data);
-      return data;
-    },
+  getUploadedDocumentListCount: async (claimId, documentType) => {
+    try {
+      const response = await wrapper.fetchWithToken('/uploaded/getDocumentCount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claimId, documentType: documentType || '' }),
+      });
+      return response.json().catch(() => null);
+    } catch (e) {
+      throw parseServiceError(e);
+    }
+  },
+};
 
-    // addUploadedDocument : async(claimNo) =>{
-    //     const response = await wrapper.fetchWithToken('/uploaded-Document/uploadedDocuments');
-    //     const uploadedDocument = response.json();
-    //     console.log('documentService.js > addUploadedDocument : ', uploadedDocument);
-    //     return uploadedDocument;
-    // }
-  
-  
-}
-  
-  export default documentService;
+export default documentService;
+export { FORBIDDEN_DOC_MSG };

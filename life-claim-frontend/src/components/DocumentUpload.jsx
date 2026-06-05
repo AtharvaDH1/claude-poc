@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useToast } from './Toast'
 import documentService from '../services/documentService'
 import fileUploadService from '../services/FileUploadService'
+import { validateUploadFile } from '../util/validateUploadFile'
+import { openDocumentPreview } from '../services/documentPreviewService'
 
 const T = { primary:'#1D4ED8', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
 
@@ -20,6 +22,7 @@ function mapDoc(row, i) {
     uploadedBy: row.UPLOADED_BY || row.uploadedBy || '—',
     uploadedOn: (row.UPLOADED_ON || row.uploadedOn || row.createdAt || '').toString().split('T')[0] || '—',
     url: row.FILE_URL || row.url || '#',
+    nodeId: row.AlfrescoFileId || row.alfrescoFileId || row.NODE_ID || row.nodeId || row.node_id,
   }
 }
 
@@ -32,7 +35,7 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dragging, setDragging] = useState(false)
-  const [deleteId, setDeleteId] = useState(null)
+  const [docCount, setDocCount] = useState(null)
 
   useEffect(() => {
     if (!claimId) {
@@ -50,6 +53,10 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
         setDocumentType(typeNames[0])
       }
       setDocs((uploaded || []).map(mapDoc))
+      documentService.getUploadedDocumentListCount(claimId).then((c) => {
+        const n = c?.count ?? c?.total ?? c?.documentCount
+        if (n != null) setDocCount(n)
+      }).catch(() => {})
     }).finally(() => setLoading(false))
   }, [claimId])
 
@@ -63,10 +70,17 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
       toast('warning', 'Missing Claim', 'Claim number is required to upload documents.')
       return
     }
-    const allowed = ['pdf','jpg','jpeg','png','doc','docx','xls','xlsx']
-    const valid = Array.from(files).filter(f => allowed.includes(f.name.split('.').pop().toLowerCase()))
-    if (valid.length === 0) { toast('error','Invalid File','Only PDF, Word, Excel and image files allowed.'); return }
-    if (valid.some(f => f.size > 10*1024*1024)) { toast('warning','File Too Large','Max file size is 10MB.'); return }
+    const file = Array.from(files)[0]
+    if (!file) return
+    const check = validateUploadFile(file)
+    if (!check.valid) {
+      toast('warning', 'Invalid file', check.message)
+      return
+    }
+    if (!documentType) {
+      toast('warning', 'Document type', 'Select a document type.')
+      return
+    }
 
     setUploading(true)
     try {
@@ -74,21 +88,20 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
         claimNo: claimId,
         documentType,
         documentId: documentType,
-        files: valid,
+        files: [file],
       })
       await reloadDocs()
-      toast('success', 'Upload Complete', `${valid.length} file(s) uploaded successfully.`)
-    } catch {
-      toast('error', 'Upload Failed', 'Could not upload document(s).')
+      toast('success', 'Upload Complete', `${file.name} uploaded successfully.`)
+    } catch (e) {
+      const msg = e?.message || 'Could not upload document.'
+      if (e?.status === 409 || msg.toLowerCase().includes('already exists')) {
+        toast('error', 'Duplicate file', 'A file with this name already exists for this claim.')
+      } else {
+        toast('error', 'Upload failed', msg)
+      }
     } finally {
       setUploading(false)
     }
-  }
-
-  const confirmDelete = () => {
-    setDocs(p => p.filter(d => d.id !== deleteId))
-    toast('success', 'Deleted', 'Document removed from view.')
-    setDeleteId(null)
   }
 
   return (
@@ -96,7 +109,7 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'14px' }}>
         <div>
           <div style={{ fontSize:'14px', fontWeight:700, color:T.textPrimary }}>{label}</div>
-          <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'2px' }}>{docs.length} document(s) attached</div>
+          <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'2px' }}>{docCount != null ? `${docCount} on file` : `${docs.length} shown`} · {docs.length} in list</div>
         </div>
         <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
           <select value={documentType} onChange={e => setDocumentType(e.target.value)}
@@ -108,7 +121,7 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
             {uploading ? '⏳ Uploading...' : '+ Upload Document'}
           </button>
         </div>
-        <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style={{ display:'none' }} onChange={e => handleFiles(e.target.files)}/>
+        <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.csv,.zip" style={{ display:'none' }} onChange={e => handleFiles(e.target.files)}/>
       </div>
 
       {loading ? (
@@ -146,8 +159,10 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
                       <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{d.size ? fmtSize(Number(d.size)) : '—'}</td>
                       <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{d.uploadedBy}</td>
                       <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{d.uploadedOn}</td>
-                      <td style={{ padding:'10px 14px' }}>
-                        <button onClick={() => setDeleteId(d.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#DC2626', fontSize:'12px', fontWeight:700 }}>Remove</button>
+                      <td style={{ padding:'10px 14px', display:'flex', gap:'8px' }}>
+                        {d.nodeId && (
+                          <button type="button" onClick={() => openDocumentPreview(d.nodeId).catch((e) => toast('error', 'Preview', e.message))} style={{ background:'none', border:'none', cursor:'pointer', color:T.primary, fontSize:'12px', fontWeight:700 }}>Preview</button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -158,18 +173,6 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
         </>
       )}
 
-      {deleteId && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <div style={{ background:'#fff', borderRadius:'12px', padding:'24px', width:'320px', boxShadow:'0 20px 48px rgba(0,0,0,0.15)' }}>
-            <div style={{ fontWeight:800, fontSize:'15px', marginBottom:'8px' }}>Remove document?</div>
-            <div style={{ fontSize:'13px', color:T.textMuted, marginBottom:'20px' }}>This removes the document from the list view only.</div>
-            <div style={{ display:'flex', gap:'10px' }}>
-              <button onClick={() => setDeleteId(null)} style={{ flex:1, padding:'9px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', cursor:'pointer', fontWeight:700 }}>Cancel</button>
-              <button onClick={confirmDelete} style={{ flex:1, padding:'9px', borderRadius:'8px', border:'none', background:'#DC2626', color:'#fff', cursor:'pointer', fontWeight:700 }}>Remove</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -9,8 +9,10 @@ import {
   LayoutDashboard, Search, Bell, ChevronDown, LogOut, Menu, X,
   FileText, Users, CheckSquare, Plus, Shield, Settings, Star,
   Layers, ChevronRight, CheckCircle, XCircle, ClipboardList,
-  BarChart3, ShieldAlert, User,
+  BarChart3, User,
 } from 'lucide-react'
+import AskMeChat from '../components/AskMeChat'
+import { isAdminOnlyUser, hasAdminRole } from '../util/loginHelpers'
 
 const T = {
   sidebar: '#0F172A', sidebarBorder: 'rgba(255,255,255,0.06)',
@@ -24,16 +26,16 @@ const T = {
 }
 
 const NAV_ITEMS = [
-  { id:'dashboard',        path:'/dashboard',        icon:LayoutDashboard, label:'Dashboard' },
-  { id:'policy',           path:'/policy-search',    icon:Search,          label:'Policy Search',    roles:['Pre Assessor'] },
-  { id:'claims',           path:'/claim-search',     icon:FileText,        label:'Claim Search',     roles:['Assessor','Verifier','Admin'] },
-  { id:'pool',             path:'/pool-selection',   icon:Layers,          label:'Pool Selection',   roles:['Assessor','Verifier'] },
-  { id:'tasks',            path:'/my-task',          icon:CheckSquare,     label:'My Tasks', badge:3, roles:['Assessor','Verifier'] },
-  { id:'add',              path:'/add-screen',       icon:Plus,            label:'Add Screen',       roles:['Assessor','Verifier'] },
-  { id:'fraud-prevention', path:'/fraud-prevention', icon:ShieldAlert,     label:'Fraud Prevention', roles:['Assessor','Verifier','Admin'] },
-  { id:'users',            path:'/user-management',  icon:Users,           label:'User Management',  roles:['Admin'] },
-  { id:'audit-log',        path:'/audit-log',        icon:ClipboardList,   label:'Audit Log',        roles:['Admin'] },
-  { id:'admin-reports',    path:'/admin-reports',    icon:BarChart3,       label:'Reports',          roles:['Admin'] },
+  { id:'dashboard',        path:'/dashboard',        icon:LayoutDashboard, label:'Dashboard',        operational: true },
+  { id:'admin-overview',   path:'/admin',            icon:BarChart3,       label:'Admin Overview',   roles:['admin'], adminNav: true },
+  { id:'admin-claims',     path:'/admin/claim-search', icon:FileText,      label:'Claim Assignment', roles:['admin'], adminNav: true },
+  { id:'policy',           path:'/policy-search',    icon:Search,          label:'Policy Search',    roles:['Pre Assessor'], operational: true },
+  { id:'claims',           path:'/claim-search',     icon:FileText,        label:'Claim Search',     operational: true },
+  { id:'pool',             path:'/pool-selection',   icon:Layers,          label:'Pool Selection',   roles:['Assessor','Verifier'], operational: true },
+  { id:'tasks',            path:'/my-task',          icon:CheckSquare,     label:'My Tasks',         roles:['Assessor','Verifier'], operational: true },
+  { id:'add',              path:'/add-screen',       icon:Plus,            label:'Add Screen',       roles:['Assessor','Verifier'], operational: true },
+  { id:'users',            path:'/user-management',  icon:Users,           label:'User Management',  roles:['admin'], adminNav: true },
+  { id:'audit-log',        path:'/audit-log',        icon:ClipboardList,   label:'Login Sessions',   roles:['admin'], adminNav: true },
 ]
 
 const ACT_STYLE = {
@@ -46,6 +48,23 @@ const ACT_STYLE = {
 
 const GUEST_USER = { name:'Guest User', role:'Admin', email:'guest@dhdigital.co.in', avatar:'GU', username:'guest' }
 
+const SIDEBAR_EXPANDED = 252
+const SIDEBAR_RAIL = 72
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const onChange = () => setMatches(mq.matches)
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [query])
+  return matches
+}
+
 export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   const { user: authUser, logout, hasRole } = useAuth()
   const user = authUser
@@ -53,11 +72,17 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   const location = useLocation()
   const toast = useToast()
 
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const [sidebarExpanded, setSidebarExpanded] = useState(true)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
   const dropRef = useRef(null)
+  const sidebarRef = useRef(null)
+
+  const showWideSidebar = isDesktop ? sidebarExpanded : true
+  const sidebarWidth = isDesktop ? (sidebarExpanded ? SIDEBAR_EXPANDED : SIDEBAR_RAIL) : SIDEBAR_EXPANDED
 
   useEffect(() => {
     if (!user?.username) return
@@ -78,10 +103,14 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
         setProfileOpen(false)
         setNotifOpen(false)
       }
+      if (!isDesktop && mobileNavOpen && sidebarRef.current && !sidebarRef.current.contains(e.target)) {
+        const headerBtn = e.target?.closest?.('[data-sidebar-toggle]')
+        if (!headerBtn) setMobileNavOpen(false)
+      }
     }
     document.addEventListener('mousedown', fn)
     return () => document.removeEventListener('mousedown', fn)
-  }, [])
+  }, [isDesktop, mobileNavOpen])
 
   if (!user) {
     return (
@@ -91,7 +120,19 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
     )
   }
 
-  const visibleNav = NAV_ITEMS.filter(n => !n.roles || n.roles.some(r => hasRole(r)))
+  const adminOnly = isAdminOnlyUser(user?.roles)
+
+  const visibleNav = NAV_ITEMS.filter((n) => {
+    if (adminOnly) {
+      return ['admin-overview', 'admin-claims', 'users', 'audit-log'].includes(n.id)
+    }
+    if (n.id === 'admin-overview' || n.id === 'admin-claims') {
+      return hasAdminRole(user?.roles)
+    }
+    if (n.operational && n.roles && !n.roles.some((r) => hasRole(r))) return false
+    if (n.roles && !n.roles.some((r) => hasRole(r))) return false
+    return true
+  })
 
   const currentNav = visibleNav.find(n => {
     if (n.path === '/dashboard') return location.pathname === '/dashboard'
@@ -100,7 +141,15 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
 
   const handleNavClick = (item) => {
     navigate(item.path)
+    if (!isDesktop) setMobileNavOpen(false)
   }
+
+  const toggleSidebar = () => {
+    if (isDesktop) setSidebarExpanded((p) => !p)
+    else setMobileNavOpen((p) => !p)
+  }
+
+  const primaryRole = user?.roles?.[0] || user?.role || 'User'
 
   const handleSignOut = async () => {
     await logout()
@@ -111,41 +160,66 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   const breadcrumb = pageTitle || currentNav?.label || 'Dashboard'
 
   return (
-    <div style={{ display:'flex', height:'100vh', overflow:'hidden', fontFamily:'Inter,sans-serif' }}>
+    <div style={{ display:'flex', height:'100vh', overflow:'hidden', fontFamily:'Inter,sans-serif', background: T.pageBg }}>
+
+      {!isDesktop && mobileNavOpen && (
+        <div
+          aria-hidden
+          onClick={() => setMobileNavOpen(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', zIndex:40, backdropFilter:'blur(2px)' }}
+        />
+      )}
 
       {/* ── SIDEBAR ── */}
-      <aside style={{
-        width: sidebarOpen ? '240px' : '60px', flexShrink: 0,
-        background: T.sidebar, display: 'flex', flexDirection: 'column',
-        transition: 'width 0.25s ease', overflow: 'hidden',
+      <aside ref={sidebarRef} style={{
+        position: isDesktop ? 'relative' : 'fixed',
+        left: 0,
+        top: 0,
+        zIndex: 41,
+        height: '100vh',
+        width: isDesktop ? sidebarWidth : SIDEBAR_EXPANDED,
+        flexShrink: 0,
+        transform: isDesktop ? 'none' : (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)'),
+        background: `linear-gradient(180deg, #0F172A 0%, #111827 55%, #0F172A 100%)`,
+        display: 'flex',
+        flexDirection: 'column',
+        transition: isDesktop ? 'width 0.22s ease' : 'transform 0.22s ease',
+        overflow: 'hidden',
         borderRight: `1px solid ${T.sidebarBorder}`,
+        boxShadow: isDesktop ? '4px 0 24px rgba(15,23,42,0.08)' : '8px 0 32px rgba(0,0,0,0.2)',
       }}>
         {/* Logo */}
         <div style={{
           height: '60px', display: 'flex', alignItems: 'center', gap: '12px',
-          padding: sidebarOpen ? '0 20px' : '0 14px', flexShrink: 0,
+          padding: showWideSidebar ? '0 18px' : '0 16px', flexShrink: 0,
           borderBottom: `1px solid ${T.sidebarBorder}`,
         }}>
           <div style={{
-            width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0,
-            background: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(29,78,216,0.4)',
+            width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
+            background: `linear-gradient(135deg, ${T.primary} 0%, #2563EB 100%)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(29,78,216,0.35)',
           }}>
-            <Shield size={15} color="#fff" />
+            <Shield size={16} color="#fff" />
           </div>
-          {sidebarOpen && (
-            <div>
+          {showWideSidebar && (
+            <div style={{ minWidth: 0 }}>
               <div style={{ color: '#fff', fontWeight: 800, fontSize: '14px', letterSpacing: '-0.02em' }}>DH Digital</div>
-              <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Life Claims</div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Life Claims</div>
             </div>
           )}
         </div>
 
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: '12px 8px', overflow: 'hidden' }}>
-          {sidebarOpen && (
-            <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0 10px', marginBottom: '8px' }}>
-              Navigation
+        {/* Nav — compact; footer pinned with marginTop auto */}
+        <nav style={{ padding: '14px 10px', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {showWideSidebar && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 10px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Menu
+              </div>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#93C5FD', background: 'rgba(29,78,216,0.2)', border: '1px solid rgba(147,197,253,0.25)', borderRadius: '99px', padding: '2px 8px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {primaryRole}
+              </div>
             </div>
           )}
           {visibleNav.map(item => {
@@ -154,59 +228,67 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item)}
-                title={!sidebarOpen ? item.label : undefined}
+                title={!showWideSidebar ? item.label : undefined}
                 style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: sidebarOpen ? '9px 10px' : '9px',
-                  justifyContent: sidebarOpen ? 'flex-start' : 'center',
-                  borderRadius: '8px', border: 'none', cursor: 'pointer', marginBottom: '2px',
+                  width: '100%', display: 'flex', alignItems: 'center', gap: '11px',
+                  padding: showWideSidebar ? '10px 12px' : '10px 0',
+                  justifyContent: showWideSidebar ? 'flex-start' : 'center',
+                  borderRadius: '10px', border: 'none', cursor: 'pointer',
                   background: active ? T.sidebarActive : 'transparent',
-                  color: active ? T.sidebarActiveText : 'rgba(255,255,255,0.45)',
+                  color: active ? T.sidebarActiveText : 'rgba(255,255,255,0.55)',
+                  boxShadow: active ? 'inset 3px 0 0 #60A5FA' : 'none',
                   transition: 'all 0.15s ease', textAlign: 'left', fontFamily: 'Inter,sans-serif',
                 }}
                 onMouseEnter={e => {
                   if (!active) {
                     e.currentTarget.style.background = T.sidebarHover
-                    e.currentTarget.style.color = 'rgba(255,255,255,0.8)'
+                    e.currentTarget.style.color = 'rgba(255,255,255,0.9)'
                   }
                 }}
                 onMouseLeave={e => {
                   if (!active) {
                     e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'rgba(255,255,255,0.45)'
+                    e.currentTarget.style.color = 'rgba(255,255,255,0.55)'
                   }
                 }}
               >
-                <item.icon size={15} style={{ flexShrink: 0, color: active ? T.sidebarActiveText : undefined }} />
-                {sidebarOpen && (
-                  <>
-                    <span style={{ flex: 1, fontSize: '13px', fontWeight: active ? 600 : 500 }}>{item.label}</span>
-                    {item.badge && (
-                      <span style={{ background: T.primary, color: '#fff', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '99px', lineHeight: 1.6 }}>
-                        {item.badge}
-                      </span>
-                    )}
-                  </>
+                <item.icon size={16} style={{ flexShrink: 0, color: active ? T.sidebarActiveText : undefined }} />
+                {showWideSidebar && (
+                  <span style={{ flex: 1, fontSize: '13px', fontWeight: active ? 700 : 500, letterSpacing: '-0.01em' }}>{item.label}</span>
                 )}
               </button>
             )
           })}
         </nav>
 
-        {/* User info */}
-        {sidebarOpen && (
-          <div style={{ padding: '10px 8px 14px', borderTop: `1px solid ${T.sidebarBorder}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)' }}>
-              <div style={{ width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0, background: T.primary, color: '#fff', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {user?.avatar}
-              </div>
+        {/* User — always pinned to bottom */}
+        <div style={{ marginTop: 'auto', padding: '12px 10px 16px', borderTop: `1px solid ${T.sidebarBorder}`, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => { navigate('/profile'); if (!isDesktop) setMobileNavOpen(false) }}
+            title={!showWideSidebar ? user?.name : undefined}
+            style={{
+              width:'100%', display:'flex', alignItems:'center', gap:'10px',
+              padding: showWideSidebar ? '10px 12px' : '8px 0',
+              justifyContent: showWideSidebar ? 'flex-start' : 'center',
+              borderRadius:'10px', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.06)',
+              cursor:'pointer', textAlign:'left', fontFamily:'Inter,sans-serif',
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+          >
+            <div style={{ width: '32px', height: '32px', borderRadius: '9px', flexShrink: 0, background: T.primary, color: '#fff', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {user?.avatar}
+            </div>
+            {showWideSidebar && (
               <div style={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
                 <div style={{ color: '#fff', fontSize: '12px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
-                <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '10px', fontWeight: 500 }}>{user?.role}</div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 500 }}>Profile & settings</div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
+          </button>
+        </div>
       </aside>
 
       {/* ── MAIN ── */}
@@ -220,12 +302,15 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button
-              onClick={() => setSidebarOpen(p => !p)}
+              type="button"
+              data-sidebar-toggle
+              onClick={toggleSidebar}
+              aria-label={isDesktop ? (sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar') : (mobileNavOpen ? 'Close menu' : 'Open menu')}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: '6px', display: 'flex', alignItems: 'center', borderRadius: '8px', transition: 'all 0.15s' }}
               onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.color = T.textPrimary }}
               onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = T.textMuted }}
             >
-              {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+              {isDesktop ? (sidebarExpanded ? <X size={18} /> : <Menu size={18} />) : (mobileNavOpen ? <X size={18} /> : <Menu size={18} />)}
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
               <span style={{ color: T.textMuted, fontWeight: 500 }}>Home</span>
@@ -337,6 +422,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
           {children}
         </main>
       </div>
+      <AskMeChat />
     </div>
   )
 }

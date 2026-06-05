@@ -2,11 +2,12 @@ const {
   getTransactionApiBase,
   fetchPolicySearch,
 } = require('../services/transactionApiClient');
+const { mapLifeAsiaPolicyResponse } = require('../services/policyMapper');
 
 const getPolicyDetails = async (req, res, next) => {
   try {
-    const { data } = await fetchPolicySearch(req.params.policyID);
-    res.json(data);
+    const { data, formattedPolicyNo } = await fetchPolicySearch(req.params.policyID);
+    res.json(mapLifeAsiaPolicyResponse(data, formattedPolicyNo));
   } catch (error) {
     next(error);
   }

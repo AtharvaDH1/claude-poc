@@ -1,5 +1,6 @@
 import { API_URL } from "../util/config";
 import wrapper from "../util/ApiWrapper";
+import { normalizePolicyResponse } from "../util/normalizePolicyResponse";
 
 const policyService = {
     getPolicyDetails : async (policyID) => {
@@ -11,7 +12,7 @@ const policyService = {
         });
     
         const data = await response.json();
-        return data;
+        return normalizePolicyResponse(data, policyID);
       },
       getAgentRepudiationDetails : async (agentCode) => {
         console.log(agentCode)
@@ -31,3 +32,4 @@ const policyService = {
 export default policyService;
 
 export const fetchPolicyDetails = (policyID) => policyService.getPolicyDetails(policyID)
+export const fetchAgentRepudiation = (agentCode) => policyService.getAgentRepudiationDetails(agentCode)

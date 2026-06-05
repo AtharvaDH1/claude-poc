@@ -13,11 +13,9 @@ export const DataSearch = async (role) => {
     const data = await response.json().catch(() => null);
 
     if (response.ok) {
-      return data;
-    } else {
-      console.error("Data search for pool error:", data?.message);
-      return null;
+      return Array.isArray(data) ? data : data?.claims || data?.data || []
     }
+    throw new Error(data?.message || 'Pool search failed')
   } catch (error) {
     console.error("Error during search:", error);
     return null;
@@ -41,17 +39,13 @@ export const updateAssignedUser = async (claimNumber, LoggedUser, role, checkbox
     if (contentType && contentType.includes("application/json")) {
       const data = await response.json();
       if (response.ok) {
-        return data;
-      } else {
-        console.error("Error updating assigned user:", data?.message);
-        return null;
+        return data
       }
-    } else {
-      console.error("Error: Server returned a non-JSON response");
-      return null;
+      throw new Error(data?.message || 'Assign failed')
     }
+    throw new Error('Invalid server response')
   } catch (error) {
-    console.error("Error during assigned user update:", error);
-    return null;
+    if (error?.message) throw error
+    throw new Error('Could not assign claim')
   }
-};
+}

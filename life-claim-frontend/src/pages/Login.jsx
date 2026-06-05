@@ -1,7 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import api from '../services/api'
+import RecaptchaField from '../components/RecaptchaField'
+import authService from '../services/authService'
+import {
+  postLoginPath,
+  getLocalLockout,
+  recordLocalLoginFailure,
+  clearLocalLoginFailures,
+  logoutReasonMessage,
+} from '../util/loginHelpers'
+import { isCaptchaOptional } from '../config/appEnv'
+
+const CAPTCHA_UNAVAILABLE = '__CAPTCHA_UNAVAILABLE__'
+
+const CAPTCHA_LOAD_FALLBACK = isCaptchaOptional()
 
 const FEATURES = [
   { icon: '🔐', text: 'End-to-end encrypted claim data with full audit trail' },
@@ -102,6 +115,7 @@ export default function Login() {
   const { login } = useAuth()
   const navigate  = useNavigate()
   const passRef   = useRef(null)
+  const recaptchaRef = useRef(null)
 
   const [form,      setForm]      = useState({ username:'', password:'' })
   const [showPass,  setShowPass]  = useState(false)
@@ -109,49 +123,123 @@ export default function Login() {
   const [rememberMe,setRememberMe]= useState(false)
   const [loading,   setLoading]   = useState(false)
   const [success,   setSuccess]   = useState(false)
-  const [errors,    setErrors]    = useState({ username:'', password:'', general:'' })
+  const [errors,    setErrors]    = useState({ username:'', password:'', captcha:'', general:'' })
+  const [captchaOk, setCaptchaOk] = useState(false)
+  const [captchaUnavailable, setCaptchaUnavailable] = useState(false)
   const [shake,     setShake]     = useState(false)
   const [mounted,   setMounted]   = useState(false)
-  const [lastLogin, setLastLogin] = useState(null)
+  const [sessionNotice, setSessionNotice] = useState('')
+  const [offline, setOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false)
+  const [lastLoginAt, setLastLoginAt] = useState(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('poc_remember_user')
     if (saved) setForm(f => ({ ...f, username: saved }))
-    const t = setTimeout(() => setMounted(true), 80)
-    // Only fetch last login if user was previously logged in (has stored session)
-    const storedUser = sessionStorage.getItem('poc_user')
-    if (storedUser) {
-      try {
-        const u = JSON.parse(storedUser)
-        if (u.loginTime) setLastLogin(u.loginTime)
-      } catch {}
+    if (!sessionStorage.getItem('token')) {
+      const staleReason = sessionStorage.getItem('auth_logout_reason')
+      if (staleReason === 'session') {
+        sessionStorage.removeItem('auth_logout_reason')
+      }
     }
-    return () => clearTimeout(t)
+    const reason = sessionStorage.getItem('auth_logout_reason')
+    if (reason) {
+      const msg = logoutReasonMessage(reason)
+      if (msg) setSessionNotice(msg)
+      sessionStorage.removeItem('auth_logout_reason')
+    } else {
+      setSessionNotice('')
+    }
+    const t = setTimeout(() => setMounted(true), 80)
+    const onOnline = () => setOffline(false)
+    const onOffline = () => setOffline(true)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
   }, [])
+
+  useEffect(() => {
+    const uname = form.username.trim()
+    if (uname.length < 2) {
+      setLastLoginAt(null)
+      return undefined
+    }
+    const t = setTimeout(() => {
+      authService.getLastLogin(uname).then((row) => {
+        if (row?.lastLoginAt) setLastLoginAt(row.lastLoginAt)
+        else setLastLoginAt(null)
+      }).catch(() => setLastLoginAt(null))
+    }, 400)
+    return () => clearTimeout(t)
+  }, [form.username])
 
   const handleCaps = e => setCapsLock(e.getModifierState?.('CapsLock') ?? false)
 
   const validate = () => {
-    const e = { username:'', password:'', general:'' }
+    const e = { username:'', password:'', captcha:'', general:'' }
     if (!form.username.trim()) e.username = 'Username is required'
     if (!form.password) e.password = 'Password is required'
     else if (form.password.length < 4) e.password = 'Password too short'
+    const token = recaptchaRef.current?.getToken?.() || ''
+    if (!captchaUnavailable && !token) e.captcha = 'Please complete the reCAPTCHA check'
     setErrors(e)
-    return !e.username && !e.password
+    return !e.username && !e.password && !e.captcha
   }
 
   const handleSubmit = async e => {
     e.preventDefault()
+    if (offline) {
+      setErrors(p => ({ ...p, general: 'No internet connection. Check your network and try again.' }))
+      triggerShake()
+      return
+    }
+    const uname = form.username.trim()
+    const localLock = getLocalLockout(uname)
+    if (localLock.locked) {
+      const mins = Math.max(1, Math.ceil(localLock.remainingMs / 60000))
+      setErrors(p => ({
+        ...p,
+        general: `Account temporarily locked. Try again in about ${mins} minute(s).`,
+      }))
+      triggerShake()
+      return
+    }
     if (!validate()) { triggerShake(); return }
-    setLoading(true); setErrors({ username:'', password:'', general:'' })
+    setLoading(true); setErrors({ username:'', password:'', captcha:'', general:'' })
+    const captchaToken = captchaUnavailable
+      ? CAPTCHA_UNAVAILABLE
+      : (recaptchaRef.current?.getToken?.() || '')
     try {
-      await login(form.username.trim(), form.password)
-      if (rememberMe) localStorage.setItem('poc_remember_user', form.username.trim())
+      const userData = await login(uname, form.password, captchaToken)
+      sessionStorage.removeItem('auth_logout_reason')
+      setSessionNotice('')
+      clearLocalLoginFailures(uname)
+      if (rememberMe) localStorage.setItem('poc_remember_user', uname)
       else localStorage.removeItem('poc_remember_user')
       setSuccess(true)
-      setTimeout(() => navigate('/dashboard'), 1000)
+      const dest = postLoginPath(userData?.roles)
+      setTimeout(() => navigate(dest), 1000)
     } catch (err) {
-      setErrors(p => ({ ...p, general: err.message }))
+      let msg = err.message || 'Login failed'
+      if (err.lockout) {
+        const mins = Math.max(1, Math.ceil((Number(err.remainingMs) || 900000) / 60000))
+        msg = `Account temporarily locked. Try again in about ${mins} minute(s).`
+      } else if (/invalid username or password|invalid_credentials/i.test(msg)) {
+        const r = recordLocalLoginFailure(uname)
+        if (r.locked) {
+          msg = 'Account temporarily locked for 15 minutes due to too many failed attempts.'
+        } else if (r.remaining > 0) {
+          msg = `Invalid username or password. ${r.remaining} attempt(s) remaining before lockout.`
+        }
+      } else if (/concurrent login/i.test(msg)) {
+        sessionStorage.setItem('auth_logout_reason', 'concurrent')
+      }
+      setErrors(p => ({ ...p, general: msg }))
+      recaptchaRef.current?.reset?.()
+      setCaptchaOk(false)
       triggerShake()
     } finally { setLoading(false) }
   }
@@ -252,6 +340,26 @@ export default function Login() {
             <p style={{ fontSize:'14px', color:'#64748B', fontWeight:500 }}>Sign in to continue to the claims platform.</p>
           </div>
 
+          {sessionNotice && (
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
+              <span style={{ fontSize:'15px', flexShrink:0 }}>ℹ️</span>
+              <div style={{ fontSize:'12px', fontWeight:600, color:'#1E40AF', lineHeight:1.5 }}>{sessionNotice}</div>
+            </div>
+          )}
+
+          {offline && (
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
+              <span style={{ fontSize:'15px', flexShrink:0 }}>📡</span>
+              <div style={{ fontSize:'12px', fontWeight:600, color:'#92400E' }}>You appear to be offline.</div>
+            </div>
+          )}
+
+          {lastLoginAt && (
+            <div style={{ marginBottom:'16px', padding:'10px 14px', borderRadius:'10px', background:'#F0F9FF', border:'1px solid #BAE6FD', fontSize:'12px', fontWeight:600, color:'#0369A1' }}>
+              Your last login: {new Date(lastLoginAt).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })}
+            </div>
+          )}
+
           {/* Error */}
           {errors.general && (
             <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px', animation: shake ? 'shake 0.5s ease' : 'fadeIn 0.2s ease' }}>
@@ -306,6 +414,35 @@ export default function Login() {
               </div>
             </div>
 
+            <div style={{ marginBottom:'16px' }}>
+              <RecaptchaField
+                ref={recaptchaRef}
+                disabled={loading || success}
+                onReady={() => { setCaptchaOk(true); setErrors(p => ({ ...p, captcha:'' })) }}
+                onExpired={() => { setCaptchaOk(false); setErrors(p => ({ ...p, captcha:'reCAPTCHA expired — please verify again' })) }}
+                onError={() => {
+                  setCaptchaUnavailable(CAPTCHA_LOAD_FALLBACK)
+                  setCaptchaOk(false)
+                  if (CAPTCHA_LOAD_FALLBACK) {
+                    setErrors(p => ({ ...p, captcha:'' }))
+                  } else {
+                    setErrors(p => ({
+                      ...p,
+                      captcha:'reCAPTCHA could not load. Allow google.com / recaptcha.net or set VITE_RECAPTCHA_SITE_KEY.',
+                    }))
+                  }
+                }}
+              />
+              {errors.captcha && (
+                <div style={{ fontSize:'12px', fontWeight:600, color:'#EF4444', marginTop:'6px' }}>{errors.captcha}</div>
+              )}
+              {captchaUnavailable && CAPTCHA_LOAD_FALLBACK && (
+                <div style={{ fontSize:'11px', color:'#64748B', marginTop:'6px' }}>
+                  reCAPTCHA unavailable on this network — you can still sign in (POC/SIT bypass).
+                </div>
+              )}
+            </div>
+
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'22px' }}>
               <label style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer', userSelect:'none' }}>
                 <div onClick={() => setRememberMe(p => !p)}
@@ -321,7 +458,7 @@ export default function Login() {
               </button>
             </div>
 
-            <button type="submit" disabled={loading || success}
+            <button type="submit" disabled={loading || success || (!captchaUnavailable && !captchaOk && !recaptchaRef.current?.getToken?.())}
               style={{
                 width:'100%', height:'46px', borderRadius:'8px', border:'none',
                 cursor: loading || success ? 'not-allowed' : 'pointer',
@@ -339,53 +476,6 @@ export default function Login() {
               : 'Sign In →'}
             </button>
           </form>
-
-          {/* Divider */}
-          <div style={{ display:'flex', alignItems:'center', gap:'12px', margin:'22px 0', animation:'fadeUp 0.5s 0.5s ease both', opacity:0, animationFillMode:'both' }}>
-            <div style={{ flex:1, height:'1px', background:'#E2E8F0' }} />
-            <span style={{ fontSize:'12px', color:'#94A3B8', fontWeight:600 }}>or</span>
-            <div style={{ flex:1, height:'1px', background:'#E2E8F0' }} />
-          </div>
-
-          {/* SSO */}
-          <button type="button"
-            onClick={() => alert('SSO integration requires Keycloak setup in production.')}
-            style={{ width:'100%', height:'46px', borderRadius:'8px', border:'1.5px solid #E2E8F0', background:'#FAFAFA', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px', cursor:'pointer', transition:'all 0.15s', fontFamily:'Inter,sans-serif', animation:'fadeUp 0.5s 0.55s ease both', opacity:0, animationFillMode:'both' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor='#1D4ED8'; e.currentTarget.style.background='#EFF6FF'; e.currentTarget.style.transform='translateY(-1px)' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.background='#FAFAFA'; e.currentTarget.style.transform='' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect width="8.5" height="8.5" fill="#F25022"/><rect x="9.5" width="8.5" height="8.5" fill="#7FBA00"/><rect y="9.5" width="8.5" height="8.5" fill="#00A4EF"/><rect x="9.5" y="9.5" width="8.5" height="8.5" fill="#FFB900"/></svg>
-            <span style={{ fontSize:'13px', fontWeight:700, color:'#374151' }}>Continue with Microsoft SSO</span>
-          </button>
-
-          {/* Trust badges */}
-          <div style={{ marginTop:'20px', display:'flex', alignItems:'center', justifyContent:'center', gap:'16px', animation:'fadeUp 0.5s 0.6s ease both', opacity:0, animationFillMode:'both' }}>
-            {[{ icon:'🔒', text:'256-bit SSL' },{ icon:'🛡️', text:'ISO 27001' },{ icon:'✅', text:'IRDAI Compliant' }].map(b => (
-              <div key={b.text} style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', fontWeight:600, color:'#94A3B8' }}>
-                <span style={{ fontSize:'12px' }}>{b.icon}</span>{b.text}
-              </div>
-            ))}
-          </div>
-
-          {lastLogin && (
-            <div style={{ marginTop:'16px', padding:'10px 14px', borderRadius:'10px', background:'#F0F9FF', border:'1px solid #BAE6FD', display:'flex', alignItems:'center', gap:'10px', animation:'fadeIn 0.3s ease' }}>
-              <div style={{ fontSize:'15px' }}>🕒</div>
-              <div>
-                <div style={{ fontSize:'11px', fontWeight:700, color:'#075985', textTransform:'uppercase', letterSpacing:'0.06em' }}>Last Login</div>
-                <div style={{ fontSize:'12px', fontWeight:600, color:'#0369A1', marginTop:'1px' }}>
-                  {new Date(lastLogin).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginTop:'16px', paddingTop:'16px', borderTop:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', animation:'fadeUp 0.5s 0.65s ease both', opacity:0, animationFillMode:'both' }}>
-            <span style={{ fontSize:'12px', color:'#94A3B8', fontWeight:500 }}>DH Digital Life Claims v2.0</span>
-            <div style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'#94A3B8', fontWeight:500 }}>
-              <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#22C55E', boxShadow:'0 0 5px #22C55E' }}/>
-              All systems normal
-            </div>
-          </div>
         </div>
       </div>
 

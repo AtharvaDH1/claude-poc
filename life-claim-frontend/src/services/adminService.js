@@ -168,6 +168,9 @@ const adminService = {
       body: JSON.stringify({ claimNumber, assignee, role }),
     });
     const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || `Assign failed (${res.status})`);
+    }
     return data;
   },
 

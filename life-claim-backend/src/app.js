@@ -97,6 +97,10 @@ const runtimeAppOrigins = [
 const DEV_CORS_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:3011',
+  'http://127.0.0.1:3011',
   'http://localhost:3012',
   'https://localhost:3012',
   'http://localhost:3015',
@@ -136,17 +140,37 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "https://www.google.com", "https://www.gstatic.com"],
+        scriptSrc: [
+          "'self'",
+          "https://www.google.com",
+          "https://www.gstatic.com",
+          "https://www.recaptcha.net",
+          "https://recaptcha.google.com",
+        ],
         frameSrc: [
           "'self'",
           "https://www.google.com",
+          "https://www.gstatic.com",
           "https://www.recaptcha.net",
           "https://recaptcha.google.com",
         ],
         // Allow backend API origin for XHR/fetch (authService, etc.)
         connectSrc: cspConnectSrc,
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://www.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https://www.google.com", "https://www.gstatic.com"],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com",
+          "https://www.gstatic.com",
+          "https://www.google.com",
+          "https://www.recaptcha.net",
+        ],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https://www.google.com",
+          "https://www.gstatic.com",
+          "https://www.recaptcha.net",
+        ],
       },
     },
   })
@@ -305,6 +329,7 @@ app.use('/api/capsAddDetails', capsAddDetailsRoutes); //** to add data into the 
 app.use('/api/case-search', capsAddDetailsRoutes); //** to add data into the table
 app.use('/api/Assessment', capsAddDetailsRoutes); //** to add data into the table
 app.use('/api/caseassignment', capsAddDetailsRoutes); //** to get data from users and capsAddDetals  table
+app.use('/api/case-assignment', capsAddDetailsRoutes); // alias for bulk assign POST /add
  
 //Fraud Prevention routes
 app.use('/api/fraudprevention', fraudPreventionRoutes);
