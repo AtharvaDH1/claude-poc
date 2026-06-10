@@ -1,6 +1,13 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 var multer = require('multer');
+
+/** Temp upload staging — created on demand (gitignored contents, not the folder). */
+const UPLOAD_DIR = path.join(__dirname, '..', '..', 'files');
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 // Security: Whitelist allowed file extensions
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.zip'];
@@ -19,7 +26,8 @@ const fileFilter = (req, file, cb) => {
 
 var storage = multer.diskStorage({
     destination: function(req, file, cb) {
-        cb(null,'files/')
+        fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+        cb(null, UPLOAD_DIR);
     },
     filename: function(req, file, cb){
         // Security: Sanitize filename to prevent path traversal and shell injection
@@ -47,8 +55,8 @@ const router = express.Router();
 
 //router.get('/folder/:applicationNo', authMiddleware.authenticate, documentViewerController.getDocumentsByApplicationNo);
 // 
-// Security: Added error handling for Multer (size/type violations)
-router.post('/uploadFile', authMiddleware.authenticate, authorizeClaimBodyAccess, (req, res, next) => {
+// Multer must run before authorizeClaimBodyAccess — multipart fields are not in req.body until parsed.
+router.post('/uploadFile', authMiddleware.authenticate, (req, res, next) => {
     upload.array('files', MAX_UPLOAD_FILES)(req, res, function (err) {
         if (err instanceof multer.MulterError) {
             return res.status(400).json({
@@ -56,14 +64,15 @@ router.post('/uploadFile', authMiddleware.authenticate, authorizeClaimBodyAccess
                 ...(exposeErrorDetails ? { detail: err.message } : {}),
             });
         } else if (err) {
+            const isSecurity = String(err.message || '').includes('Security:');
             return res.status(400).json({
-                message: "Security Validation Error",
+                message: isSecurity ? "Security Validation Error" : "Upload failed",
                 ...(exposeErrorDetails ? { detail: err.message } : {}),
             });
         }
         next();
     });
-}, documentUploadController.uploadDocument);
+}, authorizeClaimBodyAccess, documentUploadController.uploadDocument);
 
 router.get(
     '/preview/:nodeId',

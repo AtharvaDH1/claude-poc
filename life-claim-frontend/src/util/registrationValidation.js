@@ -1,3 +1,8 @@
+import {
+  REGISTRATION_ASSESSMENT_QUESTIONS,
+  REGISTRATION_REQUIREMENTS,
+} from '../config/registrationCatalog'
+
 const isEmpty = (v) => v == null || String(v).trim() === ''
 
 const DEMO_SECTION_ORDER = [
@@ -85,12 +90,19 @@ function validateClaimantDraft(form) {
   return { valid: missing.length === 0, missing }
 }
 
-/** Inputs required before generating trap score. */
+/** Inputs required before generating trap score (aligned with backend checkForNull). */
 export function validateTrapScoreInputs(data, policy, policyClients = []) {
   const missing = []
   const la = policyClients[0] || {}
   if (isEmpty(data.causeOfClaim) && isEmpty(data.causeCode)) missing.push('Cause of Death (Section 3)')
   if (isEmpty(data.placeOfDeath)) missing.push('Place of Death (Section 2)')
+  if (isEmpty(data.source)) missing.push('Source (Section 2)')
+  if (isEmpty(data.intimationDate)) missing.push('Intimation Date (Section 2)')
+  if (isEmpty(data.declaredByDoctor)) missing.push('Declared by Doctor (Section 2)')
+  if (isEmpty(data.firPmReceived)) missing.push('FIR/PM Received (Section 2)')
+  if (isEmpty(data.claimType)) missing.push('Claim Type')
+  if (isEmpty(data.typeOfClaim)) missing.push('Type of Claim (Section 3)')
+  if (isEmpty(data.portfolioType)) missing.push('Portfolio / Product Category (load policy)')
   const sumAssured = data.sumAssured || policy?.sumAssured
   if (sumAssured == null || sumAssured === '') missing.push('Sum Assured (load policy)')
   const gender = data.laGender || la.gender
@@ -98,7 +110,39 @@ export function validateTrapScoreInputs(data, policy, policyClients = []) {
   const dod = data.dateOfDeathEvent
   const dob = data.laDob || la.dob
   if (isEmpty(dod) || isEmpty(dob)) missing.push('Date of Death and Life Assured DOB (for age at death)')
+  const productCode = data.productCode || policy?.productCode
+  const occ = data.laOccCode || la.occCode
+  if (productCode?.charAt(0) !== 'G' && isEmpty(occ)) {
+    missing.push('Life Assured occupation (Section 6 or policy)')
+  }
+  const city = data.laCity || la.city
+  const pin = data.laPincode || la.pincode
+  if (isEmpty(city)) missing.push('Life Assured city (Section 6 or policy)')
+  if (isEmpty(pin)) missing.push('Life Assured pincode (Section 6 or policy)')
+  const policyAge = data.policyAge1 ?? computePolicyAgeForTrap(data, policy)
+  if (policyAge == null) missing.push('Policy age (set Date of Death in Intimation first)')
+  const advisorPresent =
+    data.advisorCode || policy?.advisorCode || data.umCode || data.advisorClub || data.advisorCategory
+  if (isEmpty(advisorPresent)) missing.push('Advisor code (from policy / Section 7)')
+  if (
+    String(data.typeOfClaim || '').toLowerCase() === 'non-accidental' &&
+    isEmpty(data.causeOfClaim) &&
+    isEmpty(data.causeCode)
+  ) {
+    missing.push('Cause of Death for non-accidental claim (Section 3)')
+  }
   return { valid: missing.length === 0, missing }
+}
+
+function computePolicyAgeForTrap(data, policy) {
+  if (!data.dateOfDeathEvent) return null
+  const rcd = data.riskCommencementDate || policy?.riskCommencementDate
+  if (!rcd) return null
+  const end = new Date(data.dateOfDeathEvent)
+  const start = new Date(rcd)
+  if (Number.isNaN(end.getTime()) || Number.isNaN(start.getTime()) || end < start) return null
+  const totalDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+  return Math.round((totalDays / 365.25) * 10) / 10
 }
 
 /** Validate a demographics sub-section before Save & Continue. */
@@ -116,6 +160,7 @@ export function validateDemographicsSection(sectionId, data, { policy, fromRegis
       if (isEmpty(data.intimationDate)) missing.push('Intimation Date')
       if (isEmpty(data.source)) missing.push('Source')
       if (isEmpty(data.bondType)) missing.push('Bond Type')
+      if (isEmpty(data.firPmReceived)) missing.push('FIR / PM Received')
       if (isEmpty(data.declaredByDoctor)) missing.push('Declared by Doctor')
       if (isEmpty(data.dateOfDeathEvent)) missing.push('Date of Death / Event')
       if (isEmpty(data.dateOfDeathReg)) missing.push('Date of Death Registration')
@@ -175,9 +220,8 @@ export function validateDemographicsSection(sectionId, data, { policy, fromRegis
 
 /** v1 gate sections required before Demographics → Requirements. */
 export function validateDemographicsForTrap(data, { policy, fromRegisterGate } = {}) {
-  const sections = (fromRegisterGate
-    ? DEMO_SECTIONS_REQUIRED.filter((id) => id !== 'register')
-    : DEMO_SECTIONS_REQUIRED.filter((id) => id !== 'trap')
+  const sections = DEMO_SECTIONS_REQUIRED.filter(
+    (id) => id !== 'trap' && (!fromRegisterGate || id !== 'register')
   )
   const missing = []
   sections.forEach((id) => {
@@ -248,8 +292,8 @@ export function validateAssessment(data, { questions = [], isPreAssessor = true 
 export function validatePreAssessorSubmit(data, {
   policy,
   fromRegisterGate = false,
-  questions = [],
-  allDocs = [],
+  questions = REGISTRATION_ASSESSMENT_QUESTIONS,
+  allDocs = REGISTRATION_REQUIREMENTS,
 } = {}) {
   const missing = []
 
@@ -284,7 +328,11 @@ export function validatePreAssessorSubmit(data, {
 }
 
 /** Assessor / verifier decision tab submit. */
-export function validateAssessorSubmit(data, { policy, questions = [], allDocs = [] } = {}) {
+export function validateAssessorSubmit(data, {
+  policy,
+  questions = REGISTRATION_ASSESSMENT_QUESTIONS,
+  allDocs = REGISTRATION_REQUIREMENTS,
+} = {}) {
   const missing = []
 
   const demo = validateDemographicsComplete(data, { policy, fromRegisterGate: true })

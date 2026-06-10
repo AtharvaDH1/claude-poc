@@ -1,19 +1,21 @@
-import wrapper from "../util/ApiWrapper";
+import wrapper from '../util/ApiWrapper'
 
-const systemDecisionAndReasonService = async (sysdata) => { 
-    console.log(sysdata)
-    const response = await wrapper.fetchWithToken("/systemDec/generateSystemDecision", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        policyData:sysdata
-      })
-    });
+const systemDecisionAndReasonService = async (sysdata) => {
+  const response = await wrapper.fetchWithToken('/systemDec/generateSystemDecision', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      policyData: sysdata,
+    }),
+  })
 
-    const data = await response.json().catch(() => null);
-    console.log(data)
-    return data;
+  const data = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(data?.message || 'System decision request failed')
   }
-  export default systemDecisionAndReasonService
+  return data
+}
+
+export default systemDecisionAndReasonService

@@ -130,7 +130,7 @@ export default function ClaimSearch() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
-                    {['Claim Number', 'Claim Type', 'Policy Number', 'Policy Status', 'Claim Status', 'Created On', 'Created By', 'Action'].map((h) => (
+                    {['Claim Number', 'Claim Type', 'Policy Number', 'Policy Status', 'Claim Status', 'Role', 'Created On', 'Created By', 'Action'].map((h) => (
                       <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -142,6 +142,7 @@ export default function ClaimSearch() {
                     <td style={{ padding: '12px 16px', fontSize: '13px', fontFamily: 'monospace', color: T.textMuted }}>{result.policyNumber}</td>
                     <td style={{ padding: '12px 16px', fontSize: '13px', color: T.textMuted }}>{result.policyStatus}</td>
                     <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 600, color: T.textSecondary }}>{result.claimStatus}</td>
+                    <td style={{ padding: '12px 16px', fontSize: '13px', color: T.textMuted }}>{result.claimRole}</td>
                     <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{result.createdOn}</td>
                     <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{result.createdBy}</td>
                     <td style={{ padding: '12px 16px' }}>

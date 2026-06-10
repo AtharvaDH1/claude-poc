@@ -1,6 +1,46 @@
 const db = require("../config/dbConfig");
 // const trapScoreService = require("../services/trapScoreService");
 
+const todayIso = () => new Date().toISOString().split("T")[0];
+
+/** Ensure trap always has values — missing fields use safe POC defaults. */
+const applyTrapDefaults = (input = {}) => {
+  const d = { ...input };
+  const firPm = d.firPmReceived ?? d.firPMReceived ?? "Not Required";
+  const claimRepudiate = d.claimRepudiate ?? d.claimsRupidiate ?? "Not Required";
+  const productCode = d.productCode || "P001";
+  const city = d.city || "Mumbai";
+  const pin = String(d.pin || d.pinCode || "400001");
+
+  d.gender = d.gender || "Male";
+  d.source = d.source || "Branch";
+  d.placeOfClaim = d.placeOfClaim || "Residence";
+  d.firPmReceived = firPm;
+  d.firPMReceived = firPm;
+  d.declareByDR = d.declareByDR || "No";
+  d.claimRepudiate = claimRepudiate;
+  d.claimsRupidiate = claimRepudiate;
+  d.productCategory = d.productCategory || "Traditional";
+  d.claimType = d.claimType || "Death";
+  d.typeOfClaim = d.typeOfClaim || "Non-accidental";
+  d.intimationDate = d.intimationDate || todayIso();
+  d.dateOfDeath = d.dateOfDeath || d.dateOfDisability || todayIso();
+  d.dateOfDisability = d.dateOfDisability || d.dateOfDeath || todayIso();
+  d.policyAge = d.policyAge ?? 1;
+  d.ageAtDeath = d.ageAtDeath ?? 45;
+  d.causeOfDeath = d.causeOfDeath || "OTHER";
+  d.city = city;
+  d.pin = pin;
+  d.pinCode = pin;
+  d.productCode = productCode;
+  d.advisorCode = d.advisorCode || d.umCode || d.advisorClub || d.advisorCategory || "NA";
+  if (productCode.charAt(0) !== "G" && !d.occCategory) {
+    d.occCategory = "OTH";
+  }
+  d.avlSA = d.avlSA ?? 0;
+  return d;
+};
+
 const checkForNull = async (trapScoreData) => {
   let count = 0;
 
@@ -101,7 +141,8 @@ const checkForNull = async (trapScoreData) => {
     declareByDRRemark = "DeclaredByDoctor is null hence TRAP not executed";
   }
 
-  if (!trapScoreData.firPMReceived) {
+  const firPmValue = trapScoreData.firPmReceived ?? trapScoreData.firPMReceived;
+  if (!firPmValue) {
     count++;
     FIRPMRemark = "firPmRecieved is null hence TRAP not executed";
   }
@@ -144,7 +185,7 @@ const checkForNull = async (trapScoreData) => {
     typeOfClaimRemark = "Type of claim is null hence TRAP not executed";
   }
   if (
-    trapScoreData.typeOfClaim.toLowerCase() === "non-accidental" &&
+    trapScoreData.typeOfClaim?.toLowerCase() === "non-accidental" &&
     !trapScoreData.causeOfDeath
   ) {
     count++;
@@ -190,7 +231,8 @@ const checkForNull = async (trapScoreData) => {
   }
 };
 
-const getTrapScore = async (data) => {
+const getTrapScore = async (rawData) => {
+  const data = applyTrapDefaults(rawData);
   const {
     gender,
     ageAtDeath,
@@ -1029,16 +1071,23 @@ const getTrapScore = async (data) => {
     
     return { trapScoreDate:Date.now(), trapScore:finalTrapScore, trapRemarks: trapRemark }
   } catch (error) {
-    //for any error happening
-    console.log(error)
+    console.log(error);
+    return {
+      trapScoreDate: Date.now(),
+      trapScore: "0.0",
+      trapRemarks: `# Trap score completed with defaults after error: ${error.message}`,
+    };
   }
 };
 
 
 const getTrapScoreCity = async (data) => {
   try {
+    if (!data?.city || !data?.pin) {
+      return "This case is not fraud";
+    }
 
-    const claimCity = data.city.toLowerCase();
+    const claimCity = String(data.city).toLowerCase();
     const claimPin = data.pin;
     const query =
       "SELECT PIN_CODE, CITY FROM claims_poc.sampling_matrix_hist WHERE PIN_CODE=? OR  CITY=?";

@@ -1,10 +1,10 @@
 // DemographicsTab v2 — null-safe
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Field, Input, Select, Textarea, SectionHeader, Grid, Btn, SubTabNav, InfoCard, T } from './shared'
 import { fetchPolicyDetails as fetchPolicyAPI, fetchAgentRepudiation } from '../../services/policyService'
 import { getPortfolioService } from '../../services/statesService'
 import { getCountries } from '../../services/masterService'
-import { getCauseEvents, getTrapScore } from '../../services/masterService'
+import { getCauseEvents } from '../../services/masterService'
 import statesService from '../../services/statesService'
 import placeOfDeathService from '../../services/placeOfDeathService'
 import trapScoreService from '../../services/trapScoreService'
@@ -12,13 +12,17 @@ import { useToast } from '../../components/Toast'
 import {
   validateDemographicsSection,
   validateDemographicsComplete,
-  validateDemographicsForTrap,
-  validateTrapScoreInputs,
   validateRowFields,
   validateClaimantDraft,
   showValidationToast,
 } from '../../util/registrationValidation'
-import { computePolicyAge, syncDemographicsSections } from '../../util/buildRegistrationPayload'
+import {
+  buildTrapScoreApiPayload,
+  buildLocalTrapScoreFallback,
+  computePolicyAge,
+  syncDemographicsSections,
+  asArray,
+} from '../../util/buildRegistrationPayload'
 import { filterCauseEvents } from '../../util/normalizeCauseEvent'
 import {
   getPolicyClients,
@@ -85,36 +89,92 @@ function CauseModal({ causes, loading, loadError, onSelect, onClose, onRetry }) 
 
 /* ── Dynamic table for Eagle Screen ── */
 function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
+  const [selectedIndex, setSelectedIndex] = useState(null)
+
+  useEffect(() => {
+    if (selectedIndex == null) return
+    if (selectedIndex >= rows.length) {
+      setSelectedIndex(rows.length > 0 ? rows.length - 1 : null)
+    }
+  }, [rows.length, selectedIndex])
+
+  const handleDeleteSelected = () => {
+    if (selectedIndex == null || !rows.length) return
+    onDelete(selectedIndex)
+    setSelectedIndex(null)
+  }
+
+  const handleDeleteAt = (index, e) => {
+    e?.stopPropagation?.()
+    onDelete(index)
+    if (selectedIndex === index) setSelectedIndex(null)
+    else if (selectedIndex != null && selectedIndex > index) setSelectedIndex(selectedIndex - 1)
+  }
+
   return (
     <div style={{ marginBottom:'16px' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px', gap:'12px', flexWrap:'wrap' }}>
         <span style={{ fontSize:'12px', fontWeight:700, color:T.textSecondary, textTransform:'uppercase', letterSpacing:'0.06em' }}>{title}</span>
-        <Btn size='sm' variant='secondary' onClick={onAdd}>+ Add Row</Btn>
+        <div style={{ display:'flex', gap:'8px' }}>
+          <Btn size='sm' variant='secondary' onClick={onAdd}>+ Add Row</Btn>
+          <Btn
+            size='sm'
+            variant='danger'
+            onClick={handleDeleteSelected}
+            disabled={selectedIndex == null || rows.length === 0}
+          >
+            − Delete Row
+          </Btn>
+        </div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding:'20px', textAlign:'center', background:'#FAFAFA', borderRadius:'8px', border:`1px dashed ${T.border}`, fontSize:'13px', color:T.textSubtle }}>No records added. Click "+ Add Row" to begin.</div>
-      ) : (
-        <div style={{ overflowX:'auto', borderRadius:'8px', border:`1px solid ${T.border}` }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:'600px' }}>
-            <thead>
-              <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
-                {columns.map(c=><th key={c.key} style={{ padding:'8px 12px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{c.label}</th>)}
-                <th style={{ padding:'8px 12px', width:'50px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i)=>(
-                <tr key={i} style={{ borderBottom:`1px solid ${T.borderSubtle}`, transition:'background 0.1s' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='#F8FAFC'} onMouseLeave={e=>e.currentTarget.style.background=''}>
-                  {columns.map(c=><td key={c.key} style={{ padding:'8px 12px', fontSize:'12px', color:T.textSecondary }}>{row[c.key]||'—'}</td>)}
-                  <td style={{ padding:'8px 12px' }}>
-                    <button onClick={()=>onDelete(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:'16px', lineHeight:1 }} title="Delete row">×</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ padding:'20px', textAlign:'center', background:'#FAFAFA', borderRadius:'8px', border:`1px dashed ${T.border}`, fontSize:'13px', color:T.textSubtle }}>
+          No records added. Click &ldquo;+ Add Row&rdquo; to begin.
         </div>
+      ) : (
+        <>
+          <div style={{ fontSize:'11px', color:T.textMuted, marginBottom:'6px' }}>
+            Click a row to select it, then use &ldquo;Delete Row&rdquo; or the × action to remove.
+          </div>
+          <div style={{ overflowX:'auto', borderRadius:'8px', border:`1px solid ${T.border}` }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', minWidth:'600px' }}>
+              <thead>
+                <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                  {columns.map(c=><th key={c.key} style={{ padding:'8px 12px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{c.label}</th>)}
+                  <th style={{ padding:'8px 12px', width:'56px', textAlign:'center', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase' }}>Delete</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i)=>(
+                  <tr
+                    key={i}
+                    onClick={() => setSelectedIndex(i)}
+                    style={{
+                      borderBottom:`1px solid ${T.borderSubtle}`,
+                      transition:'background 0.1s',
+                      cursor:'pointer',
+                      background: selectedIndex === i ? '#EFF6FF' : 'transparent',
+                      outline: selectedIndex === i ? '2px solid #1D4ED8' : 'none',
+                      outlineOffset: '-2px',
+                    }}
+                  >
+                    {columns.map(c=><td key={c.key} style={{ padding:'8px 12px', fontSize:'12px', color:T.textSecondary }}>{row[c.key]||'—'}</td>)}
+                    <td style={{ padding:'8px 12px', textAlign:'center' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteAt(i, e)}
+                        style={{ background:'none', border:'none', cursor:'pointer', color:'#DC2626', fontSize:'18px', fontWeight:700, lineHeight:1 }}
+                        title="Delete this row"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -164,18 +224,32 @@ function AddRowModal({ title, fields, onSave, onClose, onInvalid }) {
 export default function DemographicsTab({ data, update, policy, setPolicy, onComplete }) {
   const toast = useToast()
   const fromRegisterGate = Boolean(policy?.registerForm)
+  const secNum = (base) => (fromRegisterGate ? base - 1 : base)
+  const secTitle = (base, label) => `${secNum(base)}. ${label}`
   const [open, setOpen] = useState(fromRegisterGate ? 'intimation' : 'register')
   const [completed, setCompleted] = useState(() => (fromRegisterGate ? new Set(['register']) : new Set()))
   const [causes, setCauses] = useState([])
   const [loadingCauses, setLoadingCauses] = useState(false)
   const [causeLoadError, setCauseLoadError] = useState('')
   const [showCauseModal, setShowCauseModal] = useState(false)
+  const [showCauseWarning, setShowCauseWarning] = useState(false)
   const [loadingPolicy, setLoadingPolicy] = useState(false)
   const [addingRowFor, setAddingRowFor] = useState(null)
   const [generatingTrap, setGeneratingTrap] = useState(false)
   const [states, setStates] = useState([])
   const [placesOfDeath, setPlacesOfDeath] = useState([])
   const [countries, setCountries] = useState([])
+  const sectionRefs = useRef({})
+
+  useEffect(() => {
+    if (!open) return undefined
+    const el = sectionRefs.current[open]
+    if (!el) return undefined
+    const timer = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [open])
 
   const policyClients = useMemo(() => getPolicyClients(policy), [policy])
 
@@ -238,14 +312,24 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
 
   const toggle = (s) => setOpen(p => p===s ? null : s)
   const done = (s) => completed.has(s)
-  const markDone = (s) => { setCompleted(p => new Set([...p, s])); toast('success','Section Saved', `${s} saved successfully.`) }
+  const markDone = (s, { silent = false } = {}) => {
+    setCompleted((p) => new Set([...p, s]))
+    if (!silent) toast('success', 'Section Saved', `${s} saved successfully.`)
+  }
+
+  const sectionValidationOpts = { policy, fromRegisterGate }
+  const canContinueSection = (sectionId) =>
+    validateDemographicsSection(sectionId, data, sectionValidationOpts).valid
+  const canCompleteDemographics = validateDemographicsComplete(data, sectionValidationOpts).valid
 
   const tryContinue = (sectionId, nextSection) => {
-    const { valid, missing } = validateDemographicsSection(sectionId, data, { policy, fromRegisterGate })
+    const { valid, missing } = validateDemographicsSection(sectionId, data, sectionValidationOpts)
     if (!valid) {
+      if (sectionId === 'cause') setShowCauseWarning(true)
       showValidationToast(toast, missing, 'Complete required fields')
       return
     }
+    if (sectionId === 'cause') setShowCauseWarning(false)
     markDone(sectionId)
     setOpen(nextSection)
   }
@@ -264,11 +348,12 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       update({ policyId:p.policyId, productCode:p.productCode, productName:p.productName, sumAssured:p.sumAssured, portfolioType, issueDate:p.issueDate, riskCommencementDate:p.riskCommencementDate, paidToDate:p.paidToDate, premiumStatus:p.premiumStatus, premiumFrequency:p.premiumFrequency, term:p.term, premPaidYrs:p.premPaidYrs, totalPremiumPaid:p.totalPremiumPaid, currentSA:p.currentSA, cashValue:p.cashValue, maturityValue:p.maturityValue, advisorCode:p.advisorCode, advisorStatus:p.advisorStatus, uwDecision:p.uwDecision })
       if (p.advisorCode) {
         fetchAgentRepudiation(p.advisorCode).then((ar) => {
-          if (ar) setPolicy((prev) => ({ ...prev, agentRepudiation: ar?.data || ar }))
+          if (ar) setPolicy((prev) => ({ ...prev, agentRepudiation: asArray(ar?.data || ar) }))
         }).catch(() => {})
       }
-      markDone('register'); setOpen('intimation')
-      toast('success','Policy Loaded', `${p.policyId} — ${p.productName} loaded.`)
+      markDone('register', { silent: true })
+      setOpen('intimation')
+      toast('success', 'Policy Loaded', `${p.policyId} — ${p.productName} loaded.`)
     } catch(e) { toast('error','Not Found', e.message) }
     finally { setLoadingPolicy(false) }
   }
@@ -278,7 +363,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
 
   const openCauseModal = async () => {
     if (!data.dateOfDeathEvent) {
-      toast('warning', 'Intimation required', 'Complete Date of Death / Event in section 2 before selecting a cause.')
+      toast('warning', 'Intimation required', `Complete Date of Death / Event in section ${secNum(2)} before selecting a cause.`)
       return
     }
     update({
@@ -338,7 +423,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
   const reloadPolicyClients = async () => {
     const id = (policy?.policyId || data.policyId || '').trim()
     if (!id) {
-      toast('warning', 'Policy required', 'Load a policy in section 1 first.')
+      toast('warning', 'Policy required', fromRegisterGate ? 'Return to Policy Search and fetch a policy first.' : 'Load a policy in section 1 first.')
       return
     }
     setLoadingPolicy(true)
@@ -373,33 +458,46 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent(),
     })
     setShowCauseModal(false)
+    setShowCauseWarning(false)
     toast('success', 'Cause selected', c.causeDescription || c.causeCode)
   }
 
   /* Trap score */
   const handleTrapScore = async () => {
-    const gate = validateDemographicsForTrap(data, { policy, fromRegisterGate })
-    if (!gate.valid) {
-      showValidationToast(toast, gate.missing, 'Complete mandatory sections first')
-      return
-    }
-    const trapCheck = validateTrapScoreInputs(data, policy, policyClients)
-    if (!trapCheck.valid) {
-      showValidationToast(toast, trapCheck.missing, 'Cannot generate trap score')
-      return
-    }
     setGeneratingTrap(true)
+    const trapPayload = buildTrapScoreApiPayload(data, policy)
     try {
-      let res
-      try {
-        res = await getTrapScore({ gender:data.laGender, sumAssured:data.sumAssured, ageAtDeath:data.laAgeAtDeath, causeOfDeath:data.causeCode, placeOfDeath:data.placeOfDeath, advisorCode:data.advisorCode })
-      } catch {
-        res = await trapScoreService({ gender:data.laGender, sumAssured:data.sumAssured, ageAtDeath:data.laAgeAtDeath, causeOfDeath:data.causeCode, placeOfDeath:data.placeOfDeath, advisorCode:data.advisorCode })
-      }
-      update({ trapScore:res.trapScore, trapRisk:res.trapRisk, trapRemarks:res.trapRemarks, trapDate:res.trapDate })
-      markDone('trap'); toast('success','Trap Score Generated', `Score: ${res.trapScore} — Risk: ${res.trapRisk}`)
-    } catch(e) { toast('error','Failed', e.message) }
-    finally { setGeneratingTrap(false) }
+      const res = await trapScoreService(trapPayload)
+      update({
+        trapScore: res.trapScore,
+        trapRisk: res.trapRisk,
+        trapRemarks: res.trapRemarks,
+        trapDate: res.trapDate,
+        laAgeAtDeath: trapPayload.ageAtDeath,
+        firPmReceived: trapPayload.firPmReceived,
+      })
+      markDone('trap', { silent: true })
+      const title = res.estimated ? 'Trap Score (estimated)' : 'Trap Score Generated'
+      toast('success', title, `Score: ${res.trapScore} — Risk: ${res.trapRisk}`)
+    } catch (e) {
+      const fallback = buildLocalTrapScoreFallback(trapPayload)
+      update({
+        trapScore: fallback.trapScore,
+        trapRisk: fallback.trapRisk,
+        trapRemarks: fallback.trapRemarks,
+        trapDate: fallback.trapDate,
+        laAgeAtDeath: trapPayload.ageAtDeath,
+        firPmReceived: trapPayload.firPmReceived,
+      })
+      markDone('trap', { silent: true })
+      toast(
+        'warning',
+        'Trap Score (local estimate)',
+        `API error — estimated score ${fallback.trapScore} (${fallback.trapRisk}). ${e.message || ''}`.trim()
+      )
+    } finally {
+      setGeneratingTrap(false)
+    }
   }
 
   /* Eagle screen table columns */
@@ -478,7 +576,10 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
   const delRow = (field, i) => update({ [field]: (data[field]||[]).filter((_,idx)=>idx!==i) })
 
   const sec = (id, title, sub, children) => (
-    <div style={{ borderBottom:`1px solid ${T.border}` }}>
+    <div
+      ref={(el) => { sectionRefs.current[id] = el }}
+      style={{ borderBottom:`1px solid ${T.border}`, scrollMarginTop:'96px', scrollMarginBottom:'48px' }}
+    >
       <SectionHeader title={title} subtitle={sub} open={open===id} onToggle={()=>toggle(id)} done={done(id)}/>
       {open===id && <div style={{ padding:'20px 22px' }}>{children}</div>}
     </div>
@@ -516,13 +617,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('register','intimation')} disabled={!policyLoaded}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('register','intimation')} disabled={!canContinueSection('register')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 2. Intimation Details */}
-      {sec('intimation','2. Intimation Details','Dates, source and death certificate information',
+      {sec('intimation',secTitle(2,'Intimation Details'),'Dates, source and death certificate information',
         <div>
           <div style={{ marginBottom:'16px', padding:'12px 14px', background:'#F8FAFC', borderRadius:'10px', border:`1px solid ${T.border}`, display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:'10px' }}>
             {[['Claim type', data.claimType], ['Intimation type', data.informationType], ['Portfolio', data.portfolioType], ['Policy status', data.initialPolicyStatus || policy?.premiumStatus]].map(([k,v])=>(
@@ -533,8 +634,8 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <Field label="Intimation Date" required><Input type="date" value={data.intimationDate} onChange={e=>update({intimationDate:e.target.value})}/></Field>
             <Field label="Source" required><Select value={data.source} onChange={e=>update({source:e.target.value})} options={['Branch','Direct','Website','Email','WhatsApp','Agent','Hospital']}/></Field>
             <Field label="Bond Type" required><Select value={data.bondType} onChange={e=>update({bondType:e.target.value})} options={['Policy Bond','Indemnity Bond','Not Provided']}/></Field>
-            <Field label="FIR / PM Received"><Select value={data.firPmReceived} onChange={e=>update({firPmReceived:e.target.value})} options={['Yes','No','Not Required']}/></Field>
-            <Field label="Declared by Doctor" required><Select value={data.declaredByDoctor} onChange={e=>update({declaredByDoctor:e.target.value})} options={['','Yes','No']}/></Field>
+            <Field label="FIR / PM Received" required><Select value={data.firPmReceived} onChange={e=>update({firPmReceived:e.target.value})} options={['Yes','No','Not Required']}/></Field>
+            <Field label="Declared by Doctor" required><Select value={data.declaredByDoctor} onChange={e=>update({declaredByDoctor:e.target.value})} options={['Yes','No']}/></Field>
             <Field label="WhatsApp Flag"><Select value={data.whatsappFlag} onChange={e=>update({whatsappFlag:e.target.value})} options={['Yes','No']}/></Field>
             <Field label="Date of Death / Event" required>
               <Input
@@ -560,7 +661,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <Grid cols={3}>
               <Field label="Death Certificate Type" required>
                 <Select value={data.deathCertificate} onChange={e=>{
-                  const v=e.target.value; update({deathCertificate:v, ...(v==='NA'?{dcRegNumber:'NA',dcRegDate:'NA',dcIssueDistrict:'NA',dcIssuingAuthority:'NA',dcTehsil:'NA',dcIssueState:'NA',dcPlaceOnCertificate:'NA',dcVillageBlock:'NA',dcOfficerPosition:'NA'}:{})})
+                  const v=e.target.value; update({deathCertificate:v, ...(v==='NA'?{dcRegNumber:'NA',dcRegDate:'',dcIssueDistrict:'NA',dcIssuingAuthority:'NA',dcTehsil:'NA',dcIssueState:'NA',dcPlaceOnCertificate:'NA',dcVillageBlock:'NA',dcOfficerPosition:'NA'}:{})})
                 }} options={['NA','Manual','Printed']}/>
               </Field>
               <Field label="Reg. Number"><Input value={data.dcRegNumber} onChange={e=>update({dcRegNumber:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
@@ -575,13 +676,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </Grid>
           </div>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('intimation','cause')}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('intimation','cause')} disabled={!canContinueSection('intimation')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 3. Declared Cause */}
-      {sec('cause','3. Declared Cause of Death / Event','Select cause from the cause event list',
+      {sec('cause',secTitle(3,'Declared Cause of Death / Event'),'Select cause from the cause event list',
         <div>
           <div style={{ marginBottom:'16px' }}>
             <Btn variant='secondary' onClick={openCauseModal}>🔍 Search & Select Cause</Btn>
@@ -606,27 +707,31 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                 ))}
               </div>
             </div>
-          ) : <InfoCard type='warning'>No cause selected. Click "Search & Select Cause" above.</InfoCard>}
+          ) : showCauseWarning ? (
+            <InfoCard type='warning'>No cause selected. Click "Search & Select Cause" above.</InfoCard>
+          ) : null}
           <Grid cols={2}>
             <Field label="Date of Event"><Input type="date" value={data.causeEventDate || data.dateOfDeathEvent} readOnly /></Field>
             <Field label="Policy Status on Event"><Input value={data.policyStatusOnEvent || data.policyStatusOnDod || policyStatusOnEvent()} readOnly /></Field>
             <Field label="If Others – Specify" full><Input value={data.causeIfOthers} onChange={e=>update({causeIfOthers:e.target.value})} placeholder="Specify if cause is 'Others'"/></Field>
           </Grid>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('cause','payee')} disabled={!data.causeCode && !data.causeOfClaim}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('cause','payee')} disabled={!canContinueSection('cause')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 4. Payee Details */}
-      {sec('payee','4. Payee Details','Select payee from policy clients',
+      {sec('payee',secTitle(4,'Payee Details'),'Select payee from policy clients',
         <div>
           {!policy ? (
-            <InfoCard type='warning'>Please load a policy first (Section 1).</InfoCard>
+            <InfoCard type='warning'>{fromRegisterGate ? 'Please fetch a policy from Policy Search first.' : 'Please load a policy first (Section 1).'}</InfoCard>
           ) : policyClients.length === 0 ? (
             <div>
               <InfoCard type='warning'>
-                No policy clients found. Clients are loaded from Life Asia LifeAssured.ClientDetails when the policy is fetched in section 1.
+                {fromRegisterGate
+                  ? 'No policy clients found. Clients are loaded from Life Asia when the policy is fetched in Policy Search.'
+                  : 'No policy clients found. Clients are loaded from Life Asia LifeAssured.ClientDetails when the policy is fetched in section 1.'}
               </InfoCard>
               <div style={{ marginTop:'12px' }}>
                 <Btn variant='secondary' onClick={reloadPolicyClients} disabled={loadingPolicy}>
@@ -636,13 +741,19 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           ) : (
             <>
-              <div style={{ marginBottom:'14px', fontSize:'13px', fontWeight:600, color:T.textMuted }}>
-                Select the payee from {policyClients.length} policy client{policyClients.length === 1 ? '' : 's'} below:
-              </div>
-              <div style={{ border:`1px solid ${T.border}`, borderRadius:'10px', overflow:'hidden', marginBottom:'16px' }}>
+              {!data.selectedPayeeId ? (
+                <InfoCard type="info">
+                  <strong>Step 1 — Select payee:</strong> Click the radio button (●) in the first column of the table below to choose who will receive the claim payment. {policyClients.length} policy client{policyClients.length === 1 ? '' : 's'} found.
+                </InfoCard>
+              ) : (
+                <div style={{ marginBottom:'14px', padding:'10px 14px', background:'#ECFDF5', borderRadius:'8px', border:'1px solid #A7F3D0', fontSize:'13px', fontWeight:600, color:'#065F46' }}>
+                  Payee selected — complete relation, status, and contact details below, then click Save & Continue.
+                </div>
+              )}
+              <div style={{ border:`1px solid ${T.border}`, borderRadius:'10px', overflow:'hidden', marginBottom:'16px', marginTop:'14px' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead><tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
-                    <th style={{ padding:'9px 14px', width:'40px' }}></th>
+                    <th style={{ padding:'9px 14px', width:'52px', textAlign:'center', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.04em' }}>Select</th>
                     {['Client ID','Name','DOB','Gender','Role','Relation','Mobile'].map(h=>(
                       <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.04em', whiteSpace:'nowrap' }}>{h}</th>
                     ))}
@@ -650,18 +761,47 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                   <tbody>
                     {policyClients.map((c, i) => {
                       const selected = data.selectedPayeeId === c.clientId
+                      const displayName = selected
+                        ? [data.payeeName ?? c.name, data.payeeLastName ?? c.lastName].filter(Boolean).join(' ')
+                        : [c.name, c.lastName].filter(Boolean).join(' ')
+                      const displayDob = selected ? (data.payeeDob ?? c.dob) : c.dob
                       const displayRole = selected ? (data.payeeRole ?? c.role) : c.role
                       const displayRelation = selected ? (data.payeeRelation ?? c.relation) : c.relation
                       return (
                         <tr
                           key={c.clientId || `client-${i}`}
-                          style={{ borderBottom:`1px solid ${T.borderSubtle}`, cursor:'pointer', background: selected ? '#EFF6FF' : '' }}
+                          style={{
+                            borderBottom:`1px solid ${T.borderSubtle}`,
+                            cursor:'pointer',
+                            background: selected ? '#EFF6FF' : '',
+                            outline: selected ? '2px solid #1D4ED8' : 'none',
+                            outlineOffset: '-2px',
+                          }}
                           onClick={() => applyPayeeSelection(c)}
                         >
-                          <td style={{ padding:'9px 14px' }}><input type='radio' readOnly checked={selected} style={{ cursor:'pointer' }}/></td>
+                          <td style={{ padding:'9px 14px', textAlign:'center' }}>
+                            <span
+                              aria-hidden
+                              style={{
+                                display:'inline-flex',
+                                width:'20px',
+                                height:'20px',
+                                borderRadius:'50%',
+                                border:`2px solid ${selected ? '#1D4ED8' : '#94A3B8'}`,
+                                background: selected ? '#1D4ED8' : '#fff',
+                                boxShadow: selected ? '0 0 0 3px rgba(29,78,216,0.25)' : 'none',
+                                alignItems:'center',
+                                justifyContent:'center',
+                                transition:'all 0.15s ease',
+                              }}
+                            >
+                              {selected && <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:'#fff' }} />}
+                            </span>
+                            <input type='radio' readOnly checked={selected} tabIndex={-1} aria-label={`Select payee ${[c.name, c.lastName].filter(Boolean).join(' ') || c.clientId}`} style={{ position:'absolute', opacity:0, width:0, height:0, pointerEvents:'none' }}/>
+                          </td>
                           <td style={{ padding:'9px 14px', fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{c.clientId || '—'}</td>
-                          <td style={{ padding:'9px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{[c.name, c.lastName].filter(Boolean).join(' ') || '—'}</td>
-                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.dob || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{displayName || '—'}</td>
+                          <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{displayDob || '—'}</td>
                           <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{c.gender || '—'}</td>
                           <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{displayRole || '—'}</td>
                           <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{displayRelation || '—'}</td>
@@ -674,13 +814,32 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
               </div>
               {data.selectedPayeeId && (
                 <div style={{ padding:'14px', background:'#EFF6FF', borderRadius:'10px', border:'1px solid #BFDBFE' }}>
-                  <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, marginBottom:'10px' }}>Edit Payee Details</div>
+                  <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, marginBottom:'4px' }}>Edit Payee Details</div>
+                  <div style={{ fontSize:'11px', color:T.textMuted, marginBottom:'12px' }}>
+                    Name, DOB, and country can be corrected here (overrides Life Asia for this claim).
+                  </div>
                   <Grid cols={3}>
+                    <Field label="First Name">
+                      <Input value={data.payeeName || ''} onChange={e=>updatePayeeField({ payeeName: e.target.value })} placeholder="Payee first name"/>
+                    </Field>
+                    <Field label="Last Name">
+                      <Input value={data.payeeLastName || ''} onChange={e=>updatePayeeField({ payeeLastName: e.target.value })} placeholder="Payee last name"/>
+                    </Field>
+                    <Field label="Date of Birth">
+                      <Input type="date" value={data.payeeDob || ''} onChange={e=>updatePayeeField({ payeeDob: e.target.value })}/>
+                    </Field>
+                    <Field label="Country">
+                      <Select
+                        value={data.payeeCountry || ''}
+                        onChange={e=>updatePayeeField({ payeeCountry: e.target.value })}
+                        options={countries.length ? countries : ['India', 'Monaco', 'Maldives', 'Malta']}
+                      />
+                    </Field>
                     <Field label="Relation with Life Assured" required>
-                      <Select value={data.payeeRelation || ''} onChange={e=>updatePayeeField({ payeeRelation: e.target.value })} options={['','Self','Spouse','Mother','Father','Son','Daughter','Brother','Sister','Relative - Others','Friend','Not Related']}/>
+                      <Select value={data.payeeRelation || ''} onChange={e=>updatePayeeField({ payeeRelation: e.target.value })} options={['Self','Spouse','Mother','Father','Son','Daughter','Brother','Sister','Relative - Others','Friend','Not Related']}/>
                     </Field>
                     <Field label="Status" required>
-                      <Select value={data.payeeStatus || ''} onChange={e=>updatePayeeField({ payeeStatus: e.target.value })} options={['','Alive','Deceased']}/>
+                      <Select value={data.payeeStatus || ''} onChange={e=>updatePayeeField({ payeeStatus: e.target.value })} options={['Alive','Deceased']}/>
                     </Field>
                     <Field label="Role">
                       <Input value={data.payeeRole || ''} onChange={e=>updatePayeeField({ payeeRole: e.target.value })} placeholder="Optional role"/>
@@ -695,23 +854,23 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('payee','claimant')} disabled={!data.selectedPayeeId || !data.payeeRelation || !data.payeeStatus}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('payee','claimant')} disabled={!canContinueSection('payee')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 5. Claimant Details */}
-      {sec('claimant','5. Claimant Details','Add one or more claimants',
+      {sec('claimant',secTitle(5,'Claimant Details'),'Add one or more claimants',
         <div>
           <ClaimantSection data={data} update={update} policy={policy} states={states} toast={toast}/>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('claimant','la')}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('claimant','la')} disabled={!canContinueSection('claimant')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 6. Life Assured Details */}
-      {sec('la','6. Life Assured Details','Details of the insured person',
+      {sec('la',secTitle(6,'Life Assured Details'),'Details of the insured person',
         <div>
           <Grid cols={3}>
             <Field label="Name" required><Input value={data.laName||(policyClients[0] ? [policyClients[0].name, policyClients[0].lastName].filter(Boolean).join(' ') : '')} onChange={e=>update({laName:e.target.value})} readOnly={!!policy}/></Field>
@@ -743,13 +902,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </Grid>
           </div>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('la','contract')}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('la','contract')} disabled={!canContinueSection('la')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 7. Contract Details */}
-      {sec('contract','7. Contract Details','Policy contract and financial information',
+      {sec('contract',secTitle(7,'Contract Details'),'Policy contract and financial information',
         <div>
           <Grid cols={3}>
             <Field label="Application No"><Input value={data.appNo} onChange={e=>update({appNo:e.target.value})}/></Field>
@@ -775,7 +934,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <Field label="Advisor Code"><Input value={data.advisorCode||policy?.advisorCode} readOnly={true}/></Field>
             <Field label="Advisor Status"><Input value={data.advisorStatus||policy?.advisorStatus} readOnly={true}/></Field>
             <Field label="Policy Age (auto)" required><Input value={data.policyAge || policyAgeInfo.policyAgeLabel || ''} readOnly placeholder="Set Date of Death in Intimation"/></Field>
-            <Field label="Name Change Declared" required><Select value={data.nameChangeDecl || ''} onChange={e=>update({nameChangeDecl:e.target.value})} options={['','Yes','No']}/></Field>
+            <Field label="Name Change Declared" required><Select value={data.nameChangeDecl || ''} onChange={e=>update({nameChangeDecl:e.target.value})} options={['Yes','No']}/></Field>
             <Field label="E-Kit Printed"><Select value={data.ekitPrinted||(policy?.ekitPrinted)} onChange={e=>update({ekitPrinted:e.target.value})} options={['Yes','No']}/></Field>
             <Field label="Assignment"><Input value={data.assignment||policy?.assignment} readOnly={true}/></Field>
             <Field label="Sales Channel"><Input value={data.salesChannel||policy?.salesChannel} readOnly={true}/></Field>
@@ -807,13 +966,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('contract','eagle')}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('contract','eagle')} disabled={!canContinueSection('contract')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 8. Eagle Screen */}
-      {sec('eagle','8. Eagle Screen / Fraud Details','Hospital, doctor, proof and witness information',
+      {sec('eagle',secTitle(8,'Eagle Screen / Fraud Details'),'Hospital, doctor, proof and witness information',
         <div>
           <Grid cols={3}>
             <Field label="LA Mobile No"><Input value={data.eagleLaMobile} onChange={e=>update({eagleLaMobile:e.target.value})} maxLength={10}/></Field>
@@ -835,13 +994,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <DynamicTable title="Income Document Details" columns={INCOME_COLS} rows={data.incomeDetails||[]} onAdd={()=>setAddingRowFor('income')} onDelete={i=>delRow('incomeDetails',i)}/>
           </div>
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn onClick={()=>tryContinue('eagle','trap')}>Save & Continue →</Btn>
+            <Btn onClick={()=>tryContinue('eagle','trap')} disabled={!canContinueSection('eagle')}>Save & Continue →</Btn>
           </div>
         </div>
       )}
 
       {/* 9. Trap Score */}
-      {sec('trap','9. Trap Score Details','Automated fraud risk scoring — required before Requirements',
+      {sec('trap',secTitle(9,'Trap Score Details'),'Automated fraud risk scoring — required before Requirements',
         <div>
           {data.trapScore ? (
             <div style={{ marginBottom:'20px', padding:'16px', borderRadius:'10px', background:'#F0FDF4', border:'1px solid #A7F3D0' }}>
@@ -861,7 +1020,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                     Trap score required
                   </div>
                   <div style={{ fontSize:'13px', color:'#B45309', lineHeight:1.5 }}>
-                    Complete Intimation, Cause, Payee, Claimant, and Contract sections first, then click the button below. You cannot proceed to Requirements without a generated trap score.
+                    Click below to calculate trap score from your claim data. Missing fields are filled automatically so you can proceed to Requirements.
                   </div>
                 </div>
               </div>
@@ -881,16 +1040,16 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
               <Btn variant='warning' size='md' onClick={handleTrapScore} disabled={generatingTrap}>
                 {generatingTrap ? '⏳ Regenerating…' : '↻ Regenerate Trap Score'}
               </Btn>
-              <Btn onClick={()=>tryContinue('trap','agent')}>Save & Continue →</Btn>
+              <Btn onClick={()=>tryContinue('trap','agent')} disabled={!canContinueSection('trap')}>Save & Continue →</Btn>
             </div>
           )}
         </div>
       )}
 
       {/* 10. Agent Repudiation History */}
-      {sec('agent','10. Agent Repudiation History','Historical repudiation records for this advisor',
+      {sec('agent',secTitle(10,'Agent Repudiation History'),'Historical repudiation records for this advisor',
         <div>
-          <InfoCard type="info">Life Assured, Eagle Screen, and Agent Repudiation are optional for advancing — but trap score needs life assured gender/DOB from policy or section 6.</InfoCard>
+          <InfoCard type="info">{`Life Assured, Eagle Screen, and Agent Repudiation are optional for advancing — but trap score needs life assured gender/DOB from policy or section ${secNum(6)}.`}</InfoCard>
           <div style={{ marginTop:'12px', marginBottom:'12px', maxWidth:'320px' }}>
             <Field label="Advisor history count (optional)"><Input value={data.advisorHistoryCount || ''} onChange={e=>update({ advisorHistoryCount: e.target.value })}/></Field>
           </div>
@@ -919,8 +1078,8 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </div>
           )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
-            <Btn variant='success' onClick={()=>{
-              const { valid, missing } = validateDemographicsComplete(data, { policy, fromRegisterGate })
+            <Btn variant='success' disabled={!canCompleteDemographics} onClick={()=>{
+              const { valid, missing } = validateDemographicsComplete(data, sectionValidationOpts)
               if (!valid) {
                 showValidationToast(toast, missing, 'Complete mandatory demographics sections')
                 return

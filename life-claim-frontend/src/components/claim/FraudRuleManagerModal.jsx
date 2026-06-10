@@ -49,6 +49,32 @@ function normalizeHits(data) {
   return data?.data || data?.rows || []
 }
 
+function claimKey(row) {
+  return row?.claim_number || row?.claim_id || row?.CLAIM_NUMBER || row?.CLAIM_ID || ''
+}
+
+/** Rule II — keep cross-claim hits tied to this claim's bank/account (not entire DB). */
+function filterBankHits(rows, claimNumber, policyId, eagle = {}) {
+  const acc = eagle.accNo || eagle.acc_no || ''
+  const bank = eagle.bankName || eagle.bank_name || ''
+  return rows.filter((row) => {
+    const key = claimKey(row)
+    if (key && key === claimNumber) return false
+    if (acc && String(row.acc_no || row.accNo || '') === String(acc)) return true
+    if (bank && String(row.bank_name || row.bankName || '') === String(bank)) return true
+    if (policyId && String(row.policy_id || row.policyId || '') === String(policyId)) return true
+    return false
+  })
+}
+
+/** Rule IV — other claims sharing LA mobile(s), excluding this claim. */
+function filterMobileHits(rows, claimNumber) {
+  return rows.filter((row) => {
+    const key = claimKey(row)
+    return key && key !== claimNumber
+  })
+}
+
 function mapExistingRows(rows) {
   const state = {
     rule1: { decision: '', remark: '' },
@@ -171,6 +197,7 @@ export default function FraudRuleManagerModal({
   open,
   onClose,
   claimNumber,
+  policyId,
   fraudContext,
   userRole,
   username,
@@ -193,6 +220,9 @@ export default function FraudRuleManagerModal({
 
   const intimation = fraudContext?.intimation || {}
   const lifeAssured = fraudContext?.lifeAssured || {}
+  const eagle = fraudContext?.eagle || {}
+  const eagleAcc = eagle.accNo || eagle.acc_no || ''
+  const eagleBank = eagle.bankName || eagle.bank_name || ''
   const claimant0 = (fraudContext?.claimant || [])[0] || {}
   const pincode = claimant0.pincode || claimant0.pinCode || claimant0.PINCODE || lifeAssured.pincode || lifeAssured.pinCode || ''
   const city = claimant0.city || claimant0.resCity || claimant0.CITY || lifeAssured.city || lifeAssured.resCity || ''
@@ -231,9 +261,9 @@ export default function FraudRuleManagerModal({
         ])
         if (cancelled) return
         setRule1(pinRes && typeof pinRes === 'object' && !pinRes.message ? pinRes : null)
-        setRule2(normalizeHits(bankRes))
+        setRule2(filterBankHits(normalizeHits(bankRes), claimNumber, policyId, eagle))
         setRule3(normalizeHits(agentRes))
-        setRule4(normalizeHits(mobileRes))
+        setRule4(filterMobileHits(normalizeHits(mobileRes), claimNumber))
         const existingRows = Array.isArray(existing) ? existing : existing?.data || []
         setHasExisting(existingRows.length > 0)
         setRuleState(mapExistingRows(existingRows))
@@ -243,7 +273,7 @@ export default function FraudRuleManagerModal({
     }
     run()
     return () => { cancelled = true }
-  }, [open, claimNumber, pincode, city, source, laMobile1, laMobile2])
+  }, [open, claimNumber, policyId, pincode, city, source, laMobile1, laMobile2, eagleAcc, eagleBank])
 
   const setRule = (key, field, val) => setRuleState((p) => ({ ...p, [key]: { ...p[key], [field]: val } }))
 
@@ -268,11 +298,11 @@ export default function FraudRuleManagerModal({
     }
     setSaving(true)
     try {
-      if (hasExisting) {
-        await updateAccessorFeedback(buildUpdatePayload(claimNumber, visibleKeys, ruleState), claimNumber)
-      } else {
-        const payload = buildAddPayload(visibleKeys, ruleState)
-        await addAccessorFeedback(payload, claimNumber, userRole || 'Assessor', username)
+      const result = hasExisting
+        ? await updateAccessorFeedback(buildUpdatePayload(claimNumber, visibleKeys, ruleState), claimNumber)
+        : await addAccessorFeedback(buildAddPayload(visibleKeys, ruleState), claimNumber, userRole || 'Assessor', username)
+      if (result?.success === false) {
+        throw new Error(result.message || 'Save rejected by server')
       }
       toast('success', 'Saved', hasExisting ? 'Eagle rules updated.' : 'Eagle rules saved.')
       onClose()

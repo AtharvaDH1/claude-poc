@@ -9,17 +9,23 @@ import {
 } from '../services/claimsService'
 import { claimSearch } from '../services/claimSearchService'
 import updatePolicyService from '../services/updatePolicyService'
-import { buildPolicyDataFromRaw, mergePolicyData, applyDecisionEditsToPolicyData } from '../util/buildPolicyData'
+import {
+  buildPolicyDataFromRaw,
+  mergePolicyData,
+  buildWorkspaceSubmitPayload,
+} from '../util/buildPolicyData'
 import {
   areFieldsDisabled,
   enableAssessor,
   enableVerifier,
+  workspaceCanEdit,
   getSubmitGuard,
   mapAccessorDecisionToApi,
 } from '../util/claimWorkspaceMode'
 import { isPreAssessorRole } from '../util/preAssessor'
 import FraudRuleManagerModal from '../components/claim/FraudRuleManagerModal'
 import TransactionDetailsModal from '../components/claim/TransactionDetailsModal'
+import ClaimSuccessModal from '../components/claim/ClaimSuccessModal'
 import ClaimAssignModal from '../components/claim/ClaimAssignModal'
 import CaseSummaryPanel from '../components/claim/workspace/CaseSummaryPanel'
 import QuickAccessModal from '../components/claim/workspace/QuickAccessModal'
@@ -74,6 +80,7 @@ export default function ClaimView() {
   const [showDocs, setShowDocs] = useState(false)
   const [calcResult, setCalcResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [submitSuccess, setSubmitSuccess] = useState(null)
 
   const [accessorDecision, setAccessorDecision] = useState('')
   const [accessorReason, setAccessorReason] = useState('')
@@ -92,10 +99,15 @@ export default function ClaimView() {
     policyDataRef.current = pd
     setAccessorDecision(view.accessorDecision || '')
     setAccessorReason(view.accessorReason || '')
-    setAccessorAmount(String(view.accessorAmount || ''))
+    const calc = raw?.calcAmt
+    if (calc) setCalcResult(calc)
+    const payable =
+      view.accessorAmount ||
+      calc?.totalAmtPayable ||
+      calc?.baseSec
+    setAccessorAmount(String(payable || ''))
     setVerificationStatus(view.verificationStatus || '')
     setVerificationRemarks(view.verificationRemarks || '')
-    if (raw?.calcAmt) setCalcResult(raw.calcAmt)
   }, [claimId, user])
 
   useEffect(() => {
@@ -122,16 +134,54 @@ export default function ClaimView() {
       policyDataRef.current = next
       return next
     })
-    const tablePatch = EAGLE_TABLE_KEYS.some((k) => patch?.[k])
-    if (tablePatch || patch?.eagleScreenDetails) {
-      setWorkspaceRaw((prev) => {
-        if (!prev) return prev
-        const demogs = { ...prev.demogs }
-        EAGLE_TABLE_KEYS.forEach((k) => { if (patch[k]) demogs[k] = patch[k] })
-        if (patch.eagleScreenDetails) demogs.eagle = { ...demogs.eagle, ...patch.eagleScreenDetails }
-        return { ...prev, demogs }
+    setWorkspaceRaw((prev) => {
+      if (!prev || !patch) return prev
+      const demogs = { ...(prev.demogs || {}) }
+      let requirements = prev.requirements ? { ...prev.requirements } : null
+      let assessment = prev.assessment ? { ...prev.assessment } : null
+
+      if (patch.intimationDetails) {
+        demogs.intimation = { ...(demogs.intimation || {}), ...patch.intimationDetails }
+      }
+      if (patch.establishedCauseDetails) {
+        demogs.establishedCause = { ...(demogs.establishedCause || {}), ...patch.establishedCauseDetails }
+      }
+      if (patch.lifeAssuredDetails) {
+        demogs.lifeAssured = { ...(demogs.lifeAssured || {}), ...patch.lifeAssuredDetails }
+      }
+      if (patch.contactDetails) {
+        demogs.contact = { ...(demogs.contact || {}), ...patch.contactDetails }
+      }
+      if (patch.claimantDetails) demogs.claimant = patch.claimantDetails
+      if (patch.payeeDetails) demogs.payee = patch.payeeDetails
+      EAGLE_TABLE_KEYS.forEach((k) => {
+        if (patch[k]) demogs[k] = patch[k]
       })
-    }
+      if (patch.eagleScreenDetails) {
+        demogs.eagle = { ...(demogs.eagle || {}), ...patch.eagleScreenDetails }
+      }
+      if (patch.requirementTable) {
+        requirements = { ...(requirements || {}), requirementTable: patch.requirementTable }
+      }
+      if (patch.claimQuestions) {
+        const q = {
+          ...(assessment?.assessment || assessment?.claimQuestions || {}),
+          ...patch.claimQuestions,
+        }
+        assessment = { ...(assessment || {}), assessment: q, claimQuestions: q }
+      }
+      if (patch.priorityFlagRemarks != null || patch.fraudRemarks != null) {
+        const v = patch.fraudRemarks ?? patch.priorityFlagRemarks
+        assessment = { ...(assessment || {}), fraudRemarks: v, priorityFlagRemarks: v }
+      }
+
+      return {
+        ...prev,
+        demogs,
+        ...(requirements ? { requirements } : {}),
+        ...(assessment ? { assessment } : {}),
+      }
+    })
   }, [])
 
   const handleTabChange = async (tab) => {
@@ -168,7 +218,7 @@ export default function ClaimView() {
     try {
       if (guard.mode === 'assessor') {
         await claimSearch.updateAssessor(
-          { DECISION: mapAccessorDecisionToApi(accessorDecision), REMARKS: accessorReason },
+          { decision: mapAccessorDecisionToApi(accessorDecision), remarks: accessorReason },
           claimId,
           username,
         )
@@ -179,10 +229,15 @@ export default function ClaimView() {
           username,
         )
       }
-      const payload = applyDecisionEditsToPolicyData(policyDataRef.current, edits)
+      const payload = buildWorkspaceSubmitPayload(
+        policyDataRef.current,
+        edits,
+        claimId,
+        username,
+        guard.mode,
+      )
       await updatePolicyService(payload)
-      toast('success', 'Submitted', `Claim ${claimId} saved.`)
-      navigate('/claim-search')
+      setSubmitSuccess({ mode: guard.mode, claimId })
     } catch (e) {
       toast('error', 'Submit failed', e?.message || 'Could not complete submit.')
     } finally {
@@ -203,16 +258,27 @@ export default function ClaimView() {
   const sc = STATUS_COLORS[claim.status] || STATUS_COLORS.Pending
   const userRoles = user?.roles?.length ? user.roles : user?.role ? [user.role] : []
   const browseMode = areFieldsDisabled(location.state)
-  const assessorCanEdit = enableAssessor(location.state, claim)
-  const verifierCanEdit = enableVerifier(location.state, claim)
+  const assessorCanEdit = enableAssessor(location.state, claim, userRoles)
+  const verifierCanEdit = enableVerifier(location.state, claim, userRoles)
+  const canEdit = workspaceCanEdit(location.state, claim, userRoles)
   const isPreAssessor = isPreAssessorRole(user?.role, userRoles)
-  const showAssessorTools = assessorCanEdit && !isPreAssessor && !browseMode
+  const showWorkspaceTools = canEdit && !isPreAssessor && !browseMode
   const submitGuard = getSubmitGuard(claim, user?.username, location.state)
   const demogs = workspaceRaw?.demogs || {}
 
   return (
     <AppLayout>
       <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }}>
+        {browseMode && (
+          <div style={{ marginBottom: '14px', padding: '12px 16px', borderRadius: '10px', background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '13px', color: '#92400E', fontWeight: 600 }}>
+            Browse mode — fields are read-only. Open from <strong>My Tasks</strong> or Dashboard <strong>pencil</strong> to edit.
+          </div>
+        )}
+        {canEdit && !browseMode && (
+          <div style={{ marginBottom: '14px', padding: '12px 16px', borderRadius: '10px', background: '#ECFDF5', border: '1px solid #A7F3D0', fontSize: '13px', color: '#065F46', fontWeight: 600 }}>
+            Work mode — all tabs are editable. Changes save when you submit on Decision &amp; Summary.
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <button type="button" onClick={() => navigate(-1)} style={{ padding: '8px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#F8FAFC', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>← Back</button>
@@ -227,7 +293,7 @@ export default function ClaimView() {
             <button type="button" onClick={() => setShowDocs(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
               <FileText size={16} /> Documents
             </button>
-            {showAssessorTools && (
+            {showWorkspaceTools && (
               <>
                 <button type="button" onClick={() => setShowQuick(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#7C3AED', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
                   <Zap size={16} /> Quick Access
@@ -296,7 +362,7 @@ export default function ClaimView() {
               <DemographicsWorkspaceTab
                 claim={claim}
                 demogs={demogs}
-                assessorCanEdit={assessorCanEdit}
+                canEdit={canEdit}
                 onPatch={patchPolicyData}
                 onOpenFraud={() => setShowFraud(true)}
               />
@@ -305,7 +371,7 @@ export default function ClaimView() {
               loadedTabs.has('Requirements') ? (
                 <RequirementsWorkspaceTab
                   requirements={workspaceRaw?.requirements}
-                  assessorCanEdit={assessorCanEdit}
+                  canEdit={canEdit}
                   onPatch={patchPolicyData}
                 />
               ) : (
@@ -316,7 +382,7 @@ export default function ClaimView() {
               loadedTabs.has('Assessment') ? (
                 <AssessmentWorkspaceTab
                   assessment={workspaceRaw?.assessment}
-                  assessorCanEdit={assessorCanEdit}
+                  canEdit={canEdit}
                   onPatch={patchPolicyData}
                 />
               ) : (
@@ -352,11 +418,12 @@ export default function ClaimView() {
         </div>
       </div>
 
-      <QuickAccessModal open={showQuick} onClose={() => setShowQuick(false)} policyData={policyData} onSave={patchPolicyData} disabled={!assessorCanEdit} />
+      <QuickAccessModal open={showQuick} onClose={() => setShowQuick(false)} policyData={policyData} onSave={patchPolicyData} disabled={!canEdit} />
       <FraudRuleManagerModal
         open={showFraud}
         onClose={() => setShowFraud(false)}
         claimNumber={claimId}
+        policyId={claim.policyId}
         fraudContext={{
           ...claim.fraudContext,
           intimation: demogs?.intimation || claim.fraudContext?.intimation,
@@ -366,11 +433,36 @@ export default function ClaimView() {
         }}
         userRole={userRoles[0]}
         username={user?.username || sessionStorage.getItem('loggedUser')}
-        enableAssessor={assessorCanEdit}
+        enableAssessor={canEdit}
       />
-      <TransactionDetailsModal open={showTxn} onClose={() => setShowTxn(false)} policyId={claim.policyId} txnDate={claim.intimationDate} />
+      <TransactionDetailsModal
+        open={showTxn}
+        onClose={() => setShowTxn(false)}
+        policyId={claim.policyId}
+        claimId={claimId}
+        txnDate={demogs?.intimation?.intimationDate || demogs?.intimation?.initiationDate || claim.intimationDate}
+        calcAmt={calcResult}
+      />
+      <ClaimSuccessModal
+        open={Boolean(submitSuccess)}
+        title={submitSuccess?.mode === 'verifier' ? 'Verification Submitted!' : 'Assessment Submitted!'}
+        message={
+          submitSuccess?.mode === 'verifier'
+            ? 'Your verification decision has been saved successfully and the claim has been updated.'
+            : 'Your assessment decision has been saved successfully and the claim has been updated.'
+        }
+        claimNo={submitSuccess?.claimId}
+        primaryLabel={submitSuccess?.mode === 'verifier' ? 'Back to Claim Search' : 'Back to My Tasks'}
+        onPrimary={() => {
+          const mode = submitSuccess?.mode
+          setSubmitSuccess(null)
+          navigate(mode === 'verifier' ? '/claim-search' : '/my-task')
+        }}
+        secondaryLabel="Stay on Claim"
+        onSecondary={() => setSubmitSuccess(null)}
+      />
       <ClaimAssignModal open={showAssign} onClose={() => setShowAssign(false)} claimNumber={claimId} mode={verifierCanEdit ? 'verifier' : 'assessor'} />
-      <DocumentSideSlider open={showDocs} onClose={() => setShowDocs(false)} claimId={claimId} readOnly={browseMode} />
+      <DocumentSideSlider open={showDocs} onClose={() => setShowDocs(false)} claimId={claimId} readOnly={!canEdit} />
     </AppLayout>
   )
 }

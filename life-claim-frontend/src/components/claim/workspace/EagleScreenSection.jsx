@@ -64,7 +64,7 @@ const TABLE_DEFS = [
   },
 ]
 
-export default function EagleScreenSection({ demogs, assessorCanEdit, onPatch, onOpenFraud }) {
+export default function EagleScreenSection({ demogs, canEdit, onPatch, onOpenFraud }) {
   const eagle = demogs?.eagle || {}
 
   const addRow = (policyKey, emptyRow) => {
@@ -90,7 +90,7 @@ export default function EagleScreenSection({ demogs, assessorCanEdit, onPatch, o
         <div key={def.policyKey} style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '12px', fontWeight: 700, color: WS.textSecondary, textTransform: 'uppercase' }}>{def.label}</span>
-            {assessorCanEdit && (
+            {canEdit && (
               <button
                 type="button"
                 onClick={() => addRow(def.policyKey, def.emptyRow)}

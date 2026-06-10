@@ -539,7 +539,22 @@ const Claim = sequelize.define('Claim', {
   ASSIGNED_TO:{
     type: DataTypes.STRING(255),
     allowNull: true,
-  }
+  },
+  CLAIMANT_ACUITY_DECISION: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: 'NOT FLAGGED',
+  },
+  PAYEE_ACUITY_DECISION: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: 'NOT FLAGGED',
+  },
+  FINAL_ACUITY_DECISION: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: 'NOT FLAGGED',
+  },
 }, {
   tableName: 'claims',
   timestamps: false

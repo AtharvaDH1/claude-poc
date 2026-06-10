@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import { historySearch } from '../services/historySearchService'
+import { mapClaimSearchRow } from '../util/claimSearchMap'
 import { Search, FileText, Plus, X, RotateCcw } from 'lucide-react'
 
 const T = {
@@ -16,15 +17,7 @@ const T = {
 const USER_ROLES = [{ value: 'pre-assessor', label: 'Pre-Assessor' }]
 
 function mapClaimRow(row) {
-  return {
-    claimNumber: row.CLAIM_NUMBER || row.claimNumber || row.claim_no || '—',
-    claimType: row.CLAIM_TYPE || row.claimType || '—',
-    policyNumber: row.POLICY_ID || row.POLICY_NUMBER || row.policyNumber || '—',
-    policyStatus: row.POLICY_STATUS || row.policyStatus || '—',
-    claimStatus: row.CLAIM_STATUS || row.claimStatus || row.status || '—',
-    createdOn: (row.CREATED_AT || row.createdOn || row.CREATED_ON || '').toString().split('T')[0] || '—',
-    createdBy: row.CREATED_BY || row.createdBy || '—',
-  }
+  return mapClaimSearchRow(row)
 }
 
 export default function PolicySearch() {
@@ -32,15 +25,13 @@ export default function PolicySearch() {
   const toast = useToast()
   const [userRole, setUserRole] = useState('pre-assessor')
   const [policyNumber, setPolicyNumber] = useState('')
-  const [claimNumber, setClaimNumber] = useState('')
-  const [caseId, setCaseId] = useState('')
   const [results, setResults] = useState([])
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hovRow, setHovRow] = useState(null)
 
   const roleOk = Boolean(userRole)
-  const canSearch = roleOk && (policyNumber.trim() || claimNumber.trim())
+  const canSearch = roleOk && policyNumber.trim()
   const canRegister = roleOk
 
   const doSearch = async () => {
@@ -48,21 +39,21 @@ export default function PolicySearch() {
       toast('warning', 'Select role', 'Choose User Role before searching.')
       return
     }
-    if (!policyNumber.trim() && !claimNumber.trim()) {
-      toast('warning', 'Enter criteria', 'Enter a policy number or claim number.')
+    if (!policyNumber.trim()) {
+      toast('warning', 'Enter criteria', 'Enter a policy number.')
       return
     }
     setLoading(true)
     setSearched(true)
     try {
-      const raw = await historySearch(policyNumber.trim(), claimNumber.trim())
+      const raw = await historySearch(policyNumber.trim(), '')
       if (!raw || raw.message) {
         setResults([])
         toast('info', 'No records', raw?.message || 'No claims found in history.')
         return
       }
       const arr = Array.isArray(raw) ? raw : [raw]
-      setResults(arr.map(mapClaimRow))
+      setResults(arr.map(mapClaimRow).filter(Boolean))
     } catch {
       setResults([])
       toast('error', 'Search failed', 'Could not load claim history.')
@@ -74,8 +65,6 @@ export default function PolicySearch() {
   const handleClear = () => {
     setUserRole('pre-assessor')
     setPolicyNumber('')
-    setClaimNumber('')
-    setCaseId('')
     setResults([])
     setSearched(false)
   }
@@ -120,25 +109,6 @@ export default function PolicySearch() {
                 onKeyDown={(e) => e.key === 'Enter' && doSearch()}
                 placeholder="Policy ID"
                 style={{ height: '42px', borderRadius: '8px', border: `1.5px solid ${T.border}`, padding: '0 12px', fontSize: '13px', fontFamily: 'Inter,sans-serif' }}
-              />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: T.textSecondary }}>Claim number</span>
-              <input
-                value={claimNumber}
-                onChange={(e) => setClaimNumber(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && doSearch()}
-                placeholder="e.g. CL123"
-                style={{ height: '42px', borderRadius: '8px', border: `1.5px solid ${T.border}`, padding: '0 12px', fontSize: '13px', fontFamily: 'Inter,sans-serif' }}
-              />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: T.textSecondary }}>Case ID (optional)</span>
-              <input
-                value={caseId}
-                onChange={(e) => setCaseId(e.target.value)}
-                placeholder="Not sent to API"
-                style={{ height: '42px', borderRadius: '8px', border: `1.5px solid ${T.border}`, padding: '0 12px', fontSize: '13px', fontFamily: 'Inter,sans-serif', background: '#F8FAFC' }}
               />
             </label>
           </div>

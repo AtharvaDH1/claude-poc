@@ -119,18 +119,16 @@ const addAccessorFeedback = async (feedback, claimNumber, roleOverride, username
         console.log('Services >> FraudPreventionService.js >> Response status: ', addAccessorFeedbackResponse.status);
         if (!addAccessorFeedbackResponse.ok) {
             const errorText = await addAccessorFeedbackResponse.text();
-            console.log('Services >> FraudPreventionService.js >> Response not ok, error: ', errorText);
-            return (`Server error: ${addAccessorFeedbackResponse.status} - ${errorText}`);
-        } else {
-            const addAccessorFeedbackData = await addAccessorFeedbackResponse.json();
-            console.log('Services >> FraudPreventionService.js >> addAccessorFeedbackData > ', addAccessorFeedbackData);
-            return addAccessorFeedbackData;
+            throw new Error(`Server error: ${addAccessorFeedbackResponse.status} - ${errorText}`);
         }
-
+        const addAccessorFeedbackData = await addAccessorFeedbackResponse.json();
+        if (addAccessorFeedbackData?.success === false) {
+            throw new Error(addAccessorFeedbackData.message || 'Failed to save eagle rule feedback');
+        }
+        return addAccessorFeedbackData;
     } catch (error) {
-        console.log('Services >> FraudPreventionService.js >> addAccessorFeedback Error > ', error);
-        console.log('Services >> FraudPreventionService.js >> Error stack: ', error.stack);
-        return error;
+        console.error('Services >> FraudPreventionService.js >> addAccessorFeedback Error > ', error);
+        throw error;
     }
 }
 

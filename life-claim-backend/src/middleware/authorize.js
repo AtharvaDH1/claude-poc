@@ -11,9 +11,12 @@ const authorize = (...allowedRoles) => {
     }
 
     const userRoles = req.user.roles || [];
-    
-    // Check if the user has at least one of the allowed roles
-    const hasPermission = allowedRoles.some(role => userRoles.includes(role));
+    const norm = (r) => String(r || '').toLowerCase().trim();
+
+    // Check if the user has at least one of the allowed roles (case-insensitive)
+    const hasPermission = allowedRoles.some((role) =>
+      userRoles.some((ur) => norm(ur) === norm(role))
+    );
 
     if (!hasPermission) {
       console.warn(`Access denied for user ${req.user.username}. Required roles: [${allowedRoles}], User roles: [${userRoles}]`);

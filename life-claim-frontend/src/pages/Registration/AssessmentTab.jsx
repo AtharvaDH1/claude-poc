@@ -1,32 +1,24 @@
 import React, { useState, useEffect } from 'react'
 import { Field, Input, Select, Textarea, SubTabNav, Grid, Btn, InfoCard, T } from './shared'
-import { getAssessmentQuestions, getSystemDecision } from '../../services/masterService'
+import { getSystemDecision } from '../../services/masterService'
 import { useToast } from '../../components/Toast'
 import { validateAssessment, showValidationToast } from '../../util/registrationValidation'
+import { REGISTRATION_ASSESSMENT_QUESTIONS } from '../../config/registrationCatalog'
 
-export default function AssessmentTab({ data, update, onComplete, userRole }) {
+export default function AssessmentTab({ data, update, onComplete, userRole, policy }) {
   const toast = useToast()
   const isAssessorPlus = userRole && userRole !== 'Pre Assessor'
   const isPreAssessor = !isAssessorPlus
   const [subTab, setSubTab] = useState('Questions')
-  const [questions, setQuestions] = useState([])
+  const questions = REGISTRATION_ASSESSMENT_QUESTIONS
   const [finishing, setFinishing] = useState(false)
-
-  React.useEffect(() => {
-    getAssessmentQuestions().then(setQuestions).catch(() => {})
-  }, [])
 
   const setAnswer = (id, val) => update({ assessmentAnswers:{ ...(data.assessmentAnswers||{}), [id]: val } })
   const ans = data.assessmentAnswers || {}
 
-  const answeredCount = Object.keys(ans).length
+  const answeredCount = questions.filter((q) => ans[q.id]).length
   const allAnswered = answeredCount >= questions.length
-
-  const grouped = questions.reduce((acc, q) => {
-    if (!acc[q.section]) acc[q.section] = []
-    acc[q.section].push(q)
-    return acc
-  }, {})
+  const assessmentComplete = validateAssessment(data, { questions, isPreAssessor }).valid
 
   return (
     <div style={{ padding:'24px' }}>
@@ -45,34 +37,35 @@ export default function AssessmentTab({ data, update, onComplete, userRole }) {
             <div style={{ fontSize:'13px', fontWeight:600, color:T.textMuted }}>{answeredCount} of {questions.length} questions answered</div>
             {allAnswered && <span style={{ fontSize:'12px', fontWeight:700, color:'#059669', background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:'99px', padding:'3px 12px' }}>✓ All answered</span>}
           </div>
-          {Object.entries(grouped).map(([section, qs]) => (
-            <div key={section} style={{ marginBottom:'20px' }}>
-              <div style={{ fontSize:'11px', fontWeight:700, color:T.primary, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px', paddingBottom:'6px', borderBottom:`1px solid ${T.border}` }}>{section}</div>
-              <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-                {qs.map(q => {
+          <div style={{ border:`1px solid ${T.border}`, borderRadius:'10px', overflow:'hidden' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                  {['#','Questions','Answer'].map(h=>(
+                    <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {questions.map((q, i) => {
                   const a = ans[q.id]
                   return (
-                    <div key={q.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', background: a?'#FAFAFE':'#FAFAFA', borderRadius:'10px', border:`1px solid ${a?T.border+'80':T.border}`, transition:'all 0.15s' }}>
-                      <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', flex:1 }}>
-                        <div style={{ width:'22px', height:'22px', borderRadius:'50%', background: a==='Yes'?'#ECFDF5': a==='No'?'#FEF2F2': a==='NA'?'#EFF6FF':'#E2E8F0', color: a==='Yes'?'#059669': a==='No'?'#DC2626': a==='NA'?T.primary:T.textSubtle, fontSize:'10px', fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                          {q.id}
-                        </div>
-                        <span style={{ fontSize:'13px', fontWeight:500, color:T.textSecondary, lineHeight:1.5 }}>{q.question}</span>
-                      </div>
-                      <div style={{ display:'flex', gap:'6px', flexShrink:0, marginLeft:'16px' }}>
-                        {['Yes','No','NA'].map(opt => (
-                          <button key={opt} onClick={() => setAnswer(q.id, opt)}
-                            style={{ padding:'5px 14px', borderRadius:'6px', fontSize:'12px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s', border:`1.5px solid ${a===opt?(opt==='Yes'?'#A7F3D0': opt==='No'?'#FECACA':'#BFDBFE'):'#E2E8F0'}`, background: a===opt?(opt==='Yes'?'#ECFDF5': opt==='No'?'#FEF2F2':'#EFF6FF'):'#fff', color: a===opt?(opt==='Yes'?'#059669': opt==='No'?'#DC2626':T.primary):T.textMuted }}>
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <tr key={q.id} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background: i%2===0?'#FAFAFA':'#fff' }}>
+                      <td style={{ padding:'12px 14px', fontSize:'12px', fontWeight:700, color:T.textSubtle, verticalAlign:'top', width:'40px' }}>{q.id}</td>
+                      <td style={{ padding:'12px 14px', fontSize:'13px', fontWeight:500, color:T.textSecondary, lineHeight:1.5, verticalAlign:'top' }}>{q.question}</td>
+                      <td style={{ padding:'12px 14px', verticalAlign:'top', width:'140px' }}>
+                        <Select
+                          value={a || ''}
+                          onChange={(e) => setAnswer(q.id, e.target.value)}
+                          options={['Yes', 'No']}
+                        />
+                      </td>
+                    </tr>
                   )
                 })}
-              </div>
-            </div>
-          ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -218,7 +211,7 @@ export default function AssessmentTab({ data, update, onComplete, userRole }) {
             ⚠️ {questions.length - answeredCount} question(s) still unanswered
           </div>
         )}
-        <Btn variant='success' disabled={finishing} onClick={async ()=>{
+        <Btn variant='success' disabled={!assessmentComplete || finishing} onClick={async ()=>{
           const check = validateAssessment(data, { questions, isPreAssessor })
           if (!check.valid) {
             showValidationToast(toast, check.missing, 'Assessment incomplete')
@@ -228,7 +221,7 @@ export default function AssessmentTab({ data, update, onComplete, userRole }) {
           }
           setFinishing(true)
           try {
-            const res = await getSystemDecision({ ...data, sumAssured: data.sumAssured })
+            const res = await getSystemDecision(data, policy)
             update({
               sysRecommendation: res.recommendation,
               sysPayableAmount: res.payableAmount,
@@ -237,7 +230,8 @@ export default function AssessmentTab({ data, update, onComplete, userRole }) {
               sysProcessedOn: res.processedOn,
               systemDetails: res,
             })
-            toast('success', 'System decision', 'System recommendation generated for this claim.')
+            const title = res.estimated ? 'System decision (estimated)' : 'System decision'
+            toast('success', title, `${res.recommendation} — ${res.reason}`)
           } catch (e) {
             toast('warning', 'System decision', e?.message || 'Could not generate system decision. You can retry from the Decision tab.')
           } finally {

@@ -7,12 +7,14 @@ import Breadcrumbs from '../components/Breadcrumbs'
 import GlobalLoadingBar from '../components/GlobalLoadingBar'
 import {
   LayoutDashboard, Search, Bell, ChevronDown, LogOut, Menu, X,
-  FileText, Users, CheckSquare, Plus, Shield, Settings, Star,
-  Layers, ChevronRight, CheckCircle, XCircle, ClipboardList,
+  FileText, Users, CheckSquare, Shield, Settings, Star,
+  Layers, ChevronRight, ClipboardList, ScanSearch,
   BarChart3, User,
 } from 'lucide-react'
 import AskMeChat from '../components/AskMeChat'
 import { isAdminOnlyUser, hasAdminRole } from '../util/loginHelpers'
+import { mapDashboardActivities } from '../util/mapDashboardActivity'
+import { getActivityStyle } from '../util/activityStyles'
 
 const T = {
   sidebar: '#0F172A', sidebarBorder: 'rgba(255,255,255,0.06)',
@@ -33,18 +35,10 @@ const NAV_ITEMS = [
   { id:'claims',           path:'/claim-search',     icon:FileText,        label:'Claim Search',     operational: true },
   { id:'pool',             path:'/pool-selection',   icon:Layers,          label:'Pool Selection',   roles:['Assessor','Verifier'], operational: true },
   { id:'tasks',            path:'/my-task',          icon:CheckSquare,     label:'My Tasks',         roles:['Assessor','Verifier'], operational: true },
-  { id:'add',              path:'/add-screen',       icon:Plus,            label:'Add Screen',       roles:['Assessor','Verifier'], operational: true },
+  { id:'add',              path:'/add-screen',       icon:ScanSearch,      label:'Advance Investigation', roles:['Assessor','Verifier'], operational: true },
   { id:'users',            path:'/user-management',  icon:Users,           label:'User Management',  roles:['admin'], adminNav: true },
   { id:'audit-log',        path:'/audit-log',        icon:ClipboardList,   label:'Login Sessions',   roles:['admin'], adminNav: true },
 ]
-
-const ACT_STYLE = {
-  approved:   { bg:'#ECFDF5', color:'#059669', Icon: CheckCircle  },
-  new:        { bg:'#EFF6FF', color:'#1D4ED8', Icon: Plus         },
-  rejected:   { bg:'#FEF2F2', color:'#DC2626', Icon: XCircle      },
-  assessment: { bg:'#FFFBEB', color:'#D97706', Icon: ClipboardList },
-  document:   { bg:'#F0F9FF', color:'#0891B2', Icon: FileText     },
-}
 
 const GUEST_USER = { name:'Guest User', role:'Admin', email:'guest@dhdigital.co.in', avatar:'GU', username:'guest' }
 
@@ -78,6 +72,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
+  const [, setTimeTick] = useState(0)
   const dropRef = useRef(null)
   const sidebarRef = useRef(null)
 
@@ -87,15 +82,14 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   useEffect(() => {
     if (!user?.username) return
     dashboardService.getRecentActivities().then(items => {
-      setNotifications((items || []).slice(0, 6).map((a, i) => ({
-        id: a.id || i + 1,
-        action: a.action || a.ACTION || 'Activity',
-        claim: a.claimNumber || a.CLAIM_NUMBER || a.claim || '',
-        time: a.time || a.relativeTime || a.createdAt || '',
-        type: a.type || 'new',
-      })))
+      setNotifications(mapDashboardActivities(items).slice(0, 6))
     }).catch(() => setNotifications([]))
   }, [user?.username])
+
+  useEffect(() => {
+    const id = setInterval(() => setTimeTick((n) => n + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     const fn = e => {
@@ -340,7 +334,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                   {notifications.length === 0 ? (
                     <div style={{ padding:'20px 16px', fontSize:'12px', color:T.textMuted, textAlign:'center' }}>No recent activity</div>
                   ) : notifications.map(a => {
-                    const s = ACT_STYLE[a.type] || ACT_STYLE.new
+                    const s = getActivityStyle(a.type)
                     return (
                       <div
                         key={a.id}
@@ -353,7 +347,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '12px', fontWeight: 600, color: T.textSecondary }}>{a.action}</div>
-                          <div style={{ fontSize: '11px', color: T.textSubtle, marginTop: '2px' }}>{a.claim} · {a.time}</div>
+                          <div style={{ fontSize: '11px', color: T.textSubtle, marginTop: '2px' }}>{a.detail || a.claim}</div>
                         </div>
                       </div>
                     )

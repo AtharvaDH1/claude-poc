@@ -49,21 +49,47 @@ export default function AdminAuditLog() {
   const [logs, setLogs] = useState([])
   const [tracked, setTracked] = useState([])
 
+  const mapAuditRow = (l, i) => ({
+    id: l.id ?? i + 1,
+    user: l.username || l.USERNAME || l.user || 'Unknown',
+    role: l.userRole || (Array.isArray(l.roles) ? l.roles[0] : l.roles) || 'User',
+    action: l.logoutAt || l.LOGOUT_AT ? 'Logout' : 'Login',
+    ip: l.ipAddress || l.IP_ADDRESS || l.ip || '—',
+    timestamp: (l.loginAt || l.LOGIN_AT)
+      ? new Date(l.loginAt || l.LOGIN_AT).toLocaleString('en-IN')
+      : '—',
+    session: l.id != null ? String(l.id) : (l.session_id || l.SESSION_ID || '—'),
+  })
+
   const loadLogs = () => {
     const range = dateRangeForPeriod(period)
-    getAuditLogs({ limit: 200, ...range }).then((data) => {
-      if (data.logs?.length) {
-        setLogs(data.logs.map((l, i) => ({
-          id: l.id || i+1,
-          user: l.USERNAME || l.user || 'Unknown',
-          role: Array.isArray(l.roles) ? l.roles[0] : (l.roles || 'User'),
-          action: l.action || (l.LOGOUT_AT ? 'Logout' : 'Login'),
-          ip: l.ipAddress || l.ip || '—',
-          timestamp: l.LOGIN_AT ? new Date(l.LOGIN_AT).toLocaleString('en-IN') : '—',
-          session: l.session_id || l.SESSION_ID || '—',
-        })))
-      }
-    }).catch(() => {})
+    getAuditLogs({ limit: 200, ...range })
+      .then((data) => {
+        const rows = Array.isArray(data?.logs) ? data.logs : []
+        setLogs(rows.map(mapAuditRow))
+      })
+      .catch(() => setLogs([]))
+  }
+
+  const exportCsv = () => {
+    if (!filtered.length) {
+      toast('warning', 'No data', 'Nothing to export for current filters.')
+      return
+    }
+    const header = ['Timestamp', 'User', 'Role', 'Action', 'IP', 'Session ID']
+    const lines = filtered.map((l) =>
+      [l.timestamp, l.user, l.role, l.action, l.ip, l.session]
+        .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
+        .join(',')
+    )
+    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `login-audit-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast('success', 'Exported', `${filtered.length} row(s) downloaded.`)
   }
 
   useEffect(() => {
@@ -138,7 +164,7 @@ export default function AdminAuditLog() {
               {p === 'today' ? 'Today' : p === 'week' ? 'This week' : 'All'}
             </button>
           ))}
-          <button style={{ display:'flex', alignItems:'center', gap:'7px', padding:'0 16px', height:'38px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', color:T.textSecondary, fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
+          <button type="button" onClick={exportCsv} style={{ display:'flex', alignItems:'center', gap:'7px', padding:'0 16px', height:'38px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', color:T.textSecondary, fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
             onMouseEnter={e => e.currentTarget.style.background='#EFF6FF'} onMouseLeave={e => e.currentTarget.style.background='#F8FAFC'}>
             <Download size={14}/> Export CSV
           </button>

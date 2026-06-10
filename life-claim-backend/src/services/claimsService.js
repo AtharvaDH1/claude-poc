@@ -56,7 +56,7 @@ exports.changeStatus = async (claimNumber, status, username, role = null) => {
 
                 if (lifeAssured) {
                     const mobileNo = lifeAssured.MOBILE_NO1 || lifeAssured.MOBILE_NO2 || lifeAssured.MOBILE_ID1;
-                    const email = lifeAssured.EMAIL_ID1 || lifeAssured.EMAIL || null;
+                    const email = lifeAssured.EMAIL_ID1 || lifeAssured.EMAIL_ID || lifeAssured.EMAIL || null;
 
                     if (role === 'Assessor' && status === 'Pending Assessor Action') {
                         console.log(

@@ -7,11 +7,14 @@ import { openClaimWorkspace } from '../util/navigation'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import dashboardService from '../services/dashboardService'
+import { workflowStatusFromRow } from '../util/claimSearchMap'
+import { mapDashboardActivities } from '../util/mapDashboardActivity'
+import { getActivityStyle } from '../util/activityStyles'
 import { changeClaimStatus } from '../services/claimsService'
 import {
   Clock, CheckCircle, XCircle, Layers,
   Download, Eye, Edit3,
-  Trash2, TrendingUp, TrendingDown, ClipboardList,
+  TrendingUp, TrendingDown, ClipboardList,
   AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, IndianRupee,
   Plus, FileText, X, Search, Star, CheckSquare
 } from 'lucide-react'
@@ -41,14 +44,6 @@ const METRICS = [
   { key: 'approved',   label: 'Approved',         icon: CheckCircle,  accent: '#059669', light: '#ECFDF5',  change: +18 },
   { key: 'rejected',   label: 'Rejected',         icon: XCircle,      accent: '#DC2626', light: '#FEF2F2',  change: +2  },
 ]
-
-const ACT_STYLE = {
-  approved:   { bg:'#ECFDF5', color:'#059669', Icon: CheckCircle  },
-  new:        { bg:'#EFF6FF', color:'#1D4ED8', Icon: Plus         },
-  rejected:   { bg:'#FEF2F2', color:'#DC2626', Icon: XCircle      },
-  assessment: { bg:'#FFFBEB', color:'#D97706', Icon: ClipboardList },
-  document:   { bg:'#F0F9FF', color:'#0891B2', Icon: FileText     },
-}
 
 const DATE_FILTERS = ['All', 'Today', 'This Week', 'This Month']
 
@@ -172,11 +167,19 @@ function ValueCard({ value, sla, overdue }) {
   )
 }
 
+function claimStatusStyle(status) {
+  const s = String(status || '').toLowerCase()
+  if (s.includes('approv') || s.includes('payout completed')) return T.approved
+  if (s.includes('reject') || s.includes('repudi')) return T.rejected
+  if (s.includes('pending')) return T.pending
+  return T.pending
+}
+
 /* ── StatusBadge ── */
 function StatusBadge({ status }) {
-  const s = T[status?.toLowerCase()] || T.pending
-  const icons = { Pending: Clock, Approved: CheckCircle, Rejected: XCircle }
-  const Icon = icons[status] || Clock
+  const s = claimStatusStyle(status)
+  const sl = String(status || '').toLowerCase()
+  const Icon = sl.includes('approv') ? CheckCircle : sl.includes('reject') ? XCircle : Clock
   return (
     <span style={{
       display:'inline-flex', alignItems:'center', gap:'5px',
@@ -264,37 +267,6 @@ function HoverPreview({ claim, x, y }) {
   )
 }
 
-/* ── DeleteConfirm ── */
-function DeleteConfirm({ claim, onConfirm, onCancel }) {
-  if (!claim) return null
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:9998, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)', animation:'fadeIn 0.15s ease' }}>
-      <div style={{ background:'#fff', borderRadius:'16px', padding:'28px', width:'360px', boxShadow:'0 24px 64px rgba(0,0,0,0.2)', animation:'fadeUp 0.2s ease' }}>
-        <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'16px' }}>
-          <Trash2 size={22} style={{ color:'#DC2626' }} />
-        </div>
-        <div style={{ fontWeight:800, fontSize:'16px', color:T.textPrimary, marginBottom:'8px' }}>Delete Claim?</div>
-        <div style={{ fontSize:'13px', color:T.textMuted, lineHeight:1.6, marginBottom:'24px' }}>
-          Are you sure you want to delete <strong style={{ color:T.textSecondary }}>{claim.id}</strong>?<br />
-          This action cannot be undone.
-        </div>
-        <div style={{ display:'flex', gap:'10px' }}>
-          <button onClick={onCancel} style={{ flex:1, height:'40px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'13px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif' }}
-            onMouseEnter={e => e.currentTarget.style.background='#F8FAFC'}
-            onMouseLeave={e => e.currentTarget.style.background='#fff'}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} style={{ flex:1, height:'40px', borderRadius:'8px', border:'none', background:'#DC2626', fontSize:'13px', fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(220,38,38,0.3)' }}
-            onMouseEnter={e => e.currentTarget.style.background='#B91C1C'}
-            onMouseLeave={e => e.currentTarget.style.background='#DC2626'}>
-            Delete Claim
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ══════════════════════════════════════════
    MAIN DASHBOARD
 ══════════════════════════════════════════ */
@@ -310,11 +282,11 @@ export default function Dashboard() {
   const [sortDir, setSortDir] = useState('desc')
   const [hoverClaim, setHoverClaim] = useState(null)
   const [mouse, setMouse] = useState({ x:0, y:0 })
-  const [deleteClaim, setDeleteClaim] = useState(null)
   const [alertDismissed, setAlertDismissed] = useState(false)
   const [claims, setClaims]   = useState([])
   const [metrics, setMetrics] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 })
   const [activity, setActivity] = useState([])
+  const [, setTimeTick] = useState(0)
   const [apiLoading, setApiLoading] = useState(false)
 
   useEffect(() => {
@@ -332,30 +304,31 @@ export default function Dashboard() {
           approved: stats.approvedClaims || 0,
           rejected: stats.rejectedClaims || 0,
         })
-        setClaims((recentClaims || []).map(c => ({
+        setClaims((recentClaims || []).map(c => {
+          const ws = workflowStatusFromRow(c)
+          return {
           id:       c.CLAIM_NUMBER || c.id,
           policy:   c.POLICY_ID    || c.policy,
           claimant: c.CREATED_BY   || c.claimant || 'Unknown',
           type:     c.CLAIM_TYPE   || c.type     || 'Death Claim',
-          status:   c.CLAIM_STATUS || c.status   || 'Pending',
+          status:   ws === '—' ? 'Pending' : ws,
           priority: c.priority     || 'Normal',
           amount:   c.amount       || 0,
           created:  (c.CREATED_AT  || c.created  || '').toString().split('T')[0],
           modified: (c.MODIFIED_AT || c.modified || '').toString().split('T')[0],
           daysOpen: c.daysOpen || 0,
-        })))
-        setActivity((activities || []).map((a, i) => ({
-          id: a.id || i + 1,
-          action: a.action || a.ACTION || 'Activity',
-          claim: a.claimNumber || a.CLAIM_NUMBER || a.claim || '',
-          user: a.user || a.USERNAME || a.username || '',
-          time: a.time || a.relativeTime || a.createdAt || '',
-          type: a.type || 'new',
-        })))
+          }
+        }))
+        setActivity(mapDashboardActivities(activities))
       })
       .catch(() => toast('error', 'Load Failed', 'Could not load dashboard data.'))
       .finally(() => setApiLoading(false))
   }, [user?.username, user?.roles, toast])
+
+  useEffect(() => {
+    const id = setInterval(() => setTimeTick((n) => n + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
 
   const highPriorityClaims = useMemo(
     () => claims.filter(c => c.priority === 'High' && String(c.status || '').toLowerCase().includes('pending')),
@@ -419,7 +392,11 @@ export default function Dashboard() {
     .filter(c => {
       const q = search.toLowerCase()
       const matchQ = !q || c.id.toLowerCase().includes(q) || c.claimant.toLowerCase().includes(q) || c.policy.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)
-      const matchS = statusFilter === 'All' || c.status === statusFilter
+      const st = String(c.status || '').toLowerCase()
+      const matchS = statusFilter === 'All'
+        || (statusFilter === 'Pending' && st.includes('pending'))
+        || (statusFilter === 'Approved' && (st.includes('approv') || st.includes('payout completed')))
+        || (statusFilter === 'Rejected' && (st.includes('reject') || st.includes('repudi')))
       return matchQ && matchS
     })
     .sort((a, b) => {
@@ -430,14 +407,6 @@ export default function Dashboard() {
       if (av > bv) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-
-  /* ── Delete ── */
-  const confirmDelete = useCallback(() => {
-    if (!deleteClaim) return
-    setClaims(prev => prev.filter(c => c.id !== deleteClaim.id))
-    toast('success', 'Claim Deleted', `${deleteClaim.id} has been removed.`)
-    setDeleteClaim(null)
-  }, [deleteClaim, toast])
 
   /* ── Export ── */
   const handleExport = () => {
@@ -491,10 +460,16 @@ export default function Dashboard() {
               </button>
             )}
             {hasRole(['Assessor', 'Verifier']) && (
-              <button type="button" onClick={() => navigate('/my-task')}
-                style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
-                <CheckSquare size={14} /> My Tasks
-              </button>
+              <>
+                <button type="button" onClick={() => navigate('/pool-selection')}
+                  style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+                  <Layers size={14} /> Pool Selection
+                </button>
+                <button type="button" onClick={() => navigate('/my-task')}
+                  style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+                  <CheckSquare size={14} /> My Tasks
+                </button>
+              </>
             )}
             {hasAdminRole(user?.roles) && (
               <button type="button" onClick={() => navigate('/admin')}
@@ -742,11 +717,10 @@ export default function Dashboard() {
                           <td style={{ padding:'12px 16px' }}>
                             <div style={{ display:'flex', gap:'4px', opacity:0, transition:'opacity 0.15s' }} className="row-actions">
                               {[
-                                { I:Eye,    hc:'#1D4ED8', hb:'#EFF6FF', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) },
-                                { I:Edit3,  hc:'#059669', hb:'#ECFDF5', fn: () => toast('info','Edit Claim',`Editing ${claim.id}...`) },
-                                { I:Trash2, hc:'#DC2626', hb:'#FEF2F2', fn: () => setDeleteClaim(claim) },
-                              ].map(({I,hc,hb,fn},i)=>(
-                                <button key={i} onClick={e => { e.stopPropagation(); fn() }}
+                                { I:Eye, title:'View (read-only)', hc:'#1D4ED8', hb:'#EFF6FF', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'claimSearch' }) },
+                                { I:Edit3, title:'Work claim', hc:'#059669', hb:'#ECFDF5', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) },
+                              ].map(({I,title,hc,hb,fn},i)=>(
+                                <button key={i} title={title} onClick={e => { e.stopPropagation(); fn() }}
                                   style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:'#F8FAFC', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
                                   onMouseEnter={e => { e.currentTarget.style.background=hb; e.currentTarget.style.color=hc; e.currentTarget.style.borderColor=hc+'60' }}
                                   onMouseLeave={e => { e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textMuted; e.currentTarget.style.borderColor=T.border }}>
@@ -786,8 +760,13 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={{ padding:'12px 16px', display:'flex', flexDirection:'column', gap:'12px' }}>
-                  {(activity.length ? activity : []).map(a => {
-                    const s = ACT_STYLE[a.type]||ACT_STYLE.new
+                  {!activity.length && (
+                    <div style={{ fontSize:'12px', color:T.textMuted, textAlign:'center', padding:'16px 8px' }}>
+                      No recent claim activity yet. Updates appear here when claims are registered or worked.
+                    </div>
+                  )}
+                  {activity.map(a => {
+                    const s = getActivityStyle(a.type)
                     return (
                       <div key={a.id} style={{ display:'flex', alignItems:'flex-start', gap:'10px' }}>
                         <div style={{ width:'30px', height:'30px', borderRadius:'8px', background:s.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -795,9 +774,8 @@ export default function Dashboard() {
                         </div>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:'12px', fontWeight:600, color:T.textSecondary }}>{a.action}</div>
-                          <div style={{ fontSize:'11px', color:T.textSubtle, marginTop:'2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.claim} · {a.user}</div>
+                          <div style={{ fontSize:'11px', color:T.textSubtle, marginTop:'2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.detail || `${a.claim} · ${a.user}`}</div>
                         </div>
-                        <div style={{ fontSize:'11px', color:T.textSubtle, flexShrink:0, fontWeight:500 }}>{a.time}</div>
                       </div>
                     )
                   })}
@@ -827,7 +805,6 @@ export default function Dashboard() {
 
       {/* Overlays */}
       <HoverPreview claim={hoverClaim} x={mouse.x} y={mouse.y}/>
-      <DeleteConfirm claim={deleteClaim} onConfirm={confirmDelete} onCancel={()=>setDeleteClaim(null)}/>
 
       <style>{`
         tr:hover .row-actions { opacity: 1 !important; }

@@ -116,19 +116,13 @@ export default function UserManagement() {
   const [newRoleName, setNewRoleName] = useState('')
   const [showAddRole, setShowAddRole] = useState(false)
 
-  useEffect(() => {
-    getRoles().then((r) => {
-      const names = (r || []).map((x) => x.role_name || x.name || x.ROLE_NAME || x).filter(Boolean)
-      if (names.length) setRoleOptions(names)
-    }).catch(() => {})
-  }, [])
-
-  // Load real users from backend
-  useEffect(() => {
-    getUsers().then(data => {
-      const mapped = data.map(u => ({
-        id: u.id, name: `${u.first_Name||''} ${u.last_Name||''}`.trim(),
-        username: u.username, email: u.email,
+  const reloadUsers = () => {
+    getUsers().then((data) => {
+      const mapped = (data || []).map((u) => ({
+        id: u.id,
+        name: `${u.first_Name || ''} ${u.last_Name || ''}`.trim(),
+        username: u.username,
+        email: u.email,
         role: Array.isArray(u.roles) ? u.roles[0] : (u.roles || 'Pre Assessor'),
         status: u.active === false ? 'Inactive' : 'Active',
         lastLogin: u.last_login ? new Date(u.last_login).toLocaleDateString('en-IN') : '—',
@@ -136,7 +130,16 @@ export default function UserManagement() {
       }))
       setUsers(mapped)
     }).catch(() => {})
+  }
+
+  useEffect(() => {
+    getRoles().then((r) => {
+      const names = (r || []).map((x) => x.role_name || x.name || x.ROLE_NAME || x).filter(Boolean)
+      if (names.length) setRoleOptions(names)
+    }).catch(() => {})
   }, [])
+
+  useEffect(() => { reloadUsers() }, [])
 
   const allRoles = ['All', ...Object.keys(ROLE_COLORS)]
 
@@ -152,7 +155,7 @@ export default function UserManagement() {
     try {
       const parts = newUser.name.trim().split(' ')
       await createUser({ firstName: parts[0], lastName: parts.slice(1).join(' ') || '.', username: newUser.username, email: newUser.email, password: 'Password@123', roles: [newUser.role || 'Pre Assessor'] })
-      setUsers(p => [...p, { ...newUser, id: Date.now(), lastLogin:'—', claimsHandled:0 }])
+      reloadUsers()
       toast('success','User Added',`${newUser.name} has been added.`)
     } catch (e) { toast('error','Failed', e.response?.data?.message || e.message) }
     setShowAdd(false); setNewUser(BLANK)
@@ -177,10 +180,22 @@ export default function UserManagement() {
     setDeleteUser(null)
   }
 
-  const toggleStatus = (user) => {
+  const toggleStatus = async (user) => {
     const ns = user.status === 'Active' ? 'Inactive' : 'Active'
-    setUsers(p => p.map(u => u.id === user.id ? { ...u, status: ns } : u))
-    toast('info','Status Updated',`${user.name} is now ${ns}.`)
+    try {
+      const parts = user.name?.split(' ') || ['User']
+      await updateUser(user.username, {
+        first_Name: parts[0],
+        last_Name: parts.slice(1).join(' ') || '.',
+        email: user.email,
+        roles: [user.role],
+        active: ns === 'Active',
+      })
+      setUsers((p) => p.map((u) => (u.id === user.id ? { ...u, status: ns } : u)))
+      toast('success', 'Status Updated', `${user.name} is now ${ns}.`)
+    } catch (e) {
+      toast('error', 'Failed', e?.message || 'Could not update user status.')
+    }
   }
 
   return (

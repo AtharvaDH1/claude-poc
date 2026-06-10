@@ -24,12 +24,12 @@ export function getPolicyClients(policy) {
 /** v1 register-claim payeeDetails[] row shape. */
 export function clientToPayeeRow(client, overrides = {}) {
   if (!client) return null
-  const country = overrides.country ?? client.country ?? null
+  const country = overrides.country ?? overrides.payeeCountry ?? client.country ?? null
   return {
-    name: overrides.name ?? client.name ?? '',
-    lastName: overrides.lastName ?? client.lastName ?? '',
+    name: overrides.name ?? overrides.payeeName ?? client.name ?? '',
+    lastName: overrides.lastName ?? overrides.payeeLastName ?? client.lastName ?? '',
     clientId: overrides.clientId ?? client.clientId ?? '',
-    dob: overrides.dob ?? client.dob ?? '',
+    dob: overrides.dob ?? overrides.payeeDob ?? client.dob ?? '',
     gender: overrides.gender ?? client.gender ?? '',
     role: overrides.role ?? overrides.payeeRole ?? client.role ?? '',
     riskIndicator: overrides.riskIndicator ?? client.riskIndicator ?? '',
@@ -63,6 +63,10 @@ export function buildPayeeDetailsArray(clients, selectedClientId, formData = {})
     const isSelected = client.clientId === selectedClientId
     const overrides = isSelected
       ? {
+          payeeName: formData.payeeName,
+          payeeLastName: formData.payeeLastName,
+          payeeDob: formData.payeeDob,
+          payeeCountry: formData.payeeCountry,
           payeeRole: formData.payeeRole,
           payeeRelation: formData.payeeRelation,
           payeeStatus: formData.payeeStatus,

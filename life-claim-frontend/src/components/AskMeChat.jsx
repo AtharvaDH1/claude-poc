@@ -4,8 +4,8 @@ import { MessageCircle, X, Send } from 'lucide-react'
 const REPLIES = [
   'I can help you navigate Life Claims — try Policy Search, Claim Search, or My Tasks from the sidebar.',
   'For assessor work, open a claim from My Task or Claim Search to use the claim workspace.',
-  'ADD operations (case search, pools, upload) are under Add Screen for Assessors and Verifiers.',
-  'Use Claim Search, Add Screen, or My Tasks for claim workflows.',
+  'ADD operations (case search, pools, upload) are under Advance Investigation for Assessors and Verifiers.',
+  'Use Claim Search, Advance Investigation, or My Tasks for claim workflows.',
   'This assistant is a UI preview only — no live AI backend is connected yet.',
 ]
 

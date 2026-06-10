@@ -67,7 +67,7 @@ export default function AddScreen() {
       <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }}>
         <div style={{ marginBottom: '24px' }}>
           <h1 style={{ fontSize: '22px', fontWeight: 800, color: T.textPrimary, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
-            ADD — CAPS
+            Advance Investigation
           </h1>
           <p style={{ fontSize: '13px', color: T.textMuted, fontWeight: 500, margin: 0, lineHeight: 1.5 }}>
             Supplemental referral / exclusion workflow · case ids in <code>caps_add_details</code> · open cases at <strong>/case/:id</strong> (not CL claim workspace).

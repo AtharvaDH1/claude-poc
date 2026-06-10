@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Field, Input, Select, Grid, Btn, InfoCard, T } from './shared'
 import { fetchPolicyDetails, fetchAgentRepudiation } from '../../services/policyService'
+import { asArray } from '../../util/buildRegistrationPayload'
 import { getPolicySummaryItems } from '../../util/normalizePolicyResponse'
 import { useToast } from '../../components/Toast'
 
@@ -37,7 +38,7 @@ export default function RegisterFormGate({ initialPolicyNo = '', onProceed }) {
       setPolicy(p)
       if (p?.advisorCode) {
         fetchAgentRepudiation(p.advisorCode).then((ar) => {
-          setPolicy((prev) => (prev ? { ...prev, agentRepudiation: ar?.data || ar } : prev))
+          setPolicy((prev) => (prev ? { ...prev, agentRepudiation: asArray(ar?.data || ar) } : prev))
         }).catch(() => {})
       }
       toast('success', 'Policy found', `${p.productName || p.policyId || id} loaded from Life Asia.`)

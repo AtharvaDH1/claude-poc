@@ -22,7 +22,7 @@ const ROUTE_LABELS = {
 
   'my-task': 'My Tasks',
 
-  'add-screen': 'Add Screen',
+  'add-screen': 'Advance Investigation',
 
   'user-management': 'User Management',
 
@@ -64,7 +64,7 @@ function buildCrumbs(pathname, params) {
 
       { label: 'Home', path: '/dashboard' },
 
-      { label: 'Add Screen', path: '/add-screen' },
+      { label: 'Advance Investigation', path: '/add-screen' },
 
       { label: 'Case Details', path: pathname, last: true },
 

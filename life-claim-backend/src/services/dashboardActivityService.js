@@ -1,5 +1,87 @@
 const dashboardActivityDao = require('../dataAccess/dashboardActivityDao');
 
+const APP_TZ_OFFSET = process.env.APP_TIMEZONE_OFFSET || '+05:30';
+
+const ACTIVITY_WINDOW_SECONDS = Number(process.env.ACTIVITY_WINDOW_HOURS || 168) * 60 * 60; // default 7 days
+
+/** Parse MySQL DATETIME (naive IST) without UTC skew from the Node host timezone. */
+function parseDbDateTime(value) {
+  if (value == null || value === '') return null;
+
+  const pad = (n) => String(n).padStart(2, '0');
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    // mysql2 Date — use local wall-clock parts as the DB stored instant (IST business TZ).
+    const wall = `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
+    return new Date(`${wall}${APP_TZ_OFFSET}`);
+  }
+
+  const s = String(value).trim();
+  if (!s) return null;
+
+  const mysql = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.\d+)?/);
+  if (mysql) {
+    return new Date(`${mysql[1]}T${mysql[2]}${APP_TZ_OFFSET}`);
+  }
+
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function mapRowToActivity(row, diffSeconds) {
+  let action = 'Updated claim';
+  let type = 'modification';
+
+  const claimId = row.claimId || '';
+  const actor = row.user || 'System';
+  const status = (row.status || '').toLowerCase();
+  const roles = parseRolesSafe(row.roles);
+
+  const isAssessor = roles.includes('Assessor');
+  const isVerifier = roles.includes('Verifier');
+  const roleLabel = isAssessor ? 'Assessor' : (isVerifier ? 'Verifier' : (actor !== 'System' ? actor : 'User'));
+
+  if (status.includes('assessor rejected') || status.includes('rejected')) {
+    action = `${roleLabel} rejected claim ${claimId}`;
+    type = 'rejection';
+  } else if (status.includes('pending verifier allocation')) {
+    action = `Assessor approved claim ${claimId}`;
+    type = 'approval';
+  } else if (status.includes('payout completed')) {
+    action = `Verifier approved claim ${claimId}`;
+    type = 'approval';
+  } else if (status.includes('pending assessor allocation')) {
+    action = `Registered new claim ${claimId}`;
+    type = 'registration';
+  } else if (status.includes('pending assessor action') || status.includes('pending verifier action')) {
+    action = `${roleLabel} working on claim ${claimId}`;
+    type = 'modification';
+  } else if (status.includes('modified')) {
+    action = `${roleLabel} modified claim ${claimId}`;
+    type = 'modification';
+  } else if (claimId) {
+    action = `${roleLabel} updated claim ${claimId}`;
+    type = 'modification';
+  }
+
+  const statusLabel = row.status ? String(row.status) : '';
+  const rowTime = parseDbDateTime(row.time) || new Date();
+
+  return {
+    user: actor,
+    action,
+    claimId,
+    detail: claimId
+      ? `${claimId} · ${actor}${statusLabel ? ` · ${statusLabel}` : ''}`
+      : actor,
+    time: getTimeSinceDetailed(diffSeconds),
+    type,
+    rawTime: rowTime.toISOString(),
+    status: statusLabel,
+  };
+}
+
 const parseRolesSafe = (rawRoles) => {
   if (Array.isArray(rawRoles)) return rawRoles;
   if (!rawRoles) return [];
@@ -33,60 +115,41 @@ const getRecentActivitiesService = async () => {
     // 2) Keep only activities from the last 24h.
     // 3) De‑duplicate by (user, claimId, status) keeping only the most recent entry.
     const now = new Date();
-    const ONE_DAY_SECONDS = 24 * 60 * 60;
-
     const dedupeMap = new Map();
 
     for (const row of rows) {
-      const rowTime = new Date(row.time);
-      if (Number.isNaN(rowTime.getTime())) continue;
+      const rowTime = parseDbDateTime(row.time);
+      if (!rowTime) continue;
 
       const diffSeconds = Math.floor(Math.abs(now.getTime() - rowTime.getTime()) / 1000);
-      if (diffSeconds > ONE_DAY_SECONDS) continue; // skip older than 24h
+      if (diffSeconds > ACTIVITY_WINDOW_SECONDS) continue;
 
       const key = `${row.user || ""}|${row.claimId || ""}|${row.status || ""}`;
-      if (dedupeMap.has(key)) continue; // first row is newest due to ORDER BY DESC
+      if (dedupeMap.has(key)) continue;
 
       dedupeMap.set(key, { row, diffSeconds });
     }
 
-    return Array.from(dedupeMap.values()).map(({ row, diffSeconds }) => {
-        let action = 'modified';
-        let type = 'modification';
-        
-        const status = (row.status || '').toLowerCase();
-        const roles = parseRolesSafe(row.roles);
-        
-        const isAssessor = roles.includes('Assessor');
-        const isVerifier = roles.includes('Verifier');
-        const roleLabel = isAssessor ? 'Assessor' : (isVerifier ? 'Verifier' : '');
-        
-        if (status.includes('assessor rejected') || status.includes('rejected')) {
-          action = `${roleLabel} rejected`;
-          type = 'rejection';
-        } else if (status.includes('pending verifier allocation')) {
-          action = `Assessor approved`;
-          type = 'approval';
-        } else if (status.includes('payout completed')) {
-          action = `Verifier approved`;
-          type = 'approval';
-        } else if (status.includes('pending assessor allocation')) {
-          action = `Registered a new`;
-          type = 'registration';
-        } else if (status.includes('modified')) {
-          action = `${roleLabel} modified`;
-          type = 'modification';
-        }
-        
-        return {
-          user: row.user,
-          action: action,
-          claimId: row.claimId,
-          time: getTimeSinceDetailed(diffSeconds),
-          type: type,
-          rawTime: row.time
-        };
-      });
+    let results = Array.from(dedupeMap.values()).map(({ row, diffSeconds }) =>
+      mapRowToActivity(row, diffSeconds)
+    );
+
+    // If time filter removed everything, show the latest status-history rows anyway.
+    if (!results.length && rows.length) {
+      const seen = new Set();
+      results = [];
+      for (const row of rows) {
+        const key = `${row.user || ''}|${row.claimId || ''}|${row.status || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const rowTime = parseDbDateTime(row.time) || new Date();
+        const diffSeconds = Math.floor(Math.abs(now.getTime() - rowTime.getTime()) / 1000);
+        results.push(mapRowToActivity(row, diffSeconds));
+        if (results.length >= 20) break;
+      }
+    }
+
+    return results;
   } catch (error) {
     console.error('Error in dashboard activity service:', error);
     throw error;

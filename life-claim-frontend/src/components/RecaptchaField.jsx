@@ -8,7 +8,7 @@ const SCRIPT_SOURCES = [
 const SCRIPT_ID = 'google-recaptcha-v2'
 
 const RecaptchaField = forwardRef(function RecaptchaField(
-  { onReady, onExpired, onError, disabled },
+  { onReady, onExpired, onError, onReset, disabled, remountKey = 0 },
   ref
 ) {
   const containerRef = useRef(null)
@@ -16,9 +16,11 @@ const RecaptchaField = forwardRef(function RecaptchaField(
   const onReadyRef = useRef(onReady)
   const onExpiredRef = useRef(onExpired)
   const onErrorRef = useRef(onError)
+  const onResetRef = useRef(onReset)
   onReadyRef.current = onReady
   onExpiredRef.current = onExpired
   onErrorRef.current = onError
+  onResetRef.current = onReset
 
   const [scriptReady, setScriptReady] = useState(Boolean(typeof window !== 'undefined' && window.grecaptcha))
 
@@ -30,6 +32,7 @@ const RecaptchaField = forwardRef(function RecaptchaField(
     reset: () => {
       if (widgetIdRef.current != null && window.grecaptcha?.reset) {
         window.grecaptcha.reset(widgetIdRef.current)
+        onResetRef.current?.()
       }
     },
   }))
@@ -92,8 +95,9 @@ const RecaptchaField = forwardRef(function RecaptchaField(
     }
   }, [])
 
+  // Keep widget mounted while loading/disabled — only remount when remountKey changes.
   useEffect(() => {
-    if (!scriptReady || !containerRef.current || disabled) return undefined
+    if (!scriptReady || !containerRef.current) return undefined
     const siteKey = resolveRecaptchaSiteKey()
     let cancelled = false
 
@@ -124,7 +128,7 @@ const RecaptchaField = forwardRef(function RecaptchaField(
       if (el) el.innerHTML = ''
       widgetIdRef.current = null
     }
-  }, [scriptReady, disabled])
+  }, [scriptReady, remountKey])
 
   return (
     <div

@@ -1,3 +1,5 @@
+import { workflowStatusFromRow, workflowRoleFromRow } from '../util/claimSearchMap'
+
 export const unwrapWorkspace = (payload) =>
   payload?.data != null ? payload.data : payload
 
@@ -38,8 +40,8 @@ export function mapClaimViewFromWorkspace(claimNumber, raw) {
   const system = dec.decisionSystem || {}
   const verification = dec.decisionVerificationAndSummary || {}
 
-  const status =
-    claimRow.claimStatus || claimRow.CLAIM_STATUS || claimRow.status || 'Pending'
+  const status = workflowStatusFromRow(claimRow)
+  const normalizedStatus = status === '—' ? 'Pending' : status
 
   const assessmentAnswers = {}
   const questions = a.assessment || a.claimQuestions
@@ -62,8 +64,8 @@ export function mapClaimViewFromWorkspace(claimNumber, raw) {
     claimId: claimNumber,
     policyId: claimRow.policyId || claimRow.POLICY_ID || claimRow.policyID || '—',
     policyStatus: claimRow.POLICY_STATUS || claimRow.policyStatus || '—',
-    status,
-    claimRole: claimRow.role || claimRow.ROLE || d.claim?.role || '',
+    status: normalizedStatus,
+    claimRole: workflowRoleFromRow(claimRow) === '—' ? (d.claim?.role || '') : workflowRoleFromRow(claimRow),
     assignedTo: claimRow.ASSIGNED_TO || claimRow.assignedTo || '',
     createdBy: claimRow.CREATED_BY || claimRow.createdBy || '—',
     createdOn: (claimRow.CREATED_AT || claimRow.CREATED_ON || '').toString().split('T')[0] || '—',
@@ -96,9 +98,11 @@ export function mapClaimViewFromWorkspace(claimNumber, raw) {
     sumAssured: claimRow.sumAssured || claimRow.SUM_ASSURED,
     advisorCode: claimRow.advisorCode || '—',
     uwDecision: claimRow.uwDecision || '—',
-    sysRecommendation: system.recommendation || system.systemRecommendation || '',
-    sysPayableAmount: system.payableAmount || system.systemPayableAmount,
-    sysRiskScore: system.riskScore || system.trapScore,
+    sysRecommendation:
+      system.decision1 || system.recommendation || system.systemRecommendation || '',
+    sysPayableAmount:
+      system.base || system.totalAmtPayable || system.payableAmount || system.systemPayableAmount,
+    sysRiskScore: system.remarks1 || system.riskScore || system.trapScore,
     sysProcessedOn: system.processedOn || system.processedDate || '',
     accessorDecision: accessor.decision || accessor.accessorDecision || '',
     accessorReason: accessor.reason || accessor.remarks || accessor.decisionReason || '',

@@ -10,6 +10,7 @@ import DecisionTab from './DecisionTab'
 import RegisterFormGate from './RegisterFormGate'
 import { isPreAssessorRole } from '../../util/preAssessor'
 import { useToast } from '../../components/Toast'
+import { withRegistrationNotificationDefaults } from '../../config/registrationNotificationDefaults'
 
 const TABS = [
   { id:'demographics', label:'Demographics',  step:1, desc:'Policy, claimant & fraud details' },
@@ -39,18 +40,18 @@ export default function Registration() {
   const [wizardStarted, setWizardStarted] = useState(Boolean(prefillPolicy?.productName || prefillPolicy?.registerForm))
 
   /* ── Single shared policyData state ── */
-  const [policyData, setPolicyData] = useState({
+  const [policyData, setPolicyData] = useState(withRegistrationNotificationDefaults({
     policyId: prefillPolicyNo || prefillPolicy?.policyId || '',
     claimType: prefillPolicy?.registerForm?.claimType || 'Death',
     informationType: prefillPolicy?.registerForm?.informationType || 'Written Information',
     createdBy: sessionStorage.getItem('loggedUser') || user?.username || '',
-  })
+  }))
   const [policy, setPolicy] = useState(prefillPolicy || null)
 
   const startWizard = ({ policy: p, policyData: pd }) => {
     setPolicy(p)
     const today = new Date().toISOString().split('T')[0]
-    setPolicyData((prev) => ({
+    setPolicyData((prev) => withRegistrationNotificationDefaults({
       ...prev,
       ...pd,
       initiationDate: today,
@@ -174,6 +175,7 @@ export default function Registration() {
                 userRole={userRole}
                 data={policyData}
                 update={update}
+                policy={policy}
                 onComplete={() => completeTab('assessment')}
               />
             )}

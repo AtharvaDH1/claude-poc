@@ -207,9 +207,17 @@ const getRequirement = async (req, res) => {
       where: { CLAIM_ID: claim.CLAIM_ID },
     });
 
-    const requirementTable = await RequirementTable.findAll({
+    // Registration saves one row per document on `requirements` (Requirement model).
+    let requirementTable = await Requirement.findAll({
       where: { CLAIM_ID: claim.CLAIM_ID },
     });
+
+    // Legacy fallback if nothing on requirements table
+    if (!requirementTable.length) {
+      requirementTable = await RequirementTable.findAll({
+        where: { CLAIM_ID: claim.CLAIM_ID },
+      });
+    }
 
     const reqCommonDetails = await ReqCommonDetails.findAll({
       where: { CLAIM_ID: claim.CLAIM_ID },

@@ -1,8 +1,8 @@
 const { getTransactionApiDBDetails, saveTransactionApiDetails } = require('../dataAccess/transactionApiDetails');
 
-const getTransactionApiDBDetailsService = async (policyNumber) => {
+const getTransactionApiDBDetailsService = async (policyNumber, txnDate) => {
     try {
-        const transactionApiDetails = await getTransactionApiDBDetails(policyNumber);
+        const transactionApiDetails = await getTransactionApiDBDetails(policyNumber, txnDate);
         return transactionApiDetails;
     } catch (error) {
         console.log(' services >> txnTransactionApiDetailsService.js >> getTxnTransactionApiDetailsService >> error :>', error);

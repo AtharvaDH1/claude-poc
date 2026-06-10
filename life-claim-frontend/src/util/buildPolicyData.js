@@ -1,5 +1,93 @@
 /** Build v1-shaped policyData from assessor-fetch raw bundles (Section F10). */
 
+export function pickClaimQuestionsOnly(claimQuestions = {}) {
+  const out = {}
+  for (let i = 0; i <= 26; i++) {
+    const key = `question${i}`
+    if (claimQuestions[key] != null && claimQuestions[key] !== '') {
+      out[key] = claimQuestions[key]
+    }
+  }
+  return out
+}
+
+const TABLE_KEYS = [
+  'hospitalDetailsTable',
+  'doctorDetailsTable',
+  'proofDetailsTable',
+  'insuranceProofDetailsTable',
+  'witnessDetailsTable',
+  'incomeDetailsTable',
+]
+
+function attachDemogSections(payload, merged) {
+  const objKeys = [
+    'intimationDetails',
+    'establishedCauseDetails',
+    'lifeAssuredDetails',
+    'contactDetails',
+    'eagleScreenDetails',
+  ]
+  objKeys.forEach((key) => {
+    if (hasObjectData(merged[key])) payload[key] = merged[key]
+  })
+  if (Array.isArray(merged.claimantDetails) && merged.claimantDetails.length) {
+    payload.claimantDetails = merged.claimantDetails
+  }
+  if (Array.isArray(merged.payeeDetails) && merged.payeeDetails.length) {
+    payload.payeeDetails = merged.payeeDetails
+  }
+  TABLE_KEYS.forEach((key) => {
+    if (Array.isArray(merged[key]) && merged[key].length) payload[key] = merged[key]
+  })
+  if (hasObjectData(merged.systemAssessorRemarks)) {
+    payload.systemAssessorRemarks = merged.systemAssessorRemarks
+  }
+  if (Array.isArray(merged.requirementTable) && merged.requirementTable.length) {
+    payload.requirementTable = merged.requirementTable
+  }
+}
+
+/** Work-mode submit — decision + all edited demogs / assessment (skips empty sections). */
+export function buildWorkspaceSubmitPayload(policyData, edits, claimNo, username, mode = 'assessor') {
+  const merged = policyData || {}
+  const payload = {
+    claimNo: claimNo || merged.claimNo,
+    modifiedBy: username || merged.modifiedBy || '',
+    claimQuestions: pickClaimQuestionsOnly(merged.claimQuestions || {}),
+  }
+  if (mode === 'assessor') {
+    payload.accessorDetails = {
+      decision: edits?.accessorDecision,
+      remarks: edits?.accessorReason,
+      reqDamt: edits?.accessorAmount,
+    }
+  } else if (mode === 'verifier') {
+    payload.verifierDetails = {
+      status: edits?.verificationStatus,
+      remarks: edits?.verificationRemarks,
+      verificationStatus: edits?.verificationStatus,
+      verificationRemarks: edits?.verificationRemarks,
+    }
+  }
+  attachDemogSections(payload, merged)
+  return payload
+}
+
+export function buildAssessorSubmitPayload(policyData, edits, claimNo, username) {
+  return buildWorkspaceSubmitPayload(policyData, edits, claimNo, username, 'assessor')
+}
+
+function hasObjectData(obj) {
+  if (!obj || typeof obj !== 'object') return false
+  return Object.entries(obj).some(
+    ([k, v]) =>
+      !['claimId', 'createdBy', 'modifiedBy', 'createdAt', 'modifiedAt'].includes(k) &&
+      v != null &&
+      String(v).trim() !== ''
+  )
+}
+
 export function buildPolicyDataFromRaw(raw, claimNo, user) {
   const d = raw?.demogs || {}
   const r = raw?.requirements || {}
@@ -32,7 +120,7 @@ export function buildPolicyDataFromRaw(raw, claimNo, user) {
     reqEmailDetailsTable: r.reqEmailDetailsTable || [],
     reqLetterDetailsTable: r.reqLetterDetailsTable || [],
     smsScriptTable: r.smsScriptTable || [],
-    claimQuestions: { ...(a.assessment || a.claimQuestions || {}) },
+    claimQuestions: pickClaimQuestionsOnly(a.assessment || a.claimQuestions || {}),
     iibEnquiryTable: a.iibEnquiry || a.iibEnquiryTable || [],
     telecallingTable: a.telecalling || a.telecallingTable || [],
     caseTriggerTable: a.caseTrigger || a.caseTriggerTable || [],

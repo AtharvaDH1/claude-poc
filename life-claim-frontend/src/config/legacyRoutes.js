@@ -13,7 +13,7 @@ export const V2_ACTIVE_ROUTES = [
   { path: '/registration-fetch/:claimId', label: 'Claim workspace' },
   { path: '/pool-selection', label: 'Pool Selection', roles: 'Assessor/Verifier' },
   { path: '/my-task', label: 'My Tasks', roles: 'Assessor/Verifier' },
-  { path: '/add-screen', label: 'ADD / CAPS', roles: 'Assessor/Verifier' },
+  { path: '/add-screen', label: 'Advance Investigation', roles: 'Assessor/Verifier' },
   { path: '/case/:id', label: 'CAPS case detail', roles: 'Assessor/Verifier' },
   { path: '/admin', label: 'Admin overview', roles: 'admin' },
   { path: '/admin/claim-search', label: 'Admin claim assign', roles: 'admin' },

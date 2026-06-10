@@ -12,6 +12,12 @@ const registerPolicyService = async (policyData) => {
       body: JSON.stringify(policyData)
     });
     const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = data?.error || data?.message || response.statusText
+      throw new Error(
+        typeof detail === 'string' ? detail : `Registration failed (${response.status})`
+      )
+    }
     return data;
   }
 

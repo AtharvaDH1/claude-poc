@@ -16,12 +16,37 @@ const ClaimSequence = require("../models/ClaimSequence");
 const StatusHistory = require("../models/StatusHistory")
 const RiderDetailsTable=require("../models/RiderDetailsTable")
 
-const { camelToSnakeCase, snakeToCamelCase } = require("../util/convertCase");
+const {
+  camelToSnakeCase,
+  snakeToCamelCase,
+  sanitizeDbDate,
+  sanitizeDateFields,
+} = require("../util/convertCase");
+
+const INTIMATION_DATE_KEYS = [
+  "INITIATION_DATE",
+  "INTIMATION_DATE",
+  "DATE_OF_DEATH_EVENT",
+  "DATE_OF_DEATH_REG",
+  "DATE_OF_CREMATION",
+  "DATE_OF_ACCIDENT",
+  "DEATH_CERTIFICATE_REG_DATE",
+];
+const CAUSE_EVENT_DATE_KEYS = ["DATE_OF_EVENT"];
+const CONTACT_DATE_KEYS = [
+  "RCD",
+  "ISSUE_DATE",
+  "PAID_TO_DATE",
+  "CDF_DATE",
+  "UW_DECISION_DATE",
+  "RISK_CESSATION_DATE",
+];
 const ClaimQuestions = require("../models/ClaimsQuestions");
 const Claim = require("../models/Claim");
 
 const trapScoreService = require('../services/trapScoreService');
 const { notifyClaimRegistered } = require('../services/claimRegistrationNotifyService');
+const { evaluateAcuity } = require('../services/acuityDecisionService');
 const SystemAssessorRemark = require("../models/SystemAssessorRemark");
 
 // simrans tables 
@@ -44,59 +69,102 @@ const SystemRemark = require("../models/SystemRemark");
 const PriorityFlag = require("../models/PriorityFlag");
 const ParallelPolicy = require("../models/ParallelPolicy");
 
+const { buildRequirementRowSnake } = require("../util/buildRequirementRow");
+
+/** API payloads sometimes send { data: [...] } instead of a bare array. */
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value == null || value === "") return [];
+  if (typeof value === "object") {
+    for (const key of [
+      "data",
+      "rows",
+      "records",
+      "list",
+      "items",
+      "agentHistory",
+      "agentRepudiation",
+    ]) {
+      const nested = value[key];
+      if (Array.isArray(nested)) return nested;
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        const inner = asArray(nested);
+        if (inner.length) return inner;
+      }
+    }
+  }
+  return [];
+}
 
 const registerClaim = async (req, res) => {
   const transaction = await sequelize.transaction(); // Start transaction
   console.log('registerClaimController >> registerClaim request received');
   try {
-    const {
-      intimationDetails,
-      causeEvent,
-      payeeDetails, // = [],
-      claimantDetails, // = [],
-      lifeAssuredDetails, // = [],
-      contactDetails, // = [],
-      eagleScreen, // = [],
-      requirements, // = [],
-      requirementTable,
-      systemDetails, // = [],
-      accessorDetails, // = [],
-      verifierDetails, // = [],
-      claimQuestions, // = [],
-      systemAssessorRemarks, // = [],
-      trapScoreData, // = [],
-      policyID, // = [],
+    let {
+      intimationDetails = {},
+      causeEvent = {},
+      payeeDetails = [],
+      claimantDetails = [],
+      lifeAssuredDetails = {},
+      contactDetails = {},
+      eagleScreen = {},
+      requirements = {},
+      requirementTable = [],
+      systemDetails = {},
+      accessorDetails = {},
+      verifierDetails = {},
+      claimQuestions = {},
+      systemAssessorRemarks = {},
+      trapScoreData,
+      policyID,
       createdBy,
 
-      //tables here by simran
-      agentHistoryTable, // = [],
-      hospitalDetailsTable, // = [],
-      doctorDetailsTable, // = [],
-      proofDetailsTable, // = [],
-      insuranceProofDetailsTable, // = [],
-      witnessDetailsTable, // = [],
-      incomeDetailsTable, // = [],
+      agentHistoryTable = [],
+      hospitalDetailsTable = [],
+      doctorDetailsTable = [],
+      proofDetailsTable = [],
+      insuranceProofDetailsTable = [],
+      witnessDetailsTable = [],
+      incomeDetailsTable = [],
 
-      reqCommonDetailsTable, // = [],
-      reqRiderDetailsTable, // = [],
-      reqEmailTable  = [],
+      reqCommonDetailsTable = [],
+      reqRiderDetailsTable = [],
+      reqEmailTable = [],
       reqLetterTable = [],
 
-      //tables here by sujal
       smsData = [],
-
-      telecalling ,//= [],
-      caseTrigger , //= [],
-      systemRemarks , //= [],
-      fraudFlags , //doubt
-      priorityFlag , //= [],
-
-      unregisteredPolicies , //= [],//parallel policies
-      stpPolicies , //= [],//doubt
-      nonStpPolicies , //= [],//doubt
-
-      riderDetailsTable1 // = []
+      telecalling = [],
+      caseTrigger = [],
+      systemRemarks = [],
+      fraudFlags,
+      priorityFlag = [],
+      unregisteredPolicies = [],
+      stpPolicies = [],
+      nonStpPolicies = [],
+      riderDetailsTable1 = [],
     } = req.body;
+
+    payeeDetails = asArray(payeeDetails);
+    claimantDetails = asArray(claimantDetails);
+    requirementTable = asArray(requirementTable);
+    agentHistoryTable = asArray(agentHistoryTable);
+    hospitalDetailsTable = asArray(hospitalDetailsTable);
+    doctorDetailsTable = asArray(doctorDetailsTable);
+    proofDetailsTable = asArray(proofDetailsTable);
+    insuranceProofDetailsTable = asArray(insuranceProofDetailsTable);
+    witnessDetailsTable = asArray(witnessDetailsTable);
+    incomeDetailsTable = asArray(incomeDetailsTable);
+    reqCommonDetailsTable = asArray(reqCommonDetailsTable);
+    reqRiderDetailsTable = asArray(reqRiderDetailsTable);
+    reqEmailTable = asArray(reqEmailTable);
+    reqLetterTable = asArray(reqLetterTable);
+    smsData = asArray(smsData);
+    telecalling = asArray(telecalling);
+    caseTrigger = asArray(caseTrigger);
+    systemRemarks = asArray(systemRemarks);
+    priorityFlag = asArray(priorityFlag);
+    unregisteredPolicies = asArray(unregisteredPolicies);
+    riderDetailsTable1 = asArray(riderDetailsTable1);
 
     // console.log(smsData)
     // console.log(telecalling)
@@ -122,47 +190,73 @@ const registerClaim = async (req, res) => {
 
     console.log({ message: `Your claim number is ${claimNumber}` });
 
-    const intimationDetailsSnake = camelToSnakeCase({
-      ...intimationDetails,
-      createdBy,
-      modifiedBy,
-    });
-    const causeEventSnake = camelToSnakeCase({
-      ...causeEvent,
-      createdBy,
-      modifiedBy,
-    });
+    const intimationDetailsSnake = sanitizeDateFields(
+      camelToSnakeCase({
+        ...intimationDetails,
+        createdBy,
+        modifiedBy,
+      }),
+      INTIMATION_DATE_KEYS
+    );
+    const causeEventSnake = sanitizeDateFields(
+      camelToSnakeCase({
+        ...causeEvent,
+        createdBy,
+        modifiedBy,
+      }),
+      CAUSE_EVENT_DATE_KEYS
+    );
+    const payeeFirst = Array.isArray(payeeDetails) ? payeeDetails[0] || {} : payeeDetails || {};
     const payeeDetailSnake = camelToSnakeCase({
-      ...payeeDetails,
+      ...payeeFirst,
       createdBy,
       modifiedBy,
     });
 
-    const payeeDetail = payeeDetails.map((payee) => (camelToSnakeCase({ ...payee, createdBy, modifiedBy })))
+    const payeeDetail = (payeeDetails || []).map((payee) =>
+      camelToSnakeCase({ ...payee, createdBy, modifiedBy })
+    )
 
+    const claimantFirst = Array.isArray(claimantDetails) ? claimantDetails[0] || {} : claimantDetails || {};
     const claimantDetailsSnake = camelToSnakeCase({
-      ...claimantDetails,
+      ...claimantFirst,
       createdBy,
       modifiedBy,
     });
 
-    const claimantDetail = claimantDetails.map((claimant) => (camelToSnakeCase({ ...claimant, createdBy, modifiedBy })))
+    const claimantDetail = (claimantDetails || []).map((claimant) =>
+      camelToSnakeCase({ ...claimant, createdBy, modifiedBy })
+    )
 
     const lifeAssuredDetailsSnake = camelToSnakeCase({
       ...lifeAssuredDetails,
+      emailId1: lifeAssuredDetails.emailId1 || lifeAssuredDetails.emailId,
+      mobileNo1: lifeAssuredDetails.mobileNo1 || lifeAssuredDetails.mobileNo,
       createdBy,
       modifiedBy,
     });
-    const contactDetailsSnake = camelToSnakeCase({
-      ...contactDetails,
-      createdBy,
-      modifiedBy,
-    });
-    const eagleScreenSnake = camelToSnakeCase({
-      ...eagleScreen,
-      createdBy,
-      modifiedBy,
-    });
+    if (!lifeAssuredDetailsSnake.EMAIL_ID1 && lifeAssuredDetailsSnake.EMAIL_ID) {
+      lifeAssuredDetailsSnake.EMAIL_ID1 = lifeAssuredDetailsSnake.EMAIL_ID;
+    }
+    if (!lifeAssuredDetailsSnake.MOBILE_NO1 && lifeAssuredDetailsSnake.MOBILE_NO) {
+      lifeAssuredDetailsSnake.MOBILE_NO1 = lifeAssuredDetailsSnake.MOBILE_NO;
+    }
+    const contactDetailsSnake = sanitizeDateFields(
+      camelToSnakeCase({
+        ...contactDetails,
+        createdBy,
+        modifiedBy,
+      }),
+      CONTACT_DATE_KEYS
+    );
+    const eagleScreenSnake = sanitizeDateFields(
+      camelToSnakeCase({
+        ...eagleScreen,
+        createdBy,
+        modifiedBy,
+      }),
+      ["ACCOUNT_OPEN_DATE"]
+    );
 
     const requirementsSnake = camelToSnakeCase({
       ...requirements,
@@ -248,10 +342,18 @@ const registerClaim = async (req, res) => {
     }
     console.log(trapScoreDataStore)
 
-    const trapScoreSnake = camelToSnakeCase({
-      ...trapScoreDataStore,
-      assessorId: createdBy,
-    })
+    const trapScoreSnake = sanitizeDateFields(
+      camelToSnakeCase({
+        ...trapScoreDataStore,
+        assessorId: createdBy,
+        trapScoreDate: trapScoreDataStore.trapScoreDate || trapScoreDataStore.trapDate,
+        trapScore:
+          trapScoreDataStore.trapScore != null
+            ? parseFloat(trapScoreDataStore.trapScore)
+            : trapScoreDataStore.trapScore,
+      }),
+      ["TRAP_SCORE_DATE"]
+    );
     console.log(trapScoreSnake)
 
     const claim = await Claim.create(
@@ -289,19 +391,19 @@ const registerClaim = async (req, res) => {
     const cause = await CauseEvent.create(causeEventSnake, { transaction });
 
 
-    const payee = []
+    const payee = await Promise.all(
+      payeeDetail.map(async (val) => {
+        val.CLAIM_ID = claim.CLAIM_ID;
+        return PayeeDetail.create(val, { transaction });
+      })
+    );
 
-    payeeDetail.forEach(async (val, index) => {
-      val.CLAIM_ID = claim.CLAIM_ID;
-      payee.push(await PayeeDetail.create(val, { transaction }));
-    })
-
-
-    const claimant = []
-    claimantDetail.forEach(async (val, index) => {
-      val.CLAIM_ID = claim.CLAIM_ID;
-      claimant.push(await ClaimantDetail.create(val, { transaction }))
-    })
+    const claimant = await Promise.all(
+      claimantDetail.map(async (val) => {
+        val.CLAIM_ID = claim.CLAIM_ID;
+        return ClaimantDetail.create(val, { transaction });
+      })
+    );
 
     lifeAssuredDetailsSnake.CLAIM_ID = claim.CLAIM_ID;
     const lifeAssured = await LifeAssuredDetail.create(
@@ -317,11 +419,16 @@ const registerClaim = async (req, res) => {
     eagleScreenSnake.CLAIM_ID = claim.CLAIM_ID;
     const eagle = await EagleScreen.create(eagleScreenSnake, { transaction });
 
-    requirementsSnake.CLAIM_ID = claim.CLAIM_ID;
-    const require = await Requirement.create(requirementsSnake, { transaction });
-
-    // requirementTableSnake.CLAIM_ID = claim.CLAIM_ID;
-    // const requiretable = await RequirementTable.create(requirementTableSnake, { transaction });
+    let require = null;
+    const hasLegacyRequirementsPayload =
+      requirements &&
+      Object.keys(requirements).some(
+        (key) => requirements[key] != null && String(requirements[key]).trim() !== ""
+      );
+    if (hasLegacyRequirementsPayload && !(requirementTable || []).length) {
+      requirementsSnake.CLAIM_ID = claim.CLAIM_ID;
+      require = await Requirement.create(requirementsSnake, { transaction });
+    }
 
     claimQuestionsSnake.CLAIM_ID = claim.CLAIM_ID;
     const questions = await ClaimQuestions.create(claimQuestionsSnake, {
@@ -347,11 +454,15 @@ const registerClaim = async (req, res) => {
       { transaction }
     );
 
-    // requirement table has multiple records for single claim id therefore map array to store
-    const requirementTablePromises = requirementTable.map(async (reqItem) => {
-      const requirementTableSnake = camelToSnakeCase({ ...reqItem, createdBy, modifiedBy });
-      requirementTableSnake.CLAIM_ID = claim.CLAIM_ID;
-      return RequirementTable.create(requirementTableSnake, { transaction });
+    // Persist each checklist row on requirements (auto-increment PK per row)
+    const requirementTablePromises = (requirementTable || []).map(async (reqItem) => {
+      const requirementRowSnake = buildRequirementRowSnake(
+        reqItem,
+        createdBy,
+        modifiedBy
+      );
+      requirementRowSnake.CLAIM_ID = claim.CLAIM_ID;
+      return Requirement.create(requirementRowSnake, { transaction });
     });
     const requirementTableResults = await Promise.all(requirementTablePromises);
 
@@ -367,20 +478,24 @@ const registerClaim = async (req, res) => {
       const rowSnake = camelToSnakeCase(row);
       rowSnake.CLAIM_ID = claim.CLAIM_ID;
       rowSnake.CALL_TO = row.callTo;
+      rowSnake.THE_DATE = row.theDate || row.callDate;
+      rowSnake.CALL_BY = row.callBy || row.callerName;
+      rowSnake.OUTCOME = row.outcome || row.callStatus;
+      rowSnake.DETAILS = row.details || row.remarks;
       rowSnake.CREATED_BY = createdBy;
       rowSnake.MODIFIED_BY = modifiedBy;
-    
-      // Insert row into the Telecalling table
       return await Telecalling.create(rowSnake, { transaction });
     }));
 
-    const caseTriggerResult = await Promise.all(caseTrigger.map( async (row)=>{
-      const rowSnake = camelToSnakeCase(row)
-      rowSnake.CLAIM_ID = claim.CLAIM_ID
-      rowSnake.CREATEDBY = createdBy
-      rowSnake.MODIFIEDBY = modifiedBy
-      return await CaseTrigger.create(rowSnake, {transaction})
-    }))
+    const caseTriggerResult = await Promise.all(caseTrigger.map(async (row) => {
+      const rowSnake = camelToSnakeCase(row);
+      rowSnake.CLAIM_ID = claim.CLAIM_ID;
+      rowSnake.REASON = row.reason || row.caseTrigger;
+      rowSnake.REMARKS = row.remarks || row.triggerReason;
+      rowSnake.CREATEDBY = createdBy;
+      rowSnake.MODIFIEDBY = modifiedBy;
+      return await CaseTrigger.create(rowSnake, { transaction });
+    }));
 
     const systemRemarkResult =await Promise.all( systemRemarks.map(async (row)=>{
       const rowSnake = camelToSnakeCase(row)
@@ -392,12 +507,13 @@ const registerClaim = async (req, res) => {
 
 
     const priorityFlagResult = await Promise.all(priorityFlag.map(async (row) => {
-      const rowSnake = camelToSnakeCase(row)
-      rowSnake.CLAIM_ID = claim.CLAIM_ID
-      rowSnake.CREATEDBY = createdBy
-      rowSnake.MODIFIEDBY = modifiedBy
-      return await PriorityFlag.create(rowSnake, {transaction})
-    }))
+      const rowSnake = camelToSnakeCase(row);
+      rowSnake.CLAIM_ID = claim.CLAIM_ID;
+      rowSnake.REASON = row.reason || row.priorityFlag;
+      rowSnake.CREATEDBY = createdBy;
+      rowSnake.MODIFIEDBY = modifiedBy;
+      return await PriorityFlag.create(rowSnake, { transaction });
+    }));
 
 
     const unregisteredPoliciesResult =await Promise.all( unregisteredPolicies.map(async (row) => {
@@ -534,6 +650,26 @@ const registerClaim = async (req, res) => {
 
     const status_history = await StatusHistory.create(status,{transaction})
 
+    const selectedPayeeId = req.body.selectedPayeeId;
+    const payeesForAcuity = selectedPayeeId
+      ? payeeDetails.filter(
+          (p) => String(p.clientId || p.CLIENT_ID || '') === String(selectedPayeeId)
+        )
+      : payeeDetails.slice(0, 1);
+    const acuity = await evaluateAcuity({
+      claimantDetails,
+      payeeDetails: payeesForAcuity.length ? payeesForAcuity : payeeDetails.slice(0, 1),
+    });
+    await Claim.update(
+      {
+        CLAIMANT_ACUITY_DECISION: acuity.claimantAcuityDecision,
+        PAYEE_ACUITY_DECISION: acuity.payeeAcuityDecision,
+        FINAL_ACUITY_DECISION: acuity.finalAcuityDecision,
+      },
+      { where: { CLAIM_ID: claim.CLAIM_ID }, transaction }
+    );
+    console.log('registerClaim >> acuity', { claimNumber, ...acuity });
+
     // Update the claimSequence table for the next sequence number
     await ClaimSequence.update(
       { SEQ_NO: (parseInt(claimSeq.SEQ_NO) + 1).toString() },
@@ -562,8 +698,10 @@ const registerClaim = async (req, res) => {
       );
       const lifeAssuredEmail = pick(
         lifeAssuredDetailsSnake.EMAIL_ID1,
+        lifeAssuredDetailsSnake.EMAIL_ID,
         lifeAssuredDetailsSnake.EMAIL,
         lifeAssuredDetails?.emailId1,
+        lifeAssuredDetails?.emailId,
         lifeAssuredDetails?.email,
         contactDetails?.emailIdChange,
         contactDetailsSnake.EMAIL_ID_CHANGE
@@ -571,9 +709,13 @@ const registerClaim = async (req, res) => {
       const sendMail =
         verifierDetails?.sendMail === true ||
         verifierDetails?.sendMail === 'true' ||
+        verifierDetails?.sendMail === 'Yes' ||
         verifierSnake?.SEND_MAIL === true ||
         verifierSnake?.SEND_MAIL === 'true' ||
-        req.body.sendMail === true;
+        verifierSnake?.SEND_MAIL === 'Yes' ||
+        req.body.sendMail === true ||
+        req.body.sendMail === 'true' ||
+        req.body.sendMail === 'Yes';
 
       console.log('registerClaim >> notify', {
         claimNumber,
@@ -598,6 +740,7 @@ const registerClaim = async (req, res) => {
       message: "Register claim created successfully",
       claimId: intimation.CLAIM_ID,
       claimNumber: claimNumber,
+      acuity,
       data: {
         intimation,
         cause,

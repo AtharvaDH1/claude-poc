@@ -16,8 +16,16 @@ function ToastItem({ id, type = 'info', title, message, onRemove }) {
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 10)
-    const t2 = setTimeout(() => { setVisible(false); setTimeout(() => onRemove(id), 300) }, 3500)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
+    let t3
+    const t2 = setTimeout(() => {
+      setVisible(false)
+      t3 = setTimeout(() => onRemove(id), 300)
+    }, 3500)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+    }
   }, [id, onRemove])
 
   return (
@@ -56,12 +64,15 @@ function ToastItem({ id, type = 'info', title, message, onRemove }) {
   )
 }
 
+let toastSeq = 0
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
 
   const toast = useCallback((type, title, message) => {
-    const id = Date.now()
-    setToasts(p => [...p, { id, type, title, message }])
+    toastSeq += 1
+    const id = `${Date.now()}-${toastSeq}`
+    setToasts((p) => [...p, { id, type, title, message }])
   }, [])
 
   const remove = useCallback((id) => setToasts(p => p.filter(t => t.id !== id)), [])

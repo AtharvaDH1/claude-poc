@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../context/AuthContext'
 import AppLayout from '../layouts/AppLayout'
 import { DataSearch, updateAssignedUser } from '../services/poolSelectionService'
 import { getWorkflowPoolRoles, defaultPoolRole } from '../util/workflowRoles'
+import { workflowStatusFromRow, workflowRoleFromRow } from '../util/claimSearchMap'
 import ClaimHoverPreview from '../components/claim/ClaimHoverPreview'
-import { Layers, UserPlus, ChevronDown } from 'lucide-react'
+import { Layers, UserPlus, ChevronDown, Search, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { filterClaimRows, sortClaimRows, uniqueFieldValues } from '../util/claimTableFilters'
 
 const T = {
   primary: '#1D4ED8', primaryHover: '#1E40AF',
@@ -14,12 +16,21 @@ const T = {
   textMuted: '#64748B', textSubtle: '#94A3B8',
 }
 
+const POOL_TABLE_COLUMNS = [
+  { label: 'Claim Number', key: 'claimId' },
+  { label: 'Policy Number', key: 'policyId' },
+  { label: 'Status', key: 'status' },
+  { label: 'Role', key: 'role' },
+  { label: 'Created On', key: 'createdOn' },
+  { label: 'Created By', key: 'createdBy' },
+]
+
 function mapPoolRow(c) {
   return {
     claimId: c.CLAIM_NUMBER || c.claimNumber || c.claimId,
     policyId: c.POLICY_ID || c.POLICY_NUMBER || c.policyId || '',
-    status: c.STATUS || c.CLAIM_STATUS || c.status || '—',
-    role: c.ROLE || c.role || '—',
+    status: workflowStatusFromRow(c),
+    role: workflowRoleFromRow(c),
     createdOn: (c.CREATED_AT || c.CREATED_ON || '').toString().split('T')[0] || '—',
     createdBy: c.CREATED_BY || c.createdBy || '—',
     claimType: c.CLAIM_TYPE || c.claimType || '',
@@ -29,7 +40,8 @@ function mapPoolRow(c) {
 export default function PoolSelection() {
   const toast = useToast()
   const { user } = useAuth()
-  const poolRoles = getWorkflowPoolRoles(user)
+  const roleKey = Array.isArray(user?.roles) ? user.roles.join('|') : String(user?.role ?? '')
+  const poolRoles = useMemo(() => getWorkflowPoolRoles(user), [roleKey])
   const [poolType, setPoolType] = useState(() => defaultPoolRole(user))
   const [pool, setPool] = useState([])
   const [selected, setSelected] = useState(new Set())
@@ -38,6 +50,11 @@ export default function PoolSelection() {
   const [poolOpen, setPoolOpen] = useState(false)
   const [hoverClaim, setHoverClaim] = useState(null)
   const [mouse, setMouse] = useState({ x: 0, y: 0 })
+  const [searchQ, setSearchQ] = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
+  const [statusFilter, setStatusFilter] = useState('All Statuses')
+  const [sortCol, setSortCol] = useState('status')
+  const [sortDir, setSortDir] = useState('asc')
 
   const loggedUser = sessionStorage.getItem('loggedUser') || user?.username || ''
 
@@ -47,6 +64,11 @@ export default function PoolSelection() {
     setSelected(new Set())
     try {
       const data = await DataSearch(role)
+      if (data == null) {
+        setPool([])
+        toast('error', 'Load failed', 'Could not load pool. Wait a moment and refresh the page.')
+        return
+      }
       setPool((Array.isArray(data) ? data : []).map(mapPoolRow).filter((r) => r.claimId))
     } catch (e) {
       setPool([])
@@ -73,9 +95,30 @@ export default function PoolSelection() {
     })
   }
 
+  const statusOptions = useMemo(() => ['All Statuses', ...uniqueFieldValues(pool, 'status')], [pool])
+
+  const displayPool = useMemo(() => {
+    const list = filterClaimRows(pool, { search: searchApplied, statusFilter })
+    return sortClaimRows(list, sortCol, sortDir)
+  }, [pool, searchApplied, statusFilter, sortCol, sortDir])
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const SortIcon = ({ col }) => {
+    if (sortCol !== col) return <ArrowUpDown size={11} style={{ color: T.textSubtle, marginLeft: '4px', opacity: 0.5 }} />
+    return sortDir === 'asc'
+      ? <ArrowUp size={11} style={{ color: T.primary, marginLeft: '4px' }} />
+      : <ArrowDown size={11} style={{ color: T.primary, marginLeft: '4px' }} />
+  }
+
   const toggleAll = () => {
-    if (selected.size === pool.length) setSelected(new Set())
-    else setSelected(new Set(pool.map((p) => p.claimId)))
+    const ids = displayPool.map((p) => p.claimId)
+    const allSelected = ids.length > 0 && ids.every((id) => selected.has(id))
+    if (allSelected) setSelected(new Set())
+    else setSelected(new Set(ids))
   }
 
   const handleAssignToSelf = async () => {
@@ -117,7 +160,9 @@ export default function PoolSelection() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', background: '#FFFBEB', border: '1px solid #FDE68A' }}>
             <Layers size={15} style={{ color: '#D97706' }} />
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#92400E' }}>{pool.length} unassigned</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#92400E' }}>
+              {displayPool.length === pool.length ? `${pool.length} unassigned` : `${displayPool.length} shown · ${pool.length} unassigned`}
+            </span>
           </div>
         </div>
 
@@ -158,13 +203,72 @@ export default function PoolSelection() {
           </button>
         </div>
 
+        {pool.length > 0 && (
+          <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '12px 16px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '360px' }}>
+              <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: T.textSubtle }} />
+              <input
+                type="text"
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') setSearchApplied(searchQ.trim()) }}
+                placeholder="Search claim, policy, or creator"
+                style={{ width: '100%', height: '40px', padding: '0 12px 0 36px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontFamily: 'Inter,sans-serif' }}
+              />
+              {searchQ && (
+                <button type="button" onClick={() => { setSearchQ(''); setSearchApplied('') }} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', cursor: 'pointer', color: T.textSubtle, display: 'flex' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchApplied(searchQ.trim())}
+              style={{ height: '40px', padding: '0 16px', borderRadius: '8px', border: 'none', background: T.primary, color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+            >
+              Search
+            </button>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, fontFamily: 'Inter,sans-serif', color: T.textSecondary, minWidth: '180px' }}
+            >
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
           {loading ? (
             <div style={{ padding: '48px', textAlign: 'center', color: T.textMuted, fontWeight: 600 }}>Loading pool…</div>
           ) : pool.length === 0 ? (
             <div style={{ padding: '48px', textAlign: 'center' }}>
               <div style={{ fontWeight: 700, fontSize: '15px', color: T.textPrimary }}>Pool is empty</div>
-              <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>No unassigned {poolType} claims (role = {poolType}, ASSIGNED_TO is null).</div>
+              <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>
+                No unassigned {poolType} claims (ROLE = {poolType}, ASSIGNED_TO is null).
+                {poolType === 'Assessor' ? ' New registrations appear with status Pending Assessor Allocation.' : ''}
+              </div>
+              <button
+                type="button"
+                onClick={() => loadPool(poolType)}
+                style={{ marginTop: '16px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+              >
+                Refresh pool
+              </button>
+            </div>
+          ) : displayPool.length === 0 ? (
+            <div style={{ padding: '48px', textAlign: 'center' }}>
+              <div style={{ fontWeight: 700, fontSize: '15px', color: T.textPrimary }}>No matching claims</div>
+              <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>Try clearing search or status filter.</div>
+              <button
+                type="button"
+                onClick={() => { setSearchQ(''); setSearchApplied(''); setStatusFilter('All Statuses') }}
+                style={{ marginTop: '16px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+              >
+                Clear filters
+              </button>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -172,15 +276,25 @@ export default function PoolSelection() {
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
                     <th style={{ padding: '10px 12px', width: '40px' }}>
-                      <input type="checkbox" checked={selected.size === pool.length && pool.length > 0} onChange={toggleAll} />
+                      <input
+                        type="checkbox"
+                        checked={displayPool.length > 0 && displayPool.every((p) => selected.has(p.claimId))}
+                        onChange={toggleAll}
+                      />
                     </th>
-                    {['Claim Number', 'Policy Number', 'Status', 'Role', 'Created On', 'Created By'].map((h) => (
-                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase' }}>{h}</th>
+                    {POOL_TABLE_COLUMNS.map(({ label, key }) => (
+                      <th
+                        key={key}
+                        onClick={() => handleSort(key)}
+                        style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>{label}<SortIcon col={key} /></span>
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {pool.map((item) => (
+                  {displayPool.map((item) => (
                     <tr key={item.claimId} style={{ borderBottom: `1px solid ${T.borderSubtle}` }}>
                       <td style={{ padding: '12px' }}>
                         <input type="checkbox" checked={selected.has(item.claimId)} onChange={() => toggleSelect(item.claimId)} />

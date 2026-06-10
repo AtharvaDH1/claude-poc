@@ -11,6 +11,7 @@ import {
   logoutReasonMessage,
 } from '../util/loginHelpers'
 import { isCaptchaOptional } from '../config/appEnv'
+import { COMPANY } from '../config/companyBrand'
 
 const CAPTCHA_UNAVAILABLE = '__CAPTCHA_UNAVAILABLE__'
 
@@ -126,6 +127,7 @@ export default function Login() {
   const [errors,    setErrors]    = useState({ username:'', password:'', captcha:'', general:'' })
   const [captchaOk, setCaptchaOk] = useState(false)
   const [captchaUnavailable, setCaptchaUnavailable] = useState(false)
+  const [captchaRemountKey, setCaptchaRemountKey] = useState(0)
   const [shake,     setShake]     = useState(false)
   const [mounted,   setMounted]   = useState(false)
   const [sessionNotice, setSessionNotice] = useState('')
@@ -237,9 +239,10 @@ export default function Login() {
       } else if (/concurrent login/i.test(msg)) {
         sessionStorage.setItem('auth_logout_reason', 'concurrent')
       }
-      setErrors(p => ({ ...p, general: msg }))
-      recaptchaRef.current?.reset?.()
+      setErrors(p => ({ ...p, general: msg, captcha: 'Please complete the reCAPTCHA check again' }))
+      setCaptchaUnavailable(false)
       setCaptchaOk(false)
+      setCaptchaRemountKey((k) => k + 1)
       triggerShake()
     } finally { setLoading(false) }
   }
@@ -264,11 +267,12 @@ export default function Login() {
         <div style={{ position:'absolute', inset:0, opacity:0.04, pointerEvents:'none', backgroundImage:'linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)', backgroundSize:'40px 40px' }} />
 
         {/* Logo */}
-        <div style={{ display:'flex', alignItems:'center', gap:'12px', position:'relative', zIndex:1, animation:'fadeUp 0.5s 0.1s ease both' }}>
-          <div style={{ width:'44px', height:'44px', borderRadius:'12px', flexShrink:0, background:'#1D4ED8', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 16px rgba(29,78,216,0.5)', fontSize:'20px' }}>🛡️</div>
-          <div>
-            <div style={{ color:'#fff', fontWeight:800, fontSize:'17px', letterSpacing:'-0.02em' }}>DH Digital</div>
-            <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'11px', fontWeight:600, letterSpacing:'0.12em', textTransform:'uppercase', marginTop:'1px' }}>Life Claims Platform</div>
+        <div style={{ position:'relative', zIndex:1, animation:'fadeUp 0.5s 0.1s ease both' }}>
+          <div style={{ background:'#fff', borderRadius:'14px', padding:'14px 18px', display:'inline-block', boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
+            <img src={COMPANY.logoPath} alt={COMPANY.name} style={{ height:'52px', width:'auto', display:'block' }} />
+          </div>
+          <div style={{ color:'rgba(255,255,255,0.45)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', marginTop:'12px' }}>
+            {COMPANY.product}
           </div>
         </div>
 
@@ -308,10 +312,10 @@ export default function Login() {
         <div style={{ position:'relative', zIndex:1, animation:'fadeUp 0.6s 0.4s ease both' }}>
           <div style={{ height:'1px', background:'rgba(255,255,255,0.08)', marginBottom:'20px' }} />
           <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.35)', fontSize:'12px' }}>✉️ claimssupport@dhdigital.co.in</div>
-            <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.35)', fontSize:'12px' }}>📞 +91 98923 94104</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.35)', fontSize:'12px' }}>✉️ {COMPANY.email}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.35)', fontSize:'12px' }}>📞 {COMPANY.phone}</div>
           </div>
-          <div style={{ color:'rgba(255,255,255,0.2)', fontSize:'11px', marginTop:'16px' }}>© 2025 Dark Horse Digital. All rights reserved.</div>
+          <div style={{ color:'rgba(255,255,255,0.2)', fontSize:'11px', marginTop:'16px' }}>© 2025 {COMPANY.name}. All rights reserved.</div>
         </div>
       </div>
 
@@ -330,9 +334,11 @@ export default function Login() {
         <div style={{ width:'100%', maxWidth:'400px', position:'relative', zIndex:1 }}>
 
           {/* Mobile logo */}
-          <div className="lg:hidden" style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'36px' }}>
-            <div style={{ width:'36px', height:'36px', borderRadius:'10px', background:'#1D4ED8', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', boxShadow:'0 4px 12px rgba(29,78,216,0.35)' }}>🛡️</div>
-            <span style={{ fontWeight:800, fontSize:'15px', color:'#0F172A' }}>DH Digital — Life Claims</span>
+          <div className="lg:hidden" style={{ marginBottom:'36px' }}>
+            <img src={COMPANY.logoPath} alt={COMPANY.name} style={{ height:'44px', width:'auto', display:'block' }} />
+            <div style={{ fontSize:'11px', fontWeight:600, color:'#64748B', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'8px' }}>
+              {COMPANY.product}
+            </div>
           </div>
 
           <div style={{ marginBottom:'28px', animation:'fadeUp 0.5s 0.25s ease both', opacity:0, animationFillMode:'both' }}>
@@ -416,16 +422,20 @@ export default function Login() {
 
             <div style={{ marginBottom:'16px' }}>
               <RecaptchaField
+                key={captchaRemountKey}
                 ref={recaptchaRef}
+                remountKey={captchaRemountKey}
                 disabled={loading || success}
                 onReady={() => { setCaptchaOk(true); setErrors(p => ({ ...p, captcha:'' })) }}
+                onReset={() => { setCaptchaOk(false) }}
                 onExpired={() => { setCaptchaOk(false); setErrors(p => ({ ...p, captcha:'reCAPTCHA expired — please verify again' })) }}
                 onError={() => {
-                  setCaptchaUnavailable(CAPTCHA_LOAD_FALLBACK)
                   setCaptchaOk(false)
                   if (CAPTCHA_LOAD_FALLBACK) {
+                    setCaptchaUnavailable(true)
                     setErrors(p => ({ ...p, captcha:'' }))
                   } else {
+                    setCaptchaUnavailable(false)
                     setErrors(p => ({
                       ...p,
                       captcha:'reCAPTCHA could not load. Allow google.com / recaptcha.net or set VITE_RECAPTCHA_SITE_KEY.',

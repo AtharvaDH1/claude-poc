@@ -5,6 +5,12 @@ import systemDecisionAndReasonService from './systemDecisionAndReasonService'
 import statesService from './statesService'
 import countriesService from './countriesService'
 import wrapper from '../util/ApiWrapper'
+import {
+  buildSystemDecisionPayload,
+  normalizeSystemDecisionResponse,
+  deriveLocalSystemDecision,
+} from '../util/buildSystemDecision'
+import { REGISTRATION_ASSESSMENT_QUESTIONS } from '../config/registrationCatalog'
 
 export const getStates = () => statesService.getAllStates()
 
@@ -12,22 +18,15 @@ export const getCountries = () => countriesService.getAllCountries()
 
 export const getCauseEvents = () => causeEventService.causeEvent()
 
-export const getAssessmentQuestions = async (policyData = {}) => {
-  const result = await assessmentQuestionsService(policyData)
-  if (Array.isArray(result)) return result
-  if (Array.isArray(result?.questions)) return result.questions
-  if (Array.isArray(result?.data)) return result.data
-  return []
-}
+export const getAssessmentQuestions = async () => REGISTRATION_ASSESSMENT_QUESTIONS
 
-export const getSystemDecision = async (policyData) => {
-  const result = await systemDecisionAndReasonService(policyData)
-  return {
-    recommendation: result?.recommendation || result?.systemRecommendation,
-    payableAmount: result?.payableAmount || result?.systemPayableAmount,
-    reason: result?.reason || result?.systemReason,
-    riskScore: result?.riskScore || result?.trapScore,
-    processedOn: result?.processedOn || new Date().toISOString().split('T')[0],
+export const getSystemDecision = async (policyData, policy = null) => {
+  const payload = buildSystemDecisionPayload(policyData, policy)
+  try {
+    const raw = await systemDecisionAndReasonService(payload)
+    return normalizeSystemDecisionResponse(raw, policyData, policy)
+  } catch {
+    return deriveLocalSystemDecision(policyData, policy)
   }
 }
 

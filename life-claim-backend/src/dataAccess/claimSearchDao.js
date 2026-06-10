@@ -15,41 +15,44 @@ const claimSearchInDB = async (claimNumber) => {
 const editAssessor = async (assessor, claimNumber, username) => {
   try {
     console.log(assessor)
+    const decisionVal = String(assessor.DECISION || assessor.decision || '').toLowerCase();
+    const remarksVal = assessor.REMARKS || assessor.remarks || '';
+    const claimRow = await claimSearchInDB(claimNumber);
+    const policyNumber = claimRow?.POLICY_ID || claimRow?.POLICY_NUMBER || '';
     let role = ""
     let status = {}
 
-    if(assessor.DECISION == 'accept'){
-      console.log("message")
+    if (decisionVal === 'accept') {
       role = "Verifier"
       status = {
         "CLAIM_NUMBER": claimNumber,
-        "POLICY_NUMBER": "03591765",
+        "POLICY_NUMBER": policyNumber,
         "MODIFIED_BY": username,
         "STATUS": "Pending Verifier Allocation",
-        "DECISION": assessor.DECISION,
-        "REMARKS": assessor.REMARKS
+        "DECISION": decisionVal,
+        "REMARKS": remarksVal
       }
-      const unassigned = await claimsService.unassignClaim(claimNumber);
-    }else if(assessor.DECISION == 'reject'){
+      await claimsService.unassignClaim(claimNumber);
+    } else if (decisionVal === 'reject') {
       role = "Payout Rejected"
       status = {
         "CLAIM_NUMBER": claimNumber,
-        "POLICY_NUMBER": "03591765",
+        "POLICY_NUMBER": policyNumber,
         "MODIFIED_BY": username,
         "STATUS": "Payout Rejected",
-        "DECISION": assessor.DECISION,
-        "REMARKS": assessor.REMARKS
+        "DECISION": decisionVal,
+        "REMARKS": remarksVal
       }
-      const unassigned = await claimsService.unassignClaim(claimNumber);
-    }else{
+      await claimsService.unassignClaim(claimNumber);
+    } else {
       role = "Assessor"
       status = {
         "CLAIM_NUMBER": claimNumber,
-        "POLICY_NUMBER": "03591765",
+        "POLICY_NUMBER": policyNumber,
         "MODIFIED_BY": username,
         "STATUS": "Pending Assessor Action",
-        "DECISION": assessor.DECISION,
-        "REMARKS": assessor.REMARKS
+        "DECISION": decisionVal,
+        "REMARKS": remarksVal
       }
     }
 
@@ -72,8 +75,9 @@ const editAssessor = async (assessor, claimNumber, username) => {
     try {
       const lifeAssured = await LifeAssuredDetail.findOne({ where: { CLAIM_ID: String(claimId) } });
       if (lifeAssured) {
-        const mobileNo = lifeAssured.MOBILE_NO1 || lifeAssured.MOBILE_NO2 || lifeAssured.MOBILE_ID1;
-        const email = lifeAssured.EMAIL_ID1 || lifeAssured.EMAIL || null;
+        const mobileNo =
+          lifeAssured.MOBILE_NO1 || lifeAssured.MOBILE_NO || lifeAssured.MOBILE_NO2 || lifeAssured.MOBILE_ID1;
+        const email = lifeAssured.EMAIL_ID1 || lifeAssured.EMAIL_ID || lifeAssured.EMAIL || null;
 
         await notificationQueueService.enqueueAssessorDecisionNotification({
           claimId: claimNumber,
@@ -102,7 +106,7 @@ const editAssessor = async (assessor, claimNumber, username) => {
       const updateQuery = `UPDATE decision_accessor SET ${setClause} WHERE CLAIM_ID = ?`;
 
       const [updateRows] = await db.execute(updateQuery, values);
-      return assessor.DECISION;
+      return decisionVal;
 
     } else {
       throw new Error('No fields to update');
@@ -219,7 +223,7 @@ const editVerifier = async (verifierSnake, claimNumberSnake, username) => {
 
         if (lifeAssured2) {
           const mobileNo2 = lifeAssured2.MOBILE_NO1 || lifeAssured2.MOBILE_NO2 || lifeAssured2.MOBILE_ID1;
-          const email2 = lifeAssured2.EMAIL_ID1 || lifeAssured2.EMAIL || null;
+          const email2 = lifeAssured2.EMAIL_ID1 || lifeAssured2.EMAIL_ID || lifeAssured2.EMAIL || null;
 
           await notificationQueueService.enqueueVerifierDecisionNotification({
             claimId: claimNumberSnake,

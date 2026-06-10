@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Accordion, ROField, EditableField, SimpleTable, WS } from '../workspaceUi'
+import { mapAssessmentForWorkspace } from '../../../../util/workspaceDisplay'
 
 const FRAUD_FLAG_PLACEHOLDER = [{ sl: '—', date: '—', remarks: 'Fraud flags not loaded (backend fetch disabled)', score: '—', response: '—' }]
 
-export default function AssessmentWorkspaceTab({ assessment, assessorCanEdit, onPatch }) {
+export default function AssessmentWorkspaceTab({ assessment, canEdit, onPatch }) {
   const [open, setOpen] = useState('questions')
   const toggle = (id) => setOpen((p) => (p === id ? '' : id))
   const questions = assessment?.assessment || assessment?.claimQuestions || {}
-  const qEntries = Object.entries(questions).filter(([, v]) => v != null && v !== '')
+  const questionRows = mapAssessmentForWorkspace(assessment)
 
   const systemRows = (() => {
     const raw = assessment?.remarks || assessment?.systemRemarksTable
@@ -22,29 +23,47 @@ export default function AssessmentWorkspaceTab({ assessment, assessorCanEdit, on
   })()
 
   const patchQuestion = (key, val) => {
-    onPatch({ claimQuestions: { ...questions, [key]: val } })
+    const stored = val === 'Yes' ? 'Y' : val === 'No' ? 'N' : val
+    onPatch({ claimQuestions: { ...questions, [key]: stored } })
   }
 
   return (
     <div>
-      <Accordion title="Assessment questions & IIB enquiry" open={open === 'questions'} onToggle={() => toggle('questions')}>
-        {qEntries.length === 0 ? (
-          <div style={{ fontSize: '13px', color: WS.textMuted }}>No assessment questions.</div>
+      <Accordion title="Assessment questions" subtitle="14 questions from registration (Yes / No)" open={open === 'questions'} onToggle={() => toggle('questions')}>
+        {questionRows.every((q) => q.answer === '—') ? (
+          <div style={{ fontSize: '13px', color: WS.textMuted }}>No assessment answers saved at registration.</div>
         ) : (
-          qEntries.map(([key, val], idx) => (
-            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${WS.borderSubtle}` }}>
-              <span style={{ fontSize: '13px', color: WS.textSecondary, flex: 1 }}>Q{idx + 1} ({key})</span>
-              {assessorCanEdit ? (
-                <select value={String(val)} onChange={(e) => patchQuestion(key, e.target.value)} style={{ height: '32px', borderRadius: '6px', border: `1px solid ${WS.border}` }}>
-                  {['Yes', 'No', 'NA'].map((o) => (
-                    <option key={o} value={o}>{o}</option>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#FAFAFA' }}>
+                  {['#', 'Questions', 'Answer'].map((h) => (
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: WS.textSubtle }}>{h}</th>
                   ))}
-                </select>
-              ) : (
-                <span style={{ fontWeight: 700, fontSize: '12px' }}>{String(val)}</span>
-              )}
-            </div>
-          ))
+                </tr>
+              </thead>
+              <tbody>
+                {questionRows.map((row) => (
+                  <tr key={row.id} style={{ borderBottom: `1px solid ${WS.borderSubtle}` }}>
+                    <td style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 700, color: WS.textMuted, width: '40px' }}>{row.id}</td>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', color: WS.textSecondary }}>{row.question}</td>
+                    <td style={{ padding: '10px 12px', width: '100px' }}>
+                      {canEdit ? (
+                        <select value={row.answer === '—' ? '' : row.answer} onChange={(e) => patchQuestion(row.key, e.target.value)} style={{ height: '32px', borderRadius: '6px', border: `1px solid ${WS.border}`, fontSize: '12px', width: '100%' }}>
+                          <option value="">—</option>
+                          {['Yes', 'No'].map((o) => (
+                            <option key={o} value={o}>{o}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{ fontWeight: 700, fontSize: '12px' }}>{row.answer}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <div style={{ marginTop: '12px' }}>
           <SimpleTable columns={[{ key: 'enquiryType', label: 'Type' }, { key: 'status', label: 'Status' }]} rows={assessment?.iibEnquiry || assessment?.iibEnquiryTable || []} empty="No IIB rows." />
@@ -105,13 +124,13 @@ export default function AssessmentWorkspaceTab({ assessment, assessorCanEdit, on
             <div style={{ fontSize: '12px', color: WS.textMuted }}>No priority flag rows.</div>
           )}
         </div>
-        {assessorCanEdit && (
+        {canEdit && (
           <div style={{ marginTop: '14px' }}>
             <EditableField
-              label="Assessor priority / fraud remarks (policyData)"
+              label="Priority / fraud remarks"
               value={assessment?.fraudRemarks || assessment?.priorityFlagRemarks || ''}
               onChange={(v) => onPatch({ priorityFlagRemarks: v, fraudRemarks: v })}
-              disabled={!assessorCanEdit}
+              disabled={!canEdit}
             />
           </div>
         )}

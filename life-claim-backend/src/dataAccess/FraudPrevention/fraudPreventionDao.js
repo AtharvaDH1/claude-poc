@@ -70,11 +70,13 @@ const addRuleRemarksDetails = async (feedback, claimNumber, role, username) => {
             } else {
                 skippedRules.push(ruleKey);
                 console.log(`Skipped ${ruleKey} (no valid data)`);
-                return skippedRules;
             }
         }
 
-        return  { success: true, message: 'Rules Added successfully' };;
+        if (skippedRules.length > 0 && skippedRules.length === Object.keys(feedback).length) {
+            return { success: false, message: 'No valid rule feedback to save', skippedRules };
+        }
+        return { success: true, message: 'Rules Added successfully', skippedRules };
     } catch (e) {
         return `Error in DataAccess >> FraudPrevention >> fraudPreventionDao.js >> addRuleRemarksDetails : ${e.message}`;
     }

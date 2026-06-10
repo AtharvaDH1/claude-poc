@@ -8,6 +8,9 @@ import { User, Mail, Phone, Key, Shield, Save, Eye, EyeOff, Clock } from 'lucide
 
 const T = { primary:'#1D4ED8', card:'#fff', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
 
+/** Password is managed in Keycloak — keep UI visible but submit disabled. */
+const PASSWORD_CHANGE_ENABLED = false
+
 const inp = (focused) => ({
   width:'100%', height:'42px', padding:'0 12px',
   border:`1.5px solid ${focused ? T.primary : T.border}`,
@@ -79,6 +82,7 @@ export default function Profile() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault()
+    if (!PASSWORD_CHANGE_ENABLED) return
     if (!pwForm.current) { toast('warning','Missing','Enter your current password.'); return }
     if (pwForm.newPw.length < 8) { toast('warning','Too Short','New password must be at least 8 characters.'); return }
     if (pwForm.newPw !== pwForm.confirm) { toast('error','Mismatch','New passwords do not match.'); return }
@@ -178,7 +182,11 @@ export default function Profile() {
                 <Key size={16} style={{ color:'#D97706' }}/>
                 <div>
                   <div style={{ fontWeight:700, fontSize:'14px', color:T.textPrimary }}>Change Password</div>
-                  <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'1px' }}>After changing your password, you will be logged out.</div>
+                  <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'1px' }}>
+                    {PASSWORD_CHANGE_ENABLED
+                      ? 'After changing your password, you will be logged out.'
+                      : 'Password changes are managed by your administrator (Keycloak).'}
+                  </div>
                 </div>
               </div>
               <form onSubmit={handleChangePassword}>
@@ -218,8 +226,8 @@ export default function Profile() {
                   </div>
                 )}
                 <div style={{ padding:'14px 20px', borderTop:`1px solid ${T.borderSubtle}`, display:'flex', justifyContent:'flex-end' }}>
-                  <button type="submit" disabled={savingPw}
-                    style={{ display:'flex', alignItems:'center', gap:'7px', padding:'9px 22px', borderRadius:'8px', border:'none', background:'#D97706', color:'#fff', fontSize:'13px', fontWeight:700, cursor:savingPw?'wait':'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(217,119,6,0.25)', transition:'all 0.15s' }}>
+                  <button type="submit" disabled={!PASSWORD_CHANGE_ENABLED || savingPw}
+                    style={{ display:'flex', alignItems:'center', gap:'7px', padding:'9px 22px', borderRadius:'8px', border:'none', background: PASSWORD_CHANGE_ENABLED ? '#D97706' : '#CBD5E1', color:'#fff', fontSize:'13px', fontWeight:700, cursor: (!PASSWORD_CHANGE_ENABLED || savingPw) ? 'not-allowed' : 'pointer', fontFamily:'Inter,sans-serif', boxShadow: PASSWORD_CHANGE_ENABLED ? '0 4px 12px rgba(217,119,6,0.25)' : 'none', transition:'all 0.15s' }}>
                     <Key size={14}/> {savingPw ? 'Changing...' : 'Change Password'}
                   </button>
                 </div>

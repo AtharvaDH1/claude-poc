@@ -38,15 +38,13 @@ export const claimSearch = {
       const data = await response.json().catch(() => null);
 
       if (response.ok) {
-        console.log("Policy found:", data);
         return data;
-      } else {
-        console.error("claim no search error:", data?.message);
-        return null;
       }
+      const msg = data?.message || data?.detail || response.statusText
+      throw new Error(msg || 'Assessor update failed')
     } catch (error) {
-      console.error("Error during search:", error);
-      return null;
+      if (error instanceof Error) throw error
+      throw new Error('Assessor update failed')
     }
   },
 
@@ -64,13 +62,12 @@ export const claimSearch = {
 
       if (response.ok) {
         return data;
-      } else {
-        console.error("claim no search error:", data?.message);
-        return null;
       }
+      const msg = data?.message || data?.detail || response.statusText
+      throw new Error(msg || 'Verifier update failed')
     } catch (error) {
-      console.error("Error during search:", error);
-      return null;
+      if (error instanceof Error) throw error
+      throw new Error('Verifier update failed')
     }
   },
 };

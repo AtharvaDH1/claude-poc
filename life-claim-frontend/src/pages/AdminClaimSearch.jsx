@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import AppLayout from '../layouts/AppLayout'
 import { useToast } from '../components/Toast'
 import adminService from '../services/adminService'
@@ -28,6 +28,7 @@ function normRole(r) {
 
 export default function AdminClaimSearch() {
   const [params] = useSearchParams()
+  const navigate = useNavigate()
   const view = params.get('view') || 'openByRole'
   const toast = useToast()
   const [claims, setClaims] = useState([])
@@ -118,10 +119,32 @@ export default function AdminClaimSearch() {
     <AppLayout pageTitle="Admin claim search" pageSubtitle={VIEW_LABELS[view] || view}>
       <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }}>
         <h1 style={{ fontSize: '22px', fontWeight: 800, margin: '0 0 4px' }}>Claim drill-down</h1>
-        <p style={{ fontSize: '13px', color: T.textMuted, marginBottom: '16px' }}>
+        <p style={{ fontSize: '13px', color: T.textMuted, marginBottom: '12px' }}>
           {VIEW_LABELS[view] || view}
-          {canAssign ? ' · Per-row assignment via POST /api/admin/claims/assign' : ' · Read-only list'}
+          {canAssign ? ' · Assign claims to users below' : ' · Read-only list'}
         </p>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          {Object.entries(VIEW_LABELS).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => navigate(`/admin/claim-search?view=${key}`)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: `1px solid ${view === key ? T.primary : T.border}`,
+                background: view === key ? '#EFF6FF' : '#F8FAFC',
+                color: view === key ? T.primary : T.textMuted,
+                fontWeight: 700,
+                fontSize: '12px',
+                cursor: 'pointer',
+                fontFamily: 'Inter,sans-serif',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {loading ? (
           <div style={{ padding: '32px', color: T.textMuted }}>Loading claims…</div>

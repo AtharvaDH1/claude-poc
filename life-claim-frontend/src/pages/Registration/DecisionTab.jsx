@@ -14,7 +14,8 @@ import { useNavigate } from 'react-router-dom'
 const fmtRs = n => n ? `₹${Number(n)>=1e7?(Number(n)/1e7).toFixed(1)+'Cr':Number(n)>=1e5?(Number(n)/1e5).toFixed(1)+'L':Number(n).toLocaleString('en-IN')}` : '—'
 
 /* ── Success Modal ── */
-function SuccessModal({ claimNo, onViewClaim, onAnother }) {
+function SuccessModal({ claimNo, acuity, onViewClaim, onAnother }) {
+  const flagged = acuity?.finalAcuityDecision === 'FLAGGED'
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }}>
       <div style={{ background:'#fff', borderRadius:'20px', width:'460px', padding:'40px', textAlign:'center', boxShadow:'0 32px 80px rgba(0,0,0,0.25)' }}>
@@ -23,10 +24,22 @@ function SuccessModal({ claimNo, onViewClaim, onAnother }) {
         </div>
         <div style={{ fontSize:'22px', fontWeight:900, color:T.textPrimary, letterSpacing:'-0.02em', marginBottom:'8px' }}>Claim Registered!</div>
         <div style={{ fontSize:'14px', color:T.textMuted, marginBottom:'20px' }}>Your claim has been successfully registered and sent for assessment.</div>
-        <div style={{ padding:'16px 20px', background:'#ECFDF5', borderRadius:'12px', border:'1px solid #A7F3D0', marginBottom:'24px' }}>
+        <div style={{ padding:'16px 20px', background:'#ECFDF5', borderRadius:'12px', border:'1px solid #A7F3D0', marginBottom: acuity ? '12px' : '24px' }}>
           <div style={{ fontSize:'11px', fontWeight:700, color:'#047857', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'4px' }}>Claim Number</div>
           <div style={{ fontSize:'24px', fontWeight:900, color:'#065F46', fontFamily:'monospace' }}>{claimNo}</div>
         </div>
+        {acuity && (
+          <div style={{ padding:'14px 16px', background: flagged ? '#FFFBEB' : '#F8FAFC', borderRadius:'12px', border:`1px solid ${flagged ? '#FDE68A' : T.border}`, marginBottom:'24px', textAlign:'left' }}>
+            <div style={{ fontSize:'11px', fontWeight:700, color: flagged ? '#B45309' : T.textMuted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'8px' }}>Acuity decision</div>
+            <div style={{ fontSize:'13px', fontWeight:700, color: flagged ? '#92400E' : '#065F46', marginBottom:'6px' }}>
+              Final: {acuity.finalAcuityDecision || 'NOT FLAGGED'}
+            </div>
+            <div style={{ fontSize:'12px', color:T.textMuted, lineHeight:1.6 }}>
+              Claimant: {acuity.claimantAcuityDecision || 'NOT FLAGGED'}<br />
+              Payee: {acuity.payeeAcuityDecision || 'NOT FLAGGED'}
+            </div>
+          </div>
+        )}
         <div style={{ display:'flex', gap:'10px' }}>
           <button onClick={onAnother} style={{ flex:1, padding:'11px', borderRadius:'10px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', color:T.textSecondary, fontFamily:'Inter,sans-serif' }}>Register Another</button>
           <button onClick={onViewClaim} style={{ flex:1, padding:'11px', borderRadius:'10px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)' }}>View Claim</button>
@@ -47,19 +60,27 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
   const [loadingSys, setLoadingSys] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [claimNo, setClaimNo] = useState(null)
+  const [acuityResult, setAcuityResult] = useState(null)
 
   const handleGenSystemDecision = async () => {
-    if (!data._demographicsComplete) {
-      toast('warning', 'Demographics incomplete', 'Complete the Demographics tab before generating system decision.')
-      return
-    }
     setLoadingSys(true)
     try {
-      const res = await getSystemDecision({ ...data, sumAssured: data.sumAssured||policy?.sumAssured })
-      update({ sysRecommendation:res.recommendation, sysPayableAmount:res.payableAmount, sysReason:res.reason, sysRiskScore:res.riskScore, sysProcessedOn:res.processedOn })
-      toast('success','System Decision Ready','Auto-generated recommendation complete.')
-    } catch(e) { toast('error','Failed',e.message) }
-    finally { setLoadingSys(false) }
+      const res = await getSystemDecision(data, policy)
+      update({
+        sysRecommendation: res.recommendation,
+        sysPayableAmount: res.payableAmount,
+        sysReason: res.reason,
+        sysRiskScore: res.riskScore,
+        sysProcessedOn: res.processedOn,
+        systemDetails: res,
+      })
+      const title = res.estimated ? 'System Decision (estimated)' : 'System Decision Ready'
+      toast('success', title, `${res.recommendation} — payable ${fmtRs(res.payableAmount)}`)
+    } catch (e) {
+      toast('error', 'Failed', e.message)
+    } finally {
+      setLoadingSys(false)
+    }
   }
 
   const submitCheck = isPreAssessor
@@ -79,18 +100,13 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
         ...(data.verifierDetails || {}),
         sendMail: data.sendMail !== 'No' && data.verifierDetails?.sendMail !== false,
       },
-      systemDetails: data.systemDetails || {
-        sysRecommendation: data.sysRecommendation,
-        sysPayableAmount: data.sysPayableAmount,
-        sysReason: data.sysReason,
-        sysRiskScore: data.sysRiskScore,
-        sysProcessedOn: data.sysProcessedOn,
-      },
+      systemDetails: undefined,
     }, policy)
     try {
       const res = await registerClaimAPI(payload)
       const num = res?.claimNo || res?.claimNumber || res?.data?.claimNumber
       if (!num) throw new Error(res?.message || res?.error || 'Registration failed')
+      setAcuityResult(res?.acuity || null)
       setClaimNo(num)
     } catch (e) {
       toast('error', 'Submission Failed', e?.message || 'Server is unavailable. Try again later.')
@@ -105,8 +121,8 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
     { title:'Policy & Claim Setup', items:[ ['Policy ID',data.policyId], ['Claim Type',data.claimType], ['Product',data.productName||policy?.productName], ['Sum Assured',fmtRs(data.sumAssured||policy?.sumAssured)] ] },
     { title:'Intimation', items:[ ['Intimation Date',data.intimationDate], ['Source',data.source], ['Date of Death',data.dateOfDeathEvent], ['Cause of Death',data.causeDescription] ] },
     { title:'Claimant', items:[ ['Name',data.claimantName||(data.claimants?.[0]?.name)], ['Relation',data.claimants?.[0]?.relation], ['Mobile',data.claimants?.[0]?.mobileNo] ] },
-    { title:'Requirements', items:[ ['Documents Received', Object.values(data.reqStatus||{}).filter(v=>v==='Received').length.toString()], ['Pending', Object.values(data.reqStatus||{}).filter(v=>v==='Pending').length.toString()] ] },
-    { title:'Assessment', items:[ ['Questions Answered', Object.keys(data.assessmentAnswers||{}).length.toString()], ['Case Trigger',data.caseTrigger||'—'], ['Priority Flag',data.priorityFlag||'—'] ] },
+    { title:'Requirements', items:[ ['Documents Received', `${Object.values(data.reqStatus||{}).filter(v=>v==='Received').length}/10`], ['Pending', Object.values(data.reqStatus||{}).filter(v=>v==='Pending').length.toString()] ] },
+    { title:'Assessment', items:[ ['Questions Answered', `${Object.keys(data.assessmentAnswers||{}).filter(k=>data.assessmentAnswers[k]).length}/14`], ['Case Trigger',data.caseTrigger||'—'], ['Priority Flag',data.priorityFlag||'—'] ] },
     { title:'Decision', items: isPreAssessor
       ? [['System Recommendation',data.sysRecommendation||'Not generated'], ['Payable Amount',fmtRs(data.sysPayableAmount)], ['Trap Score',data.trapScore||'—']]
       : [['System Recommendation',data.sysRecommendation||'Not generated'], ['Accessor Decision',data.accessorDecision||'Pending'], ['Payable Amount',fmtRs(data.accessorAmount||data.sysPayableAmount)]] },
@@ -259,8 +275,8 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
             </div>
           )}
           <div style={{ padding:'20px', background: canSubmit?'#ECFDF5':'#FFFBEB', borderRadius:'12px', border:`1px solid ${canSubmit?'#A7F3D0':'#FDE68A'}` }}>
-            {!canSubmit ? (
-              <div>
+            {!canSubmit && (
+              <div style={{ marginBottom:'16px' }}>
                 <div style={{ fontSize:'13px', fontWeight:700, color:'#92400E', marginBottom:'8px' }}>
                   ⚠️ Complete the following before registering:
                 </div>
@@ -273,17 +289,22 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
                   )}
                 </ul>
               </div>
-            ) : (
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                <div>
-                  <div style={{ fontSize:'14px', fontWeight:700, color:'#065F46' }}>Ready to Submit</div>
-                  <div style={{ fontSize:'12px', color:'#047857', marginTop:'2px' }}>All wizard sections complete. This creates the claim in MySQL (single submit).</div>
-                </div>
-                <Btn variant='success' size='lg' onClick={handleSubmit} disabled={submitting}>
-                  {submitting ? '⏳ Registering...' : '📤 Register Claim'}
-                </Btn>
-              </div>
             )}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'16px', flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontSize:'14px', fontWeight:700, color: canSubmit ? '#065F46' : '#92400E' }}>
+                  {canSubmit ? 'Ready to Submit' : 'Registration not ready'}
+                </div>
+                <div style={{ fontSize:'12px', color: canSubmit ? '#047857' : '#B45309', marginTop:'2px' }}>
+                  {canSubmit
+                    ? 'All wizard sections complete. This creates the claim in MySQL (single submit).'
+                    : 'Fill all mandatory fields in Demographics, Requirements, and Assessment first.'}
+                </div>
+              </div>
+              <Btn variant='success' size='lg' onClick={handleSubmit} disabled={!canSubmit || submitting}>
+                {submitting ? '⏳ Registering...' : '📤 Register Claim'}
+              </Btn>
+            </div>
           </div>
         </div>
       )}
@@ -291,8 +312,9 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
       {claimNo && (
         <SuccessModal
           claimNo={claimNo}
+          acuity={acuityResult}
           onViewClaim={() => navigate(`/registration-fetch/${claimNo}`)}
-          onAnother={() => { setClaimNo(null); navigate('/policy-search') }}
+          onAnother={() => { setClaimNo(null); setAcuityResult(null); navigate('/policy-search') }}
         />
       )}
     </div>

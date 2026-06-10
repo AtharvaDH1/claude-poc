@@ -44,17 +44,54 @@ export function Input({ value, onChange, placeholder, type='text', readOnly=fals
   )
 }
 
-export function Select({ value, onChange, options, readOnly=false, error }) {
+export function Select({
+  value,
+  onChange,
+  options = [],
+  readOnly = false,
+  error,
+  showPlaceholder = true,
+  placeholder = '-- Select --',
+}) {
   const [focused, setFocused] = React.useState(false)
+  const selectRef = React.useRef(null)
+  const items = options.filter((o) => {
+    const v = typeof o === 'string' ? o : o?.value
+    return v != null && String(v).trim() !== ''
+  })
+
+  const emitChange = React.useCallback(() => {
+    if (!onChange || !selectRef.current || readOnly) return
+    onChange({ target: selectRef.current, currentTarget: selectRef.current })
+  }, [onChange, readOnly])
+
+  const handleKeyUp = (e) => {
+    if (readOnly) return
+    if (['ArrowUp', 'ArrowDown', 'Enter', ' '].includes(e.key)) {
+      emitChange()
+    }
+  }
+
   return (
-    <select value={value||''} onChange={onChange} disabled={readOnly}
-      style={{ ...inp(focused, error, readOnly), cursor: readOnly?'default':'pointer', appearance:'auto' }}
-      onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}>
-      <option value=''>-- Select --</option>
-      {options.map(o => typeof o === 'string'
+    <select
+      ref={selectRef}
+      value={value ?? ''}
+      onChange={onChange}
+      onInput={onChange}
+      disabled={readOnly}
+      style={{ ...inp(focused, error, readOnly), cursor: readOnly ? 'default' : 'pointer', appearance: 'auto' }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false)
+        emitChange()
+      }}
+      onKeyUp={handleKeyUp}
+    >
+      {showPlaceholder && <option value="">{placeholder}</option>}
+      {items.map((o) => (typeof o === 'string'
         ? <option key={o} value={o}>{o}</option>
         : <option key={o.value} value={o.value}>{o.label}</option>
-      )}
+      ))}
     </select>
   )
 }

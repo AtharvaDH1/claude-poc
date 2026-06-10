@@ -18,5 +18,24 @@ function snakeToCamelCase(obj){
   return newObj;
 }
 
+/** MySQL DATE/DATEONLY — null out NA, blank, and unparseable values. */
+function sanitizeDbDate(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s || s === "NA" || s === "N/A" || s.toLowerCase() === "invalid date") return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
 
-module.exports = { camelToSnakeCase , snakeToCamelCase};
+function sanitizeDateFields(obj, keys) {
+  if (!obj || typeof obj !== "object") return obj;
+  const out = { ...obj };
+  for (const key of keys) {
+    if (key in out) out[key] = sanitizeDbDate(out[key]);
+  }
+  return out;
+}
+
+module.exports = { camelToSnakeCase, snakeToCamelCase, sanitizeDbDate, sanitizeDateFields };
