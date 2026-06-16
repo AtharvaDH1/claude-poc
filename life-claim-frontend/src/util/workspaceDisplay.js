@@ -50,10 +50,35 @@ export function mapAssessmentForWorkspace(assessmentPayload = {}) {
   })
 }
 
+/** Assessor / verifier: only Received or Waived (not Pending). */
+export const WORKSPACE_REQUIREMENT_ALLOWED_STATUSES = ['Received', 'Waived']
+
+export const WORKSPACE_REQUIREMENT_PENDING_MSG =
+  'Select Received or Waived — Pending is not allowed for Assessor and Verifier.'
+
+export function getPendingWorkspaceRequirements(requirementsPayload = {}) {
+  return mapRequirementsForWorkspace(requirementsPayload).filter(
+    (r) => String(r.status || '').trim().toLowerCase() === 'pending',
+  )
+}
+
+export function validateWorkspaceRequirementsForSubmit(requirementsPayload = {}) {
+  const pending = getPendingWorkspaceRequirements(requirementsPayload)
+  if (!pending.length) return { valid: true, pending: [], message: '' }
+  const preview = pending.slice(0, 3).map((r) => r.name)
+  const suffix = pending.length > 3 ? ` and ${pending.length - 3} more` : ''
+  return {
+    valid: false,
+    pending,
+    message: `${pending.length} requirement(s) still Pending. Mark each as Received or Waived before submit (${preview.join(', ')}${suffix}).`,
+  }
+}
+
 /** Apply status change to a requirement row (matches registration RequirementsTab logic). */
 export function patchRequirementRowStatus(row, status) {
   const today = new Date().toISOString().split('T')[0]
-  const receiptDate = status === 'Received' ? today : null
+  const existing = normalizeDateForInput(row.receiptDate || row.receiptDate1)
+  const receiptDate = status === 'Received' ? (existing || today) : null
   return {
     ...row,
     status,
@@ -61,6 +86,16 @@ export function patchRequirementRowStatus(row, status) {
     documentStatus: status,
     receiptDate,
     receiptDate1: receiptDate,
+  }
+}
+
+/** Update receipt date on a requirement row (assessor / verifier workspace). */
+export function patchRequirementRowReceiptDate(row, receiptDate) {
+  const val = receiptDate ? normalizeDateForInput(receiptDate) : null
+  return {
+    ...row,
+    receiptDate: val,
+    receiptDate1: val,
   }
 }
 
@@ -93,7 +128,7 @@ export function mapRequirementsForWorkspace(requirementsPayload = {}) {
       status: row.status || row.status1 || row.documentStatus || 'Pending',
       triggeredBy: row.triggeredBy || row.triggeredBy1 || 'System',
       triggerDate: row.triggeredDate || row.triggerDate1 || row.triggerDate || '—',
-      receiptDate: row.receiptDate || row.receiptDate1 || '—',
+      receiptDate: normalizeDateForInput(row.receiptDate || row.receiptDate1),
     }
   })
 }

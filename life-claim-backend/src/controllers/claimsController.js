@@ -1,5 +1,7 @@
 const logger = require('../config/logConfig');
-const claimsService = require('../services/claimsService')
+const claimsService = require('../services/claimsService');
+const { hasSuperUserAccess } = require('../util/superuserRoles');
+const { extractKeycloakRoles, extractKeycloakUsername } = require('../util/keycloakRoles');
 
 
 exports.getClaimByUsername = async (req, res, next) => {
@@ -8,17 +10,13 @@ exports.getClaimByUsername = async (req, res, next) => {
     return res.status(401).json({ message: 'Unauthorized: No access token' });
   }
 
-  const usernameFromToken = token.preferred_username;
-  const roles = token.realm_access?.roles || [];
+  const usernameFromToken = extractKeycloakUsername(token);
+  const roles = extractKeycloakRoles(token);
   const requestedUsername = String(req.body?.username || '').trim();
 
-  // Treat "Admin" (or "admin") as admin role
-  const isAdmin =
-    roles.includes('Admin') ||
-    roles.includes('admin') ||
-    roles.includes('ROLE_ADMIN');
+  const isAdmin = hasSuperUserAccess(roles, usernameFromToken);
 
-  // Non-admins can only fetch their own claims; admins may fetch any user.
+  // Non–super users can only fetch their own claims; super users may fetch any user.
   const username = isAdmin
     ? (requestedUsername || usernameFromToken)
     : usernameFromToken;

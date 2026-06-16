@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { DECISION_SUB_TAB, getDecisionSubTabs } from '../../util/decisionSubTabs'
 import { Field, Input, Select, Textarea, SubTabNav, Grid, Btn, InfoCard, T } from './shared'
 import { getSystemDecision } from '../../services/masterService'
 import { registerClaim as registerClaimAPI } from '../../services/claimsService'
@@ -30,13 +31,11 @@ function SuccessModal({ claimNo, acuity, onViewClaim, onAnother }) {
         </div>
         {acuity && (
           <div style={{ padding:'14px 16px', background: flagged ? '#FFFBEB' : '#F8FAFC', borderRadius:'12px', border:`1px solid ${flagged ? '#FDE68A' : T.border}`, marginBottom:'24px', textAlign:'left' }}>
-            <div style={{ fontSize:'11px', fontWeight:700, color: flagged ? '#B45309' : T.textMuted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'8px' }}>Acuity decision</div>
-            <div style={{ fontSize:'13px', fontWeight:700, color: flagged ? '#92400E' : '#065F46', marginBottom:'6px' }}>
-              Final: {acuity.finalAcuityDecision || 'NOT FLAGGED'}
-            </div>
-            <div style={{ fontSize:'12px', color:T.textMuted, lineHeight:1.6 }}>
+            <div style={{ fontSize:'17px', fontWeight:800, color: flagged ? '#B45309' : T.textPrimary, marginBottom:'10px' }}>Accuity decision</div>
+            <div style={{ fontSize:'14px', fontWeight:600, color:T.textSecondary, lineHeight:1.7 }}>
               Claimant: {acuity.claimantAcuityDecision || 'NOT FLAGGED'}<br />
-              Payee: {acuity.payeeAcuityDecision || 'NOT FLAGGED'}
+              Payee: {acuity.payeeAcuityDecision || 'NOT FLAGGED'}<br />
+              <span style={{ fontWeight:800, color: flagged ? '#92400E' : '#065F46' }}>Final: {acuity.finalAcuityDecision || 'NOT FLAGGED'}</span>
             </div>
           </div>
         )}
@@ -49,14 +48,14 @@ function SuccessModal({ claimNo, acuity, onViewClaim, onAnother }) {
   )
 }
 
-const ALL_DECISION_TABS = ['System Decision', 'Accessor Decision', 'Verification', 'Summary']
-const PRE_ASSESSOR_TABS = ['System Decision', 'Summary']
-
-export default function DecisionTab({ data, update, policy, isPreAssessor = false }) {
+export default function DecisionTab({ data, update, policy, isPreAssessor = false, userRoles = [], userRole = '' }) {
   const toast = useToast()
   const navigate = useNavigate()
-  const decisionTabs = isPreAssessor ? PRE_ASSESSOR_TABS : ALL_DECISION_TABS
+  const decisionTabs = getDecisionSubTabs(userRoles, { userRole, forcePreAssessor: isPreAssessor })
   const [subTab, setSubTab] = useState(decisionTabs[0])
+  useEffect(() => {
+    if (!decisionTabs.includes(subTab)) setSubTab(decisionTabs[0])
+  }, [decisionTabs, subTab])
   const [loadingSys, setLoadingSys] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [claimNo, setClaimNo] = useState(null)
@@ -133,7 +132,7 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
       <SubTabNav tabs={decisionTabs} active={subTab} onChange={setSubTab}/>
 
       {/* ── SYSTEM DECISION ── */}
-      {subTab === 'System Decision' && (
+      {subTab === DECISION_SUB_TAB.SYSTEM && (
         <div>
           {!data.sysRecommendation ? (
             <div>
@@ -196,7 +195,7 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
       )}
 
       {/* ── ACCESSOR DECISION ── */}
-      {subTab === 'Accessor Decision' && (
+      {subTab === DECISION_SUB_TAB.ACCESSOR && (
         <div>
           {!data.sysRecommendation && <div style={{ marginBottom:'16px' }}><InfoCard type='warning'>Please generate the System Decision first before entering the Accessor Decision.</InfoCard></div>}
           <Grid cols={2}>
@@ -220,7 +219,7 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
       )}
 
       {/* ── VERIFICATION ── */}
-      {subTab === 'Verification' && (
+      {subTab === DECISION_SUB_TAB.VERIFICATION && (
         <div>
           <InfoCard type='info'>Verification details are completed by the Verifier role after the Assessor submits their decision.</InfoCard>
           <div style={{ marginTop:'16px' }}>
@@ -246,7 +245,7 @@ export default function DecisionTab({ data, update, policy, isPreAssessor = fals
       )}
 
       {/* ── SUMMARY ── */}
-      {subTab === 'Summary' && (
+      {subTab === DECISION_SUB_TAB.SUMMARY && (
         <div>
           <div style={{ display:'flex', flexDirection:'column', gap:'14px', marginBottom:'24px' }}>
             {summaryItems.map(section => (

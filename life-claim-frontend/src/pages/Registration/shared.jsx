@@ -8,8 +8,8 @@ export const T = {
 }
 
 export const Label = ({ children, required }) => (
-  <label style={{ display:'block', fontSize:'12px', fontWeight:600, color:T.textSecondary, marginBottom:'5px' }}>
-    {children}{required && <span style={{ color:T.danger, marginLeft:'2px' }}>*</span>}
+  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: T.textSecondary, marginBottom: '5px' }}>
+    {children}{required && <span style={{ color: T.danger, marginLeft: '2px' }}>*</span>}
   </label>
 )
 
@@ -34,10 +34,10 @@ export function Field({ label, required, children, half, full, error }) {
   )
 }
 
-export function Input({ value, onChange, placeholder, type='text', readOnly=false, error, onFocus, onBlur, maxLength }) {
+export function Input({ value, onChange, placeholder, type='text', readOnly=false, error, onFocus, onBlur, maxLength, min, max }) {
   const [focused, setFocused] = React.useState(false)
   return (
-    <input type={type} value={value||''} onChange={onChange} placeholder={placeholder} readOnly={readOnly} maxLength={maxLength}
+    <input type={type} value={value||''} onChange={onChange} placeholder={placeholder} readOnly={readOnly} maxLength={maxLength} min={min} max={max}
       style={inp(focused, error, readOnly)}
       onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
     />

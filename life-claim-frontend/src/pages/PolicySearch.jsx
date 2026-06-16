@@ -148,6 +148,12 @@ export default function PolicySearch() {
             <div style={{ fontWeight: 700, fontSize: '15px', color: T.textPrimary }}>Search claim history</div>
             <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '8px' }}>Or use Register new claim to start without a prior search.</div>
           </div>
+        ) : loading ? (
+          <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '48px 24px', textAlign: 'center' }}>
+            <div style={{ width: '32px', height: '32px', border: `3px solid ${T.border}`, borderTopColor: T.primary, borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+            <div style={{ fontWeight: 700, fontSize: '15px', color: T.textPrimary }}>Searching claim history…</div>
+            <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '8px' }}>Please wait while we load matching claims.</div>
+          </div>
         ) : results.length === 0 ? (
           <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '40px', textAlign: 'center', color: T.textMuted, fontSize: '13px' }}>
             No matching claims in history.

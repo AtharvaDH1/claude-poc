@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useToast } from '../../Toast'
 import documentService, { FORBIDDEN_DOC_MSG } from '../../../services/documentService'
 import fileUploadService from '../../../services/FileUploadService'
-import { openDocumentPreview } from '../../../services/documentPreviewService'
+import { openDocumentPreview, openPreviewLoadingTab } from '../../../services/documentPreviewService'
 import { WS } from './workspaceUi'
 import { validateUploadFile, UPLOAD_ACCEPT } from '../../../util/validateUploadFile'
 
@@ -224,15 +224,21 @@ export default function DocumentSideSlider({ open, onClose, claimId, readOnly })
 
   const toggleSection = (type) => setExpanded((p) => ({ ...p, [type]: !p[type] }))
 
-  const handlePreview = async (nodeId, fileName) => {
+  const handlePreview = (nodeId, fileName) => {
     setPreviewing(nodeId)
-    try {
-      await openDocumentPreview(nodeId)
-    } catch (e) {
-      toast('error', 'Preview', e?.message || `Could not open ${fileName}.`)
-    } finally {
-      setPreviewing(null)
-    }
+    const previewWin = openPreviewLoadingTab()
+    openDocumentPreview(nodeId, { previewWin })
+      .catch((e) => {
+        if (previewWin && !previewWin.closed) {
+          try {
+            previewWin.close()
+          } catch {
+            /* ignore */
+          }
+        }
+        toast('error', 'Preview', e?.message || `Could not open ${fileName}.`)
+      })
+      .finally(() => setPreviewing(null))
   }
 
   if (!open) return null

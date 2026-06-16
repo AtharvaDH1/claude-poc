@@ -14,15 +14,19 @@ import {
   mergePolicyData,
   buildWorkspaceSubmitPayload,
 } from '../util/buildPolicyData'
+import { validateWorkspaceRequirementsForSubmit } from '../util/workspaceDisplay'
 import {
   areFieldsDisabled,
   enableAssessor,
   enableVerifier,
   workspaceCanEdit,
   getSubmitGuard,
+  getWorkspaceSubmitState,
   mapAccessorDecisionToApi,
 } from '../util/claimWorkspaceMode'
 import { isPreAssessorRole } from '../util/preAssessor'
+import { coalesceRoles } from '../util/workflowRole'
+import { hasSuperUserAccess } from '../util/superuserRole'
 import FraudRuleManagerModal from '../components/claim/FraudRuleManagerModal'
 import TransactionDetailsModal from '../components/claim/TransactionDetailsModal'
 import ClaimSuccessModal from '../components/claim/ClaimSuccessModal'
@@ -35,6 +39,7 @@ import RequirementsWorkspaceTab from '../components/claim/workspace/tabs/Require
 import AssessmentWorkspaceTab from '../components/claim/workspace/tabs/AssessmentWorkspaceTab'
 import DecisionWorkspaceTab from '../components/claim/workspace/tabs/DecisionWorkspaceTab'
 import { WS } from '../components/claim/workspace/workspaceUi'
+import AcuityDecisionPanel from '../components/claim/workspace/AcuityDecisionPanel'
 import { ShieldAlert, Receipt, UserPlus, FileText, Zap } from 'lucide-react'
 
 const TABS = ['Demographics', 'Requirements', 'Assessment', 'Decision & Summary']
@@ -45,15 +50,6 @@ const STATUS_COLORS = {
   Approved: { bg: '#ECFDF5', border: '#A7F3D0', color: '#065F46' },
   Rejected: { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B' },
   'In Progress': { bg: '#EFF6FF', border: '#BFDBFE', color: '#1E40AF' },
-}
-
-function HeaderBox({ label, value }) {
-  return (
-    <div style={{ padding: '12px 16px', background: '#F8FAFC', borderRadius: '10px', border: `1px solid ${WS.border}`, minWidth: '120px' }}>
-      <div style={{ fontSize: '10px', fontWeight: 700, color: WS.textSubtle, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-      <div style={{ fontSize: '14px', fontWeight: 800, color: WS.textPrimary, marginTop: '4px', fontFamily: label.includes('Claim') || label.includes('Policy') ? 'monospace' : 'inherit' }}>{value || '—'}</div>
-    </div>
-  )
 }
 
 export default function ClaimView() {
@@ -81,6 +77,7 @@ export default function ClaimView() {
   const [calcResult, setCalcResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(null)
+  const [submissionLocked, setSubmissionLocked] = useState(false)
 
   const [accessorDecision, setAccessorDecision] = useState('')
   const [accessorReason, setAccessorReason] = useState('')
@@ -113,6 +110,7 @@ export default function ClaimView() {
   useEffect(() => {
     if (!claimId) return
     setLoading(true)
+    setSubmissionLocked(false)
     setLoadedTabs(new Set(['Demographics']))
     getClaimWorkspaceInitial(claimId)
       .then(({ view, raw }) => syncFromView(view, raw))
@@ -201,10 +199,24 @@ export default function ClaimView() {
   }
 
   const handleSubmit = async () => {
-    const guard = getSubmitGuard(claim, user?.username, location.state)
+    if (submissionLocked) {
+      toast('warning', 'Already submitted', 'This claim is already submitted in this session. Reload to view updated state.')
+      return
+    }
+    const guard = getWorkspaceSubmitState(
+      getSubmitGuard(claim, user?.username, location.state),
+      { accessorDecision, accessorReason, verificationStatus, verificationRemarks },
+    )
     if (!guard.ok) {
       toast('warning', 'Cannot submit', guard.hint)
       return
+    }
+    if (guard.mode === 'assessor' || guard.mode === 'verifier') {
+      const reqCheck = validateWorkspaceRequirementsForSubmit(workspaceRef.current?.requirements)
+      if (!reqCheck.valid) {
+        toast('warning', 'Requirements incomplete', reqCheck.message)
+        return
+      }
     }
     setSubmitting(true)
     const username = user?.username || sessionStorage.getItem('loggedUser') || ''
@@ -237,6 +249,7 @@ export default function ClaimView() {
         guard.mode,
       )
       await updatePolicyService(payload)
+      setSubmissionLocked(true)
       setSubmitSuccess({ mode: guard.mode, claimId })
     } catch (e) {
       toast('error', 'Submit failed', e?.message || 'Could not complete submit.')
@@ -256,98 +269,104 @@ export default function ClaimView() {
   }
 
   const sc = STATUS_COLORS[claim.status] || STATUS_COLORS.Pending
-  const userRoles = user?.roles?.length ? user.roles : user?.role ? [user.role] : []
+  const userRoles = coalesceRoles(user?.roles, user?.role)
   const browseMode = areFieldsDisabled(location.state)
   const assessorCanEdit = enableAssessor(location.state, claim, userRoles)
   const verifierCanEdit = enableVerifier(location.state, claim, userRoles)
   const canEdit = workspaceCanEdit(location.state, claim, userRoles)
+  const effectiveCanEdit = canEdit && !browseMode
   const isPreAssessor = isPreAssessorRole(user?.role, userRoles)
   const showWorkspaceTools = canEdit && !isPreAssessor && !browseMode
-  const submitGuard = getSubmitGuard(claim, user?.username, location.state)
+  const workflowGuard = getSubmitGuard(claim, user?.username, location.state)
+  const submitState = submissionLocked
+    ? { ...workflowGuard, ok: false, hint: 'Already submitted for this claim. Re-submit is disabled.' }
+    : getWorkspaceSubmitState(workflowGuard, {
+    accessorDecision,
+    accessorReason,
+    verificationStatus,
+    verificationRemarks,
+  })
   const demogs = workspaceRaw?.demogs || {}
+
+  const modeHint = browseMode
+    ? 'Browse mode — read-only'
+    : canEdit
+      ? 'Work mode — submit on Decision & Summary'
+      : null
+
+  const actionBtn = {
+    display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '7px',
+    border: `1px solid ${WS.border}`, background: '#fff', fontWeight: 700, fontSize: '12px',
+    cursor: 'pointer', fontFamily: 'Inter,sans-serif', whiteSpace: 'nowrap',
+  }
 
   return (
     <AppLayout>
-      <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }}>
-        {browseMode && (
-          <div style={{ marginBottom: '14px', padding: '12px 16px', borderRadius: '10px', background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '13px', color: '#92400E', fontWeight: 600 }}>
-            Browse mode — fields are read-only. Open from <strong>My Tasks</strong> or Dashboard <strong>pencil</strong> to edit.
+      <div style={{ padding: '12px 16px 16px', fontFamily: 'Inter,sans-serif', maxWidth: '1600px', margin: '0 auto' }}>
+        {/* Compact header row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => navigate(-1)} style={{ ...actionBtn, background: '#F8FAFC', padding: '6px 10px' }}>← Back</button>
+            <h1 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: WS.textPrimary }}>Claim workspace</h1>
+            <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '99px', background: sc.bg, border: `1px solid ${sc.border}`, color: sc.color }}>{claim.status}</span>
+            {modeHint && (
+              <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '99px', background: browseMode ? '#FFFBEB' : '#ECFDF5', border: `1px solid ${browseMode ? '#FDE68A' : '#A7F3D0'}`, color: browseMode ? '#92400E' : '#065F46' }}>
+                {modeHint}
+              </span>
+            )}
           </div>
-        )}
-        {canEdit && !browseMode && (
-          <div style={{ marginBottom: '14px', padding: '12px 16px', borderRadius: '10px', background: '#ECFDF5', border: '1px solid #A7F3D0', fontSize: '13px', color: '#065F46', fontWeight: 600 }}>
-            Work mode — all tabs are editable. Changes save when you submit on Decision &amp; Summary.
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button type="button" onClick={() => navigate(-1)} style={{ padding: '8px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#F8FAFC', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>← Back</button>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h1 style={{ fontSize: '22px', fontWeight: 800, margin: 0, color: WS.textPrimary }}>Claim workspace</h1>
-                <span style={{ fontSize: '12px', fontWeight: 700, padding: '4px 12px', borderRadius: '99px', background: sc.bg, border: `1px solid ${sc.border}`, color: sc.color }}>{claim.status}</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => setShowDocs(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
-              <FileText size={16} /> Documents
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setShowDocs(true)} style={actionBtn}>
+              <FileText size={14} /> Documents
             </button>
             {showWorkspaceTools && (
               <>
-                <button type="button" onClick={() => setShowQuick(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#7C3AED', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
-                  <Zap size={16} /> Quick Access
+                <button type="button" onClick={() => setShowQuick(true)} style={{ ...actionBtn, border: 'none', background: '#7C3AED', color: '#fff' }}>
+                  <Zap size={14} /> Quick Access
                 </button>
-                <button type="button" onClick={() => setShowTxn(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
-                  <Receipt size={16} /> Transaction
+                <button type="button" onClick={() => setShowTxn(true)} style={actionBtn}>
+                  <Receipt size={14} /> Transaction
                 </button>
-                <button type="button" onClick={() => setShowFraud(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', background: '#FEF2F2', color: '#DC2626', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
-                  <ShieldAlert size={16} /> Fraud
+                <button type="button" onClick={() => setShowFraud(true)} style={{ ...actionBtn, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                  <ShieldAlert size={14} /> Fraud
                 </button>
               </>
             )}
-            {!browseMode && userRoles.some((r) => ['Admin', 'admin'].includes(r)) && (
-              <button type="button" onClick={() => setShowAssign(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
-                <UserPlus size={16} /> Assign
+            {!browseMode && hasSuperUserAccess(userRoles, user?.username) && (
+              <button type="button" onClick={() => setShowAssign(true)} style={actionBtn}>
+                <UserPlus size={14} /> Assign
               </button>
             )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
-          <HeaderBox label="Policy no" value={claim.policyId} />
-          <HeaderBox label="Claim no" value={claim.claimId} />
-          <HeaderBox label="Claim type" value={claim.claimType} />
-          <HeaderBox label="Intimation date" value={claim.intimationDate} />
-          <HeaderBox label="Life assured" value={claim.laName} />
-        </div>
-
-        {browseMode && (
-          <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '10px', background: '#EFF6FF', border: '1px solid #BFDBFE', fontSize: '13px', fontWeight: 600, color: '#1E40AF' }}>
-            Browse mode — read-only. Open from My Task to work this claim.
+        {claim.acuity && (
+          <div style={{ marginBottom: '8px' }}>
+            <AcuityDecisionPanel acuity={claim.acuity} inline />
           </div>
         )}
 
         <CaseSummaryPanel claim={claim} demogs={demogs} />
 
-        <div style={{ background: WS.card, borderRadius: '12px', border: `1px solid ${WS.border}`, overflow: 'hidden' }}>
+        {/* Main tabs — primary content, visible immediately */}
+        <div style={{ background: WS.card, borderRadius: '10px', border: `1px solid ${WS.border}`, overflow: 'hidden' }}>
           {tabLoading && (
-            <div style={{ padding: '8px 16px', fontSize: '12px', background: '#FFFBEB', color: '#92400E' }}>Loading tab data…</div>
+            <div style={{ padding: '6px 12px', fontSize: '11px', background: '#FFFBEB', color: '#92400E' }}>Loading tab data…</div>
           )}
-          <div style={{ display: 'flex', borderBottom: `1px solid ${WS.border}`, overflowX: 'auto' }}>
+          <div style={{ display: 'flex', borderBottom: `1px solid ${WS.border}`, overflowX: 'auto', background: '#FAFAFA' }}>
             {TABS.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => handleTabChange(tab)}
                 style={{
-                  padding: '14px 18px',
+                  padding: '10px 16px',
                   border: 'none',
-                  borderBottom: activeTab === tab ? `3px solid ${WS.primary}` : '3px solid transparent',
-                  background: activeTab === tab ? '#EFF6FF' : 'transparent',
+                  borderBottom: activeTab === tab ? `2px solid ${WS.primary}` : '2px solid transparent',
+                  background: activeTab === tab ? '#fff' : 'transparent',
                   cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: activeTab === tab ? 700 : 500,
+                  fontSize: '12px',
+                  fontWeight: activeTab === tab ? 700 : 600,
                   color: activeTab === tab ? WS.primary : WS.textMuted,
                   fontFamily: 'Inter,sans-serif',
                   whiteSpace: 'nowrap',
@@ -357,12 +376,12 @@ export default function ClaimView() {
               </button>
             ))}
           </div>
-          <div style={{ padding: '24px' }}>
+          <div style={{ padding: '16px' }}>
             {activeTab === 'Demographics' && (
               <DemographicsWorkspaceTab
                 claim={claim}
                 demogs={demogs}
-                canEdit={canEdit}
+                canEdit={effectiveCanEdit}
                 onPatch={patchPolicyData}
                 onOpenFraud={() => setShowFraud(true)}
               />
@@ -371,7 +390,7 @@ export default function ClaimView() {
               loadedTabs.has('Requirements') ? (
                 <RequirementsWorkspaceTab
                   requirements={workspaceRaw?.requirements}
-                  canEdit={canEdit}
+                  canEdit={effectiveCanEdit}
                   onPatch={patchPolicyData}
                 />
               ) : (
@@ -382,7 +401,7 @@ export default function ClaimView() {
               loadedTabs.has('Assessment') ? (
                 <AssessmentWorkspaceTab
                   assessment={workspaceRaw?.assessment}
-                  canEdit={canEdit}
+                  canEdit={effectiveCanEdit}
                   onPatch={patchPolicyData}
                 />
               ) : (
@@ -394,6 +413,9 @@ export default function ClaimView() {
                 <DecisionWorkspaceTab
                   claim={claim}
                   calcAmt={calcResult}
+                  userRoles={userRoles}
+                  userRole={user?.role}
+                  claimRole={claim?.claimRole}
                   assessorCanEdit={assessorCanEdit}
                   verifierCanEdit={verifierCanEdit}
                   accessorDecision={accessorDecision}
@@ -406,7 +428,8 @@ export default function ClaimView() {
                   setVerificationStatus={setVerificationStatus}
                   verificationRemarks={verificationRemarks}
                   setVerificationRemarks={setVerificationRemarks}
-                  submitGuard={submitGuard}
+                  submitGuard={submitState}
+                  workflowGuard={workflowGuard}
                   submitting={submitting}
                   onSubmit={handleSubmit}
                 />

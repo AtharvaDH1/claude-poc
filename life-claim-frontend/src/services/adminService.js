@@ -9,7 +9,7 @@ const adminService = {
     try {
       const headers = { "Content-Type": "application/json" };
 
-      const res = await wrapper.fetchWithToken(`/admin/summary`, { headers });
+      const res = await wrapper.fetchWithToken(`/superuser/summary`, { headers });
       if (res.ok) {
         const data = await res.json();
         if (data && typeof data.totalClaims === "number") {
@@ -50,6 +50,10 @@ const adminService = {
         last30Rejected: 0,
         rejectionRate30d: 0,
       },
+      charts: {
+        monthlyTrend: [],
+        claimTypes: [],
+      },
     };
   },
 
@@ -66,7 +70,7 @@ const adminService = {
       if (limit) params.append("limit", String(limit));
       if (view) params.append("view", view);
       const query = params.toString();
-      const url = `/admin/claims/recent${query ? `?${query}` : ""}`;
+      const url = `/superuser/claims/recent${query ? `?${query}` : ""}`;
 
       const res = await wrapper.fetchWithToken(url, { headers });
       const data = res.ok ? await res.json().catch(() => null) : null;
@@ -96,7 +100,7 @@ const adminService = {
 
       const query = params.toString();
       const res = await wrapper.fetchWithToken(
-        `/admin/reports/summary${query ? `?${query}` : ""}`,
+        `/superuser/reports/summary${query ? `?${query}` : ""}`,
         { headers }
       );
       if (res.ok) {
@@ -144,7 +148,7 @@ const adminService = {
 
       const query = params.toString();
       const res = await wrapper.fetchWithToken(
-        `/admin/audit${query ? `?${query}` : ""}`,
+        `/superuser/audit${query ? `?${query}` : ""}`,
         { headers }
       );
       if (res.ok) {
@@ -162,7 +166,7 @@ const adminService = {
    * Assign a claim to a specific user for a given role.
    */
   assignClaim: async ({ claimNumber, assignee, role }) => {
-    const res = await wrapper.fetchWithToken(`/admin/claims/assign`, {
+    const res = await wrapper.fetchWithToken(`/superuser/claims/assign`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ claimNumber, assignee, role }),
@@ -174,6 +178,19 @@ const adminService = {
     return data;
   },
 
+  unassignClaim: async ({ claimNumber, role }) => {
+    const res = await wrapper.fetchWithToken(`/superuser/claims/unassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimNumber, role }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || `Unassign failed (${res.status})`);
+    }
+    return data;
+  },
+
   /**
    * Get tracked user live status cards for User Management.
    */
@@ -181,7 +198,7 @@ const adminService = {
     try {
       const headers = { "Content-Type": "application/json" };
 
-      const res = await wrapper.fetchWithToken(`/admin/audit/tracked-users`, {
+      const res = await wrapper.fetchWithToken(`/superuser/audit/tracked-users`, {
         headers,
       });
       if (res.ok) {
@@ -201,7 +218,7 @@ const adminService = {
   forceLogoutTrackedUser: async (username) => {
     const headers = { "Content-Type": "application/json" };
 
-    const res = await wrapper.fetchWithToken(`/admin/audit/force-logout`, {
+    const res = await wrapper.fetchWithToken(`/superuser/audit/force-logout`, {
       method: "POST",
       headers,
       body: JSON.stringify({ username }),

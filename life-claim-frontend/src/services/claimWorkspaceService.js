@@ -3,6 +3,7 @@ import assessorFetchService from './assessorFetchService'
 import updatePolicyService from './updatePolicyService'
 import { mapClaimViewFromWorkspace, unwrapWorkspace } from './claimDetailService'
 import { applyDecisionEditsToPolicyData } from '../util/buildPolicyData'
+import { normalizeDemogsEagleTables } from '../util/eagleTableMappers'
 
 /** Initial load: claim row + demographics (Section D3 lazy pattern). */
 export async function loadClaimWorkspaceInitial(claimNumber) {
@@ -13,7 +14,7 @@ export async function loadClaimWorkspaceInitial(claimNumber) {
 
   const raw = {
     searchRow,
-    demogs: unwrapWorkspace(demogs),
+    demogs: normalizeDemogsEagleTables(unwrapWorkspace(demogs)),
     requirements: null,
     assessment: null,
     decision: null,

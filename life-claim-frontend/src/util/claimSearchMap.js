@@ -31,6 +31,26 @@ export function workflowRoleFromRow(row) {
   return '—'
 }
 
+/** Claimant display name from claimant_details (not CREATED_BY). */
+export function resolveClaimantName(row) {
+  if (!row || typeof row !== 'object') return '—'
+  const candidates = [
+    row.claimant_name,
+    row.CLAIMANT_NAME,
+    row.claimantName,
+    row.claimant,
+    row.CLAIMANT,
+    row.la_name,
+    row.LA_NAME,
+    row.lifeAssuredName,
+  ]
+  for (const value of candidates) {
+    const trimmed = String(value || '').trim()
+    if (trimmed) return trimmed
+  }
+  return '—'
+}
+
 /** Map raw claims_poc.claims row for Claim Search table (Section D2). */
 export function mapClaimSearchRow(row) {
   if (!row || typeof row !== 'object') return null

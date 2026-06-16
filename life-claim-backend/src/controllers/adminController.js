@@ -79,7 +79,7 @@ exports.forceLogoutTrackedUser = async (req, res, next) => {
 exports.assignClaim = async (req, res, next) => {
   try {
     const { claimNumber, assignee, role } = req.body || {};
-    const actingUser = req.user && req.user.username ? req.user.username : "admin";
+    const actingUser = req.user && req.user.username ? req.user.username : "superuser";
     const result = await adminService.assignClaim({
       claimNumber,
       assignee,
@@ -90,5 +90,21 @@ exports.assignClaim = async (req, res, next) => {
   } catch (error) {
     const status = error.status || 500;
     res.status(status).json({ message: error.message || "Failed to assign claim" });
+  }
+};
+
+exports.unassignClaim = async (req, res, next) => {
+  try {
+    const { claimNumber, role } = req.body || {};
+    const actingUser = req.user && req.user.username ? req.user.username : "superuser";
+    const result = await adminService.unassignClaim({
+      claimNumber,
+      role,
+      actingUser,
+    });
+    res.json(result);
+  } catch (error) {
+    const status = error.status || 500;
+    res.status(status).json({ message: error.message || "Failed to unassign claim" });
   }
 };

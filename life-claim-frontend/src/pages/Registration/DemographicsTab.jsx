@@ -16,6 +16,7 @@ import {
   validateClaimantDraft,
   showValidationToast,
 } from '../../util/registrationValidation'
+import { validateIntimationDates, todayIsoDate } from '../../util/intimationDateValidation'
 import {
   buildTrapScoreApiPayload,
   buildLocalTrapScoreFallback,
@@ -252,6 +253,15 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
   }, [open])
 
   const policyClients = useMemo(() => getPolicyClients(policy), [policy])
+  const todayMax = todayIsoDate()
+  const intimationDateCheck = useMemo(
+    () => validateIntimationDates(data, {
+      policy,
+      laDob: data.laDob || policyClients[0]?.dob,
+    }),
+    [data, policy, policyClients]
+  )
+  const dateFieldErrors = intimationDateCheck.fieldErrors
 
   const policyAgeInfo = useMemo(
     () => computePolicyAge(data.dateOfDeathEvent, data.riskCommencementDate || policy?.riskCommencementDate),
@@ -631,16 +641,20 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             ))}
           </div>
           <Grid cols={3}>
-            <Field label="Intimation Date" required><Input type="date" value={data.intimationDate} onChange={e=>update({intimationDate:e.target.value})}/></Field>
+            <Field label="Intimation Date" required error={dateFieldErrors.intimationDate}>
+              <Input type="date" max={todayMax} value={data.intimationDate} onChange={e=>update({intimationDate:e.target.value})} error={dateFieldErrors.intimationDate}/>
+            </Field>
             <Field label="Source" required><Select value={data.source} onChange={e=>update({source:e.target.value})} options={['Branch','Direct','Website','Email','WhatsApp','Agent','Hospital']}/></Field>
             <Field label="Bond Type" required><Select value={data.bondType} onChange={e=>update({bondType:e.target.value})} options={['Policy Bond','Indemnity Bond','Not Provided']}/></Field>
             <Field label="FIR / PM Received" required><Select value={data.firPmReceived} onChange={e=>update({firPmReceived:e.target.value})} options={['Yes','No','Not Required']}/></Field>
             <Field label="Declared by Doctor" required><Select value={data.declaredByDoctor} onChange={e=>update({declaredByDoctor:e.target.value})} options={['Yes','No']}/></Field>
             <Field label="WhatsApp Flag"><Select value={data.whatsappFlag} onChange={e=>update({whatsappFlag:e.target.value})} options={['Yes','No']}/></Field>
-            <Field label="Date of Death / Event" required>
+            <Field label="Date of Death / Event" required error={dateFieldErrors.dateOfDeathEvent}>
               <Input
                 type="date"
+                max={todayMax}
                 value={data.dateOfDeathEvent}
+                error={dateFieldErrors.dateOfDeathEvent}
                 onChange={(e) => {
                   const dateOfDeathEvent = e.target.value
                   update({
@@ -650,9 +664,15 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                 }}
               />
             </Field>
-            <Field label="Date of Death Registration" required><Input type="date" value={data.dateOfDeathReg} onChange={e=>update({dateOfDeathReg:e.target.value})}/></Field>
-            <Field label="Date of Cremation"><Input type="date" value={data.dateOfCremation} onChange={e=>update({dateOfCremation:e.target.value})}/></Field>
-            <Field label="Date of Accident"><Input type="date" value={data.dateOfAccident} onChange={e=>update({dateOfAccident:e.target.value})}/></Field>
+            <Field label="Date of Death Registration" required error={dateFieldErrors.dateOfDeathReg}>
+              <Input type="date" max={todayMax} value={data.dateOfDeathReg} onChange={e=>update({dateOfDeathReg:e.target.value})} error={dateFieldErrors.dateOfDeathReg}/>
+            </Field>
+            <Field label="Date of Cremation" error={dateFieldErrors.dateOfCremation}>
+              <Input type="date" max={todayMax} value={data.dateOfCremation} onChange={e=>update({dateOfCremation:e.target.value})} error={dateFieldErrors.dateOfCremation}/>
+            </Field>
+            <Field label="Date of Accident" error={dateFieldErrors.dateOfAccident}>
+              <Input type="date" max={todayMax} value={data.dateOfAccident} onChange={e=>update({dateOfAccident:e.target.value})} error={dateFieldErrors.dateOfAccident}/>
+            </Field>
             <Field label="Place of Death" required><Select value={data.placeOfDeath} onChange={e=>update({placeOfDeath:e.target.value})} options={placesOfDeath}/></Field>
             <Field label="Policy Status on DOD"><Input value={data.policyStatusOnDod} onChange={e=>update({policyStatusOnDod:e.target.value})} readOnly={true} placeholder="Auto-filled"/></Field>
           </Grid>
@@ -665,7 +685,9 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                 }} options={['NA','Manual','Printed']}/>
               </Field>
               <Field label="Reg. Number"><Input value={data.dcRegNumber} onChange={e=>update({dcRegNumber:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
-              <Field label="Reg. Date"><Input type="date" value={data.dcRegDate} onChange={e=>update({dcRegDate:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
+              <Field label="Reg. Date" error={dateFieldErrors.dcRegDate}>
+                <Input type="date" max={todayMax} value={data.dcRegDate} onChange={e=>update({dcRegDate:e.target.value})} readOnly={data.deathCertificate==='NA'} error={dateFieldErrors.dcRegDate}/>
+              </Field>
               <Field label="Issue District"><Input value={data.dcIssueDistrict} onChange={e=>update({dcIssueDistrict:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
               <Field label="Issuing Authority"><Input value={data.dcIssuingAuthority} onChange={e=>update({dcIssuingAuthority:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
               <Field label="Tehsil"><Input value={data.dcTehsil} onChange={e=>update({dcTehsil:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
@@ -675,6 +697,16 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
               <Field label="Officer Position" full><Input value={data.dcOfficerPosition} onChange={e=>update({dcOfficerPosition:e.target.value})} readOnly={data.deathCertificate==='NA'}/></Field>
             </Grid>
           </div>
+          {!intimationDateCheck.valid && intimationDateCheck.errors.length > 0 && (
+            <InfoCard type="warning">
+              <div style={{ fontWeight: 700, marginBottom: '8px' }}>Fix these date issues before continuing:</div>
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', lineHeight: 1.6 }}>
+                {intimationDateCheck.errors.map((msg) => (
+                  <li key={msg}>{msg}</li>
+                ))}
+              </ul>
+            </InfoCard>
+          )}
           <div style={{ marginTop:'16px', display:'flex', justifyContent:'flex-end' }}>
             <Btn onClick={()=>tryContinue('intimation','cause')} disabled={!canContinueSection('intimation')}>Save & Continue →</Btn>
           </div>

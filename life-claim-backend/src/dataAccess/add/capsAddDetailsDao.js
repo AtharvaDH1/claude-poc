@@ -6,6 +6,7 @@ const Users = require('../../models/User');
 const { checkForExclusionRule } = require('../../services/add/exclusionRulesService');
 const { upsertAssessorPoolCase } = require('./capsAssessorPoolCasesDao');
 const dataEnrichmentService = require('../../services/add/dataEnrichmentService');
+const { assertCasePendingApprover } = require('../../util/capsAddCaseGuards');
 
 // to insert data into the table
 const insertCapsAddDetails = async ({username, data}) => {
@@ -21,18 +22,20 @@ const insertCapsAddDetails = async ({username, data}) => {
         }
 
         const insertPromises = data.map(async (item, index) => {
-            if (!item.POLICY_NUMBER) {
+            const policyNumber = item.POLICY_NUMBER || item.policy_number;
+            if (!policyNumber || !String(policyNumber).trim()) {
                 throw new Error(`POLICY_NUMBER is required for item at index ${index}`);
             }
- 
-            const formattedReferralDate = formatDateString(item.REFERRAL_DATE);
+
+            const remarks = item.REMARKS ?? item.REMARK ?? item.remarks ?? item.initiation_remarks ?? null;
+            const formattedReferralDate = formatDateString(item.REFERRAL_DATE ?? item.referral_date);
  
             // Save to Staging/Raw table instead of final tables directly
             const rawRecord = await CapsAddRawData.create({
-                policy_number: item.POLICY_NUMBER,
-                source: item.SOURCE || 'Excel',
+                policy_number: String(policyNumber).trim(),
+                source: item.SOURCE || item.source || 'Excel',
                 referral_date: formattedReferralDate,
-                initiation_remarks: item.REMARK || null,
+                initiation_remarks: remarks != null ? String(remarks).trim() || null : null,
                 processed_flag: 0, // Pending
                 created_by: username || null,
                 created_on: new Date()
@@ -119,58 +122,82 @@ const getCapsAddDetailsByDecision = async (caseType, attribute, value, limit, of
     try {
         console.log('capsAddDetailsDoa.js >> getCapsAddDetailsWithFindings: ', caseType, attribute, value, limit, offset);
 
-        // Whitelist attributes to prevent SQL Injection on column names
+        if (!caseType || !attribute || value == null || String(value).trim() === '') {
+            throw new Error('caseType, attribute, and value are required');
+        }
+
         const allowedAttributes = {
-            'case_id': 'd.case_id',
-            'policy_number': 'd.policy_number',
-            'krn': 'd.krn',
-            'policy_no': 'd.policy_number'
+            case_id: 'd.case_id',
+            policy_number: 'd.policy_number',
+            policy_no: 'd.policy_number',
+            krn: 'd.krn',
+            case_status: 'd.case_status',
         };
 
-        const dbColumn = allowedAttributes[attribute.toLowerCase()];
+        const dbColumn = allowedAttributes[String(attribute).toLowerCase()];
         if (!dbColumn) {
-            console.error(`Invalid attribute provided for filtering: ${attribute}`);
             throw new Error(`Invalid search attribute: ${attribute}`);
         }
 
-        const query = `
-            SELECT  
+        let searchValue = String(value).trim();
+        if (
+            (attribute.toLowerCase() === 'policy_number' || attribute.toLowerCase() === 'policy_no') &&
+            searchValue.length < 8 &&
+            /^\d+$/.test(searchValue)
+        ) {
+            searchValue = searchValue.padStart(8, '0');
+        }
+
+        const whereClause = `f.decision = :caseType AND ${dbColumn} = :value
+            AND UPPER(COALESCE(d.case_status, '')) NOT LIKE '%APPROVED BY APPROVER%'
+            AND UPPER(COALESCE(d.case_status, '')) NOT LIKE '%REJECTED BY APPROVER%'`;
+        const replacements = { caseType, value: searchValue };
+
+        const countRows = await CapsAddDetails.sequelize.query(
+            `
+            SELECT COUNT(DISTINCT d.case_id) AS total
+            FROM caps_add_details d
+            INNER JOIN caps_add_findings f ON d.case_id = f.case_id
+            WHERE ${whereClause}
+            `,
+            { replacements, type: CapsAddDetails.sequelize.QueryTypes.SELECT }
+        );
+        const totalCount = Number(countRows?.[0]?.total ?? 0);
+
+        const result = await CapsAddDetails.sequelize.query(
+            `
+            SELECT
                 d.case_id AS CASE_ID,
-                d.case_id AS APP_No,
+                MAX(cd.app_no) AS APP_No,
                 d.policy_number AS Policy_Number,
                 d.krn AS KRN,
                 d.case_status AS CaseStatus,
-                f.findings AS Finding,
-                f.remarks AS Remarks,
-                f.rule AS Rule,
-                f.decision AS Decision,
-                c.scn_aging AS SCNAging,
+                GROUP_CONCAT(DISTINCT f.findings ORDER BY f.seq_no SEPARATOR '; ') AS Finding,
+                GROUP_CONCAT(DISTINCT f.remarks ORDER BY f.seq_no SEPARATOR '; ') AS Remarks,
+                GROUP_CONCAT(DISTINCT f.rule ORDER BY f.seq_no SEPARATOR ', ') AS Rule,
+                MAX(f.decision) AS Decision,
+                MAX(c.scn_aging) AS SCNAging,
                 d.iris_status AS IRISStatus
-            FROM
-                caps_add_details d
-            LEFT JOIN
-                caps_add_decision c ON d.case_id = c.case_id
-            INNER JOIN
-                caps_add_findings f ON d.case_id = f.case_id
-            WHERE
-                f.decision = :caseType AND ${dbColumn} = :value
-            ORDER BY
-                d.case_id
+            FROM caps_add_details d
+            LEFT JOIN caps_add_contract_details cd ON d.case_id = cd.case_id
+            LEFT JOIN caps_add_decision c ON d.case_id = c.case_id
+            INNER JOIN caps_add_findings f ON d.case_id = f.case_id
+            WHERE ${whereClause}
+            GROUP BY d.case_id, d.policy_number, d.krn, d.case_status, d.iris_status
+            ORDER BY d.case_id DESC
             LIMIT :limit OFFSET :offset
-        `;
+            `,
+            {
+                replacements: {
+                    ...replacements,
+                    limit: parseInt(limit, 10) || 10,
+                    offset: parseInt(offset, 10) || 0,
+                },
+                type: CapsAddDetails.sequelize.QueryTypes.SELECT,
+            }
+        );
 
-        const result = await CapsAddDetails.sequelize.query(query, {
-            replacements: {
-                caseType,
-                value,
-                limit: parseInt(limit) || 10,
-                offset: parseInt(offset) || 0
-            },
-            type: CapsAddDetails.sequelize.QueryTypes.SELECT
-        });
-
-        console.log('capsAddDetailsDoa.js >> getCapsAddDetailsWithFindings: ', result);
-        return result;
+        return { data: result, totalCount };
     } catch (err) {
         console.error('DataAccess > capsAddDetailsDao.js > getCapsAddDetailsWithFindings, Error getting data:', err);
         throw err;
@@ -178,35 +205,49 @@ const getCapsAddDetailsByDecision = async (caseType, attribute, value, limit, of
 }
  
  
-const updateCapsAddDetailsCaseStatus = async (caseId, caseStatus, username) => {
-    console.log('capsAddDetailsDoa.js >> updateCapsAddDetailsCaseStatus: ', caseId, caseStatus);
- 
-    try{
-        // 1. Update status in caps_add_details
-        const capsAddDetails = await CapsAddDetails.update(
-            {case_status: caseStatus, modified_by: username, modified_on: new Date()},
-            {where: {case_id: caseId}});
+const updateCapsAddDetailsCaseStatus = async (caseIds, caseStatus, username) => {
+    console.log('capsAddDetailsDoa.js >> updateCapsAddDetailsCaseStatus: ', caseIds, caseStatus);
 
-        // 2. Map and update final_decision in caps_add_decision
-        let finalDecision = '';
-        if (caseStatus.includes('Approved')) finalDecision = 'Approved';
-        else if (caseStatus.includes('Rejected')) finalDecision = 'Rejected';
+    const ids = (Array.isArray(caseIds) ? caseIds : [caseIds])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id));
 
-        if (finalDecision) {
-            await CapsAddDecision.update(
-                { 
-                    final_decision: finalDecision, 
-                    modified_by: username, 
-                    modified_on: new Date() 
-                },
-                { where: { case_id: caseId } }
+    if (!ids.length) {
+        throw new Error('No valid case IDs provided');
+    }
+
+    try {
+        const results = [];
+        for (const caseId of ids) {
+            await assertCasePendingApprover(caseId);
+
+            const capsAddDetails = await CapsAddDetails.update(
+                { case_status: caseStatus, modified_by: username, modified_on: new Date() },
+                { where: { case_id: caseId } },
             );
+
+            let finalDecision = '';
+            if (String(caseStatus).includes('Approved')) finalDecision = 'Approved';
+            else if (String(caseStatus).includes('Rejected')) finalDecision = 'Rejected';
+
+            if (finalDecision) {
+                await CapsAddDecision.update(
+                    {
+                        final_decision: finalDecision,
+                        modified_by: username,
+                        modified_on: new Date(),
+                    },
+                    { where: { case_id: caseId } },
+                );
+            }
+
+            results.push({ caseId, updated: capsAddDetails });
         }
-        
-        return capsAddDetails;
-    }catch(err){
+
+        return results;
+    } catch (err) {
         console.error('DataAccess > capsAddDetailsDao.js > updateCapsAddDetailsCaseStatus, Error updating data:', err);
-        throw err;      
+        throw err;
     }
 }
  
@@ -270,6 +311,38 @@ const bulkAssignCasesByPolicy = async (rows, uploadedBy) => {
     return { updated, failed };
 };
 
+/** Assign one or more CAPS cases by numeric case_id. */
+const assignCasesByCaseIds = async (caseIds, assignedTo, assignedBy) => {
+    const updated = [];
+    const failed = [];
+
+    for (const rawId of caseIds) {
+        const caseId = parseInt(rawId, 10);
+        if (!Number.isFinite(caseId)) {
+            failed.push({ caseId: rawId, reason: 'Invalid case id' });
+            continue;
+        }
+
+        const [affected] = await CapsAddDetails.update(
+            {
+                assigned_to: assignedTo,
+                assigned_by: assignedBy,
+                modified_by: assignedBy,
+                modified_on: new Date(),
+            },
+            { where: { case_id: caseId } }
+        );
+
+        if (affected > 0) {
+            updated.push(caseId);
+        } else {
+            failed.push({ caseId, reason: 'Case not found in caps_add_details' });
+        }
+    }
+
+    return { updated, failed };
+};
+
 module.exports = {
     insertCapsAddDetails,
     getCapsAddDetails,
@@ -277,4 +350,5 @@ module.exports = {
     updateCapsAddDetailsCaseStatus,
     getCapsAddDetailsPolicyNumberUsername,
     bulkAssignCasesByPolicy,
+    assignCasesByCaseIds,
 };

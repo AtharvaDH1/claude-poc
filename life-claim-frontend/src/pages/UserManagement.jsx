@@ -6,6 +6,7 @@ import { getRoles } from '../services/masterService'
 import roleService from '../services/roleService'
 import { useEffect } from 'react'
 import { Users, Plus, Edit3, Trash2, X, Save, Search } from 'lucide-react'
+import { formatSuperUserLabel } from '../util/superuserRole'
 
 const T = {
   primary:'#1D4ED8', primaryHover:'#1E40AF',
@@ -17,7 +18,7 @@ const ROLE_COLORS = {
   'Pre Assessor': { bg:'#EFF6FF', color:'#1D4ED8', border:'#BFDBFE' },
   'Assessor':     { bg:'#F5F3FF', color:'#7C3AED', border:'#DDD6FE' },
   'Verifier':     { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' },
-  'Admin':        { bg:'#FFF1F2', color:'#BE123C', border:'#FECDD3' },
+  'Super User':   { bg:'#FFF1F2', color:'#BE123C', border:'#FECDD3' },
   'Clerk':        { bg:'#FFFBEB', color:'#D97706', border:'#FDE68A' },
 }
 
@@ -199,7 +200,7 @@ export default function UserManagement() {
   }
 
   return (
-    <AppLayout>
+    <AppLayout pageTitle="User Management">
       <div style={{ padding:'24px', fontFamily:'Inter,sans-serif' }}>
 
         {/* Header */}
@@ -265,7 +266,8 @@ export default function UserManagement() {
               </thead>
               <tbody>
                 {filtered.map((u, i) => {
-                  const rc = ROLE_COLORS[u.role] || { bg:'#F8FAFC', color:T.textMuted, border:T.border }
+                  const roleLabel = formatSuperUserLabel(u.role) || u.role
+                  const rc = ROLE_COLORS[roleLabel] || ROLE_COLORS[u.role] || { bg:'#F8FAFC', color:T.textMuted, border:T.border }
                   return (
                     <tr key={u.id} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background:hovRow===i?'#F8FAFC':'', transition:'background 0.1s' }}
                       onMouseEnter={()=>setHovRow(i)} onMouseLeave={()=>setHovRow(null)}>
@@ -280,7 +282,7 @@ export default function UserManagement() {
                       <td style={{ padding:'12px 16px', fontSize:'12px', fontWeight:600, color:T.textMuted, fontFamily:'monospace' }}>{u.username}</td>
                       <td style={{ padding:'12px 16px', fontSize:'12px', color:T.textMuted, fontWeight:500 }}>{u.email}</td>
                       <td style={{ padding:'12px 16px' }}>
-                        <span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background:rc.bg, color:rc.color, border:`1px solid ${rc.border}` }}>{u.role}</span>
+                        <span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background:rc.bg, color:rc.color, border:`1px solid ${rc.border}` }}>{roleLabel}</span>
                       </td>
                       <td style={{ padding:'12px 16px' }}>
                         <button onClick={()=>toggleStatus(u)}

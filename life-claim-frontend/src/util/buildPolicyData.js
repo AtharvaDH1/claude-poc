@@ -1,3 +1,5 @@
+import { normalizeDemogsEagleTables } from './eagleTableMappers'
+
 /** Build v1-shaped policyData from assessor-fetch raw bundles (Section F10). */
 
 export function pickClaimQuestionsOnly(claimQuestions = {}) {
@@ -89,7 +91,7 @@ function hasObjectData(obj) {
 }
 
 export function buildPolicyDataFromRaw(raw, claimNo, user) {
-  const d = raw?.demogs || {}
+  const d = normalizeDemogsEagleTables(raw?.demogs || {})
   const r = raw?.requirements || {}
   const a = raw?.assessment || {}
   const dec = raw?.decision || {}

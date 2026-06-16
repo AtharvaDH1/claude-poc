@@ -22,6 +22,17 @@ export function mapDashboardActivityItem(a, index = 0) {
   }
 }
 
+const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+function isWithinActivityWindow(rawTime) {
+  if (!rawTime) return false
+  const d = new Date(rawTime)
+  if (Number.isNaN(d.getTime())) return false
+  return Date.now() - d.getTime() <= ACTIVITY_WINDOW_MS
+}
+
 export function mapDashboardActivities(items = []) {
-  return (items || []).map((a, i) => mapDashboardActivityItem(a, i))
+  return (items || [])
+    .filter((a) => isWithinActivityWindow(a.rawTime || a.createdAt || a.MODIFIED_ON || a.modifiedOn || a.time))
+    .map((a, i) => mapDashboardActivityItem(a, i))
 }

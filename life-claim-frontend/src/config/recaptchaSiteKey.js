@@ -9,6 +9,8 @@ const SECRET_KEY_USED_AS_SITE_KEY = '6LcGWeQsAAAAAM10OlJVnCE0eFUKFjIpRyWFweBE'
 
 /**
  * Resolve the v2 checkbox site key. Never use RECAPTCHA_SECRET_KEY here.
+ * The site key is intentionally public (embedded in the page / visible in Network).
+ * Only RECAPTCHA_SECRET_KEY on the backend must stay private.
  */
 export function resolveRecaptchaSiteKey() {
   const raw = readEnv('RECAPTCHA_SITE_KEY', '')

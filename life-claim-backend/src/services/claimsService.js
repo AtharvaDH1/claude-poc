@@ -5,8 +5,48 @@ const DB_SCHEMA = process.env.DB_DATABASE || 'life_claim';
 
 exports.getClaimByUsername = async (username) => {
     try {
-        const query = `SELECT CLAIM_NUMBER, POLICY_ID, CLAIM_TYPE, CLAIM_STATUS, INITIMATION_DATE, CREATED_BY, CREATED_AT, MODIFIED_BY, MODIFIED_AT, status, role, ASSESSMENT_USERNAME, APPROVER_USERNAME from ${DB_SCHEMA}.claims where ASSIGNED_TO=? OR MODIFIED_BY=? OR ASSESSMENT_USERNAME=? OR APPROVER_USERNAME=? ORDER BY COALESCE(MODIFIED_AT, CREATED_AT) DESC;`
-        const [rows] = await db.execute(query, [username, username, username, username])
+        const query = `
+          SELECT
+            c.CLAIM_NUMBER,
+            c.CLAIM_ID,
+            c.POLICY_ID,
+            c.CLAIM_TYPE,
+            c.CLAIM_STATUS,
+            c.INITIMATION_DATE,
+            c.CREATED_BY,
+            c.CREATED_AT,
+            c.MODIFIED_BY,
+            c.MODIFIED_AT,
+            c.status,
+            c.role,
+            c.ASSIGNED_TO,
+            c.ASSESSMENT_USERNAME,
+            c.APPROVER_USERNAME,
+            COALESCE(cd.CURRENT_SA, cd.ORIGINAL_SA, 0) AS amount,
+            cd.CURRENT_SA,
+            cd.ORIGINAL_SA,
+            COALESCE(
+              NULLIF(TRIM(clm.claimant_name), ''),
+              NULLIF(TRIM(la.NAME), '')
+            ) AS claimant_name
+          FROM ${DB_SCHEMA}.claims c
+          LEFT JOIN ${DB_SCHEMA}.contact_details cd
+            ON cd.CLAIM_ID = CAST(c.CLAIM_ID AS CHAR)
+          LEFT JOIN (
+            SELECT CLAIM_ID, MIN(NULLIF(TRIM(NAME), '')) AS claimant_name
+            FROM ${DB_SCHEMA}.claimant_details
+            GROUP BY CLAIM_ID
+          ) clm ON clm.CLAIM_ID = CAST(c.CLAIM_ID AS CHAR)
+          LEFT JOIN ${DB_SCHEMA}.life_assured_details la
+            ON la.CLAIM_ID = CAST(c.CLAIM_ID AS CHAR)
+          WHERE c.ASSIGNED_TO = ?
+             OR c.MODIFIED_BY = ?
+             OR c.ASSESSMENT_USERNAME = ?
+             OR c.APPROVER_USERNAME = ?
+             OR c.CREATED_BY = ?
+          ORDER BY COALESCE(c.MODIFIED_AT, c.CREATED_AT) DESC
+        `
+        const [rows] = await db.execute(query, [username, username, username, username, username])
         return rows
     } catch (error) {
         console.log(error)

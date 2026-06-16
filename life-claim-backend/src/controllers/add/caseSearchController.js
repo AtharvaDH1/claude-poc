@@ -14,6 +14,9 @@ const getCaseSearchController = async (req, res, next) => {
         });
 
     } catch (error) {
+        if (error.statusCode === 400) {
+            return res.status(400).json({ success: false, error: error.message });
+        }
         next(error);
     }
 }

@@ -19,6 +19,9 @@ const saveFindingsController = async (req, res) => {
             data: savedData
         });
     } catch (error) {
+        if (error.statusCode === 409 || error.statusCode === 404) {
+            return res.status(error.statusCode).json({ success: false, message: error.message });
+        }
         console.error('Error in saveFindingsController:', error);
         res.status(500).json({
             success: false,

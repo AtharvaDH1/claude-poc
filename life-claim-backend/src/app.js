@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const session = require('express-session');
 const { getKeycloak, protect, sessionConfig } = require('./middleware/keycloak');
+const { requireApiAuth } = require('./middleware/requireApiAuth');
 const router = require('./routes/commonRoutes');
 const sequelize = require('./config/sequelize');
  
@@ -279,10 +280,13 @@ app.use(session(sessionConfig));
 // Routes that don't need Keycloak protection
 app.use('/api/auth', authRoutes);
 
-// Keycloak must run before any protected API route (Bearer + session).
+// Keycloak must run before requireApiAuth and protected routes so Bearer tokens populate req.kauth.
 // Scope it to /api so non-API routes (/, static assets) never hit auth middleware.
 // Do not mount protected /api routes above this line.
 app.use('/api', keycloak.middleware());
+
+// Default-deny: valid Bearer JWT required for all /api routes except the public whitelist.
+app.use('/api', requireApiAuth);
  
  
 app.use('/api/user', userRoutes);
@@ -341,7 +345,7 @@ app.use('/api/txn', transactionDetailsRoutes);
 app.use('/api/dashboard', dashboardActivityRoutes);
  
 // Admin routes (dashboard + audit/user management)
-app.use('/api/admin', adminRoutes);
+app.use('/api/superuser', adminRoutes);
 
 // Centralized error handler: prevent leaking stack traces/internal details to clients.
 // In non-production we still return a short detail string for debugging convenience.

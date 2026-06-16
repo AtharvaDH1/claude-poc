@@ -48,16 +48,22 @@ const getCapsAddDetailsByDecision = async (req, res, next) => {
     const caseType = req.body.caseType;
     const attribute = req.body.attribute;
     const value = req.body.value;
-    const limit = req.body.limit;
-    const offset = req.body.page;
+    const limit = parseInt(req.body.limit, 10) || 10;
+    const page = parseInt(req.body.page, 10) || 0;
+    const offset = req.body.offset != null ? parseInt(req.body.offset, 10) : page * limit;
     console.log('capsAddDetailsController.js >> getCapsAddDetailsByDecision request received');
-    try{
-        const aprroverQuery = await CapsAddDetailsDoa.getCapsAddDetailsByDecision(caseType, attribute, value,  limit, offset);
+    try {
+        const result = await CapsAddDetailsDoa.getCapsAddDetailsByDecision(caseType, attribute, value, limit, offset);
         res.status(200).json({
             success: true,
-            data: aprroverQuery
-        });     
-    }catch(e){
+            data: result.data,
+            totalCount: result.totalCount,
+            totalRecords: result.totalCount,
+        });
+    } catch (e) {
+        if (e.message?.includes('Invalid search attribute') || e.message?.includes('required')) {
+            return res.status(400).json({ success: false, error: e.message });
+        }
         console.error('Error in getCapsAddDetailsByDecision:', e);
         internalError(res, e);
     }
@@ -68,14 +74,16 @@ const updateCapsAddDetailsCaseStatusController = async (req, res, next) => {
     const caseStatus = req.body.caseStatus;
     const username = req.body.username;
     console.log('capsAddDetailsController.js >> updateCapsAddDetailsCaseStatusController request received');
-    try{
+    try {
         const updateCaseStatus = await CapsAddDetailsDoa.updateCapsAddDetailsCaseStatus(caseId, caseStatus, username);
         res.status(200).json({
             success: true,
             data: updateCaseStatus
         });
-    }
-    catch(e){
+    } catch (e) {
+        if (e.statusCode === 409 || e.statusCode === 404) {
+            return res.status(e.statusCode).json({ success: false, error: e.message });
+        }
         console.error('Error in updateCapsAddDetailsCaseStatusController:', e);
         internalError(res, e);
     }
@@ -121,6 +129,30 @@ const addCaseAssignmentBulk = async (req, res, next) => {
     }
 };
 
+const assignCasesByCaseIdsController = async (req, res, next) => {
+    const { caseIds, assignedTo, assignedBy } = req.body;
+    const username = assignedBy || req.user?.username || '';
+
+    try {
+        if (!Array.isArray(caseIds) || caseIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'caseIds array is required.' });
+        }
+        if (!assignedTo || !String(assignedTo).trim()) {
+            return res.status(400).json({ success: false, message: 'assignedTo is required.' });
+        }
+
+        const result = await CapsAddDetailsDoa.assignCasesByCaseIds(caseIds, String(assignedTo).trim(), username);
+        return res.status(200).json({
+            success: true,
+            message: `Assigned ${result.updated.length} case(s); ${result.failed.length} failed.`,
+            data: result,
+        });
+    } catch (e) {
+        console.error('Error in assignCasesByCaseIdsController:', e);
+        internalError(res, e);
+    }
+};
+
 module.exports = {
     addExcelDataToTable,
     getCapsAddDetails,
@@ -128,5 +160,6 @@ module.exports = {
     updateCapsAddDetailsCaseStatusController,
     getCapsAddDetailsPolicyNumberUsername,
     addCaseAssignmentBulk,
+    assignCasesByCaseIdsController,
 };
 

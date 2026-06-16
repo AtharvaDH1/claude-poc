@@ -37,6 +37,9 @@ life-claim-backend/logs/
 *.sln
 *.sw?
 
+# Login RSA private key (public key may be committed for reference; private must not)
+life-claim-backend/keys/login_private.pem
+
 # SSL certs (if any)
 *.pem
 *.key

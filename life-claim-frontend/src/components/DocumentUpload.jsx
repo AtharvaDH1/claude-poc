@@ -3,7 +3,7 @@ import { useToast } from './Toast'
 import documentService from '../services/documentService'
 import fileUploadService from '../services/FileUploadService'
 import { validateUploadFile } from '../util/validateUploadFile'
-import { openDocumentPreview } from '../services/documentPreviewService'
+import { openDocumentPreview, openPreviewLoadingTab } from '../services/documentPreviewService'
 
 const T = { primary:'#1D4ED8', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
 
@@ -161,7 +161,15 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
                       <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{d.uploadedOn}</td>
                       <td style={{ padding:'10px 14px', display:'flex', gap:'8px' }}>
                         {d.nodeId && (
-                          <button type="button" onClick={() => openDocumentPreview(d.nodeId).catch((e) => toast('error', 'Preview', e.message))} style={{ background:'none', border:'none', cursor:'pointer', color:T.primary, fontSize:'12px', fontWeight:700 }}>Preview</button>
+                          <button type="button" onClick={() => {
+                            const previewWin = openPreviewLoadingTab()
+                            openDocumentPreview(d.nodeId, { previewWin }).catch((e) => {
+                              if (previewWin && !previewWin.closed) {
+                                try { previewWin.close() } catch { /* ignore */ }
+                              }
+                              toast('error', 'Preview', e.message)
+                            })
+                          }} style={{ background:'none', border:'none', cursor:'pointer', color:T.primary, fontSize:'12px', fontWeight:700 }}>Preview</button>
                         )}
                       </td>
                     </tr>

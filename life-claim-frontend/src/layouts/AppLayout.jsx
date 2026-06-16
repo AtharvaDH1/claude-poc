@@ -1,46 +1,43 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { useToast } from '../components/Toast'
 import dashboardService from '../services/dashboardService'
-import Breadcrumbs from '../components/Breadcrumbs'
+import { BreadcrumbTrail } from '../components/Breadcrumbs'
 import GlobalLoadingBar from '../components/GlobalLoadingBar'
 import {
   LayoutDashboard, Search, Bell, ChevronDown, LogOut, Menu, X,
-  FileText, Users, CheckSquare, Shield, Settings, Star,
-  Layers, ChevronRight, ClipboardList, ScanSearch,
-  BarChart3, User,
+  FileText, CheckSquare, Shield, Settings, Star,
+  Layers, ClipboardList, ScanSearch,
+  BarChart3, User, Sun, Moon,
 } from 'lucide-react'
 import AskMeChat from '../components/AskMeChat'
-import { isAdminOnlyUser, hasAdminRole } from '../util/loginHelpers'
+import { isSuperUserOnlyUser, hasSuperUserRole, hasSuperUserAccess } from '../util/loginHelpers'
+import { resolveDisplayRole, SUPERUSER_LABEL } from '../util/superuserRole'
 import { mapDashboardActivities } from '../util/mapDashboardActivity'
 import { getActivityStyle } from '../util/activityStyles'
 
-const T = {
+const SIDEBAR_T = {
   sidebar: '#0F172A', sidebarBorder: 'rgba(255,255,255,0.06)',
   sidebarHover: 'rgba(255,255,255,0.05)', sidebarActive: 'rgba(29,78,216,0.28)',
   sidebarActiveText: '#93C5FD',
-  primary: '#1D4ED8', primaryHover: '#1E40AF',
-  pageBg: '#F1F5F9', card: '#FFFFFF',
-  border: '#E2E8F0', borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A', textSecondary: '#334155',
-  textMuted: '#64748B', textSubtle: '#94A3B8',
+  primaryHover: '#1E40AF',
 }
 
 const NAV_ITEMS = [
   { id:'dashboard',        path:'/dashboard',        icon:LayoutDashboard, label:'Dashboard',        operational: true },
-  { id:'admin-overview',   path:'/admin',            icon:BarChart3,       label:'Admin Overview',   roles:['admin'], adminNav: true },
-  { id:'admin-claims',     path:'/admin/claim-search', icon:FileText,      label:'Claim Assignment', roles:['admin'], adminNav: true },
+  { id:'superuser-overview', path:'/superuser',            icon:BarChart3,       label: SUPERUSER_LABEL + ' Overview', roles:['superuser'], superuserNav: true },
+  { id:'superuser-claims',   path:'/superuser/claim-search', icon:FileText,      label:'Claim Assignment', roles:['superuser'], superuserNav: true },
   { id:'policy',           path:'/policy-search',    icon:Search,          label:'Policy Search',    roles:['Pre Assessor'], operational: true },
   { id:'claims',           path:'/claim-search',     icon:FileText,        label:'Claim Search',     operational: true },
   { id:'pool',             path:'/pool-selection',   icon:Layers,          label:'Pool Selection',   roles:['Assessor','Verifier'], operational: true },
   { id:'tasks',            path:'/my-task',          icon:CheckSquare,     label:'My Tasks',         roles:['Assessor','Verifier'], operational: true },
-  { id:'add',              path:'/add-screen',       icon:ScanSearch,      label:'Advance Investigation', roles:['Assessor','Verifier'], operational: true },
-  { id:'users',            path:'/user-management',  icon:Users,           label:'User Management',  roles:['admin'], adminNav: true },
-  { id:'audit-log',        path:'/audit-log',        icon:ClipboardList,   label:'Login Sessions',   roles:['admin'], adminNav: true },
+  { id:'add',              path:'/add-screen',       icon:ScanSearch,      label:'Advance Intelligence', roles:['Assessor','Verifier'], operational: true },
+  { id:'audit-log',        path:'/audit-log',        icon:ClipboardList,   label:'Login Sessions',   roles:['superuser'], superuserNav: true },
 ]
 
-const GUEST_USER = { name:'Guest User', role:'Admin', email:'guest@dhdigital.co.in', avatar:'GU', username:'guest' }
+const GUEST_USER = { name:'Guest User', role: SUPERUSER_LABEL, email:'guest@dhdigital.co.in', avatar:'GU', username:'guest' }
 
 const SIDEBAR_EXPANDED = 252
 const SIDEBAR_RAIL = 72
@@ -65,11 +62,14 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
+  const { theme, setTheme, tokens: shellT } = useTheme()
+  const T = { ...SIDEBAR_T, ...shellT }
 
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [sidebarExpanded, setSidebarExpanded] = useState(true)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [, setTimeTick] = useState(0)
@@ -95,6 +95,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
     const fn = e => {
       if (dropRef.current && !dropRef.current.contains(e.target)) {
         setProfileOpen(false)
+        setSettingsOpen(false)
         setNotifOpen(false)
       }
       if (!isDesktop && mobileNavOpen && sidebarRef.current && !sidebarRef.current.contains(e.target)) {
@@ -114,24 +115,35 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
     )
   }
 
-  const adminOnly = isAdminOnlyUser(user?.roles)
+  const superUserOnly = isSuperUserOnlyUser(user?.roles, user?.username)
 
   const visibleNav = NAV_ITEMS.filter((n) => {
-    if (adminOnly) {
-      return ['admin-overview', 'admin-claims', 'users', 'audit-log'].includes(n.id)
+    if (superUserOnly) {
+      return ['superuser-overview', 'superuser-claims', 'audit-log'].includes(n.id)
     }
-    if (n.id === 'admin-overview' || n.id === 'admin-claims') {
-      return hasAdminRole(user?.roles)
+    if (n.id === 'superuser-overview' || n.id === 'superuser-claims') {
+      return hasSuperUserRole(user?.roles) || hasSuperUserAccess(user?.roles, user?.username)
     }
     if (n.operational && n.roles && !n.roles.some((r) => hasRole(r))) return false
     if (n.roles && !n.roles.some((r) => hasRole(r))) return false
     return true
   })
 
-  const currentNav = visibleNav.find(n => {
-    if (n.path === '/dashboard') return location.pathname === '/dashboard'
-    return location.pathname.startsWith(n.path)
-  }) || visibleNav[0]
+  const currentNav = (() => {
+    const path = location.pathname
+    if (path.startsWith('/registration')) {
+      return visibleNav.find((n) => n.id === 'policy') || visibleNav[0]
+    }
+    if (path.startsWith('/superuser/workload')) {
+      return visibleNav.find((n) => n.id === 'superuser-overview') || visibleNav[0]
+    }
+    return [...visibleNav]
+      .sort((a, b) => b.path.length - a.path.length)
+      .find((n) => {
+        if (n.path === '/dashboard') return path === '/dashboard'
+        return path === n.path || path.startsWith(`${n.path}/`)
+      }) || visibleNav[0]
+  })()
 
   const handleNavClick = (item) => {
     navigate(item.path)
@@ -143,15 +155,13 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
     else setMobileNavOpen((p) => !p)
   }
 
-  const primaryRole = user?.roles?.[0] || user?.role || 'User'
-
   const handleSignOut = async () => {
     await logout()
     navigate('/login')
     toast('info', 'Signed out', 'See you next time!')
   }
 
-  const breadcrumb = pageTitle || currentNav?.label || 'Dashboard'
+  const headerFallback = pageTitle || currentNav?.label || 'Dashboard'
 
   return (
     <div style={{ display:'flex', height:'100vh', overflow:'hidden', fontFamily:'Inter,sans-serif', background: T.pageBg }}>
@@ -207,12 +217,9 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
         {/* Nav — compact; footer pinned with marginTop auto */}
         <nav style={{ padding: '14px 10px', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {showWideSidebar && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 10px' }}>
+            <div style={{ padding: '0 8px 10px' }}>
               <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                 Menu
-              </div>
-              <div style={{ fontSize: '10px', fontWeight: 700, color: '#93C5FD', background: 'rgba(29,78,216,0.2)', border: '1px solid rgba(147,197,253,0.25)', borderRadius: '99px', padding: '2px 8px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {primaryRole}
               </div>
             </div>
           )}
@@ -230,7 +237,6 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                   borderRadius: '10px', border: 'none', cursor: 'pointer',
                   background: active ? T.sidebarActive : 'transparent',
                   color: active ? T.sidebarActiveText : 'rgba(255,255,255,0.55)',
-                  boxShadow: active ? 'inset 3px 0 0 #60A5FA' : 'none',
                   transition: 'all 0.15s ease', textAlign: 'left', fontFamily: 'Inter,sans-serif',
                 }}
                 onMouseEnter={e => {
@@ -255,34 +261,6 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
           })}
         </nav>
 
-        {/* User — always pinned to bottom */}
-        <div style={{ marginTop: 'auto', padding: '12px 10px 16px', borderTop: `1px solid ${T.sidebarBorder}`, flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={() => { navigate('/profile'); if (!isDesktop) setMobileNavOpen(false) }}
-            title={!showWideSidebar ? user?.name : undefined}
-            style={{
-              width:'100%', display:'flex', alignItems:'center', gap:'10px',
-              padding: showWideSidebar ? '10px 12px' : '8px 0',
-              justifyContent: showWideSidebar ? 'flex-start' : 'center',
-              borderRadius:'10px', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.06)',
-              cursor:'pointer', textAlign:'left', fontFamily:'Inter,sans-serif',
-              transition: 'background 0.15s ease',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-          >
-            <div style={{ width: '32px', height: '32px', borderRadius: '9px', flexShrink: 0, background: T.primary, color: '#fff', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {user?.avatar}
-            </div>
-            {showWideSidebar && (
-              <div style={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#fff', fontSize: '12px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
-                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', fontWeight: 500 }}>Profile & settings</div>
-              </div>
-            )}
-          </button>
-        </div>
       </aside>
 
       {/* ── MAIN ── */}
@@ -294,23 +272,19 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 24px', flexShrink: 0,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0, flex: 1 }}>
             <button
               type="button"
               data-sidebar-toggle
               onClick={toggleSidebar}
               aria-label={isDesktop ? (sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar') : (mobileNavOpen ? 'Close menu' : 'Open menu')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: '6px', display: 'flex', alignItems: 'center', borderRadius: '8px', transition: 'all 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.color = T.textPrimary }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: '6px', display: 'flex', alignItems: 'center', borderRadius: '8px', transition: 'all 0.15s', flexShrink: 0 }}
+              onMouseEnter={e => { e.currentTarget.style.background = T.hoverBg; e.currentTarget.style.color = T.textPrimary }}
               onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = T.textMuted }}
             >
               {isDesktop ? (sidebarExpanded ? <X size={18} /> : <Menu size={18} />) : (mobileNavOpen ? <X size={18} /> : <Menu size={18} />)}
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-              <span style={{ color: T.textMuted, fontWeight: 500 }}>Home</span>
-              <ChevronRight size={13} style={{ color: T.textSubtle }} />
-              <span style={{ color: T.textSecondary, fontWeight: 700 }}>{breadcrumb}</span>
-            </div>
+            <BreadcrumbTrail fallbackLabel={headerFallback} />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} ref={dropRef}>
@@ -318,7 +292,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => { setNotifOpen(p => !p); setProfileOpen(false) }}
-                style={{ width: '36px', height: '36px', borderRadius: '8px', position: 'relative', background: '#F8FAFC', border: `1.5px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.textMuted, transition: 'all 0.15s' }}
+                style={{ width: '36px', height: '36px', borderRadius: '8px', position: 'relative', background: T.hoverBg, border: `1.5px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.textMuted, transition: 'all 0.15s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.color = T.primary }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted }}
               >
@@ -326,13 +300,13 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                 <div style={{ position: 'absolute', top: '7px', right: '7px', width: '7px', height: '7px', borderRadius: '50%', background: '#EF4444', border: '2px solid #fff' }} />
               </button>
               {notifOpen && (
-                <div style={{ position: 'absolute', right: 0, top: '44px', width: '300px', zIndex: 50, background: T.card, border: `1px solid ${T.border}`, borderRadius: '12px', boxShadow: '0 20px 48px rgba(0,0,0,0.12)', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', right: 0, top: '44px', width: '300px', zIndex: 50, background: T.card, border: `1px solid ${T.border}`, borderRadius: '12px', boxShadow: T.dropdownShadow, overflow: 'hidden' }}>
                   <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 700, fontSize: '13px', color: T.textPrimary }}>Notifications</span>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: T.primary }}>{notifications.length} recent</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: T.primary }}>Last 24h · {notifications.length}</span>
                   </div>
                   {notifications.length === 0 ? (
-                    <div style={{ padding:'20px 16px', fontSize:'12px', color:T.textMuted, textAlign:'center' }}>No recent activity</div>
+                    <div style={{ padding:'20px 16px', fontSize:'12px', color:T.textMuted, textAlign:'center' }}>No activity in the last 24 hours</div>
                   ) : notifications.map(a => {
                     const s = getActivityStyle(a.type)
                     return (
@@ -360,7 +334,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => { setProfileOpen(p => !p); setNotifOpen(false) }}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '36px', borderRadius: '8px', background: '#F8FAFC', border: `1.5px solid ${T.border}`, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'Inter,sans-serif' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '36px', borderRadius: '8px', background: T.hoverBg, border: `1.5px solid ${T.border}`, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'Inter,sans-serif' }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = T.primary}
                 onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
               >
@@ -371,26 +345,67 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                 <ChevronDown size={13} style={{ color: T.textSubtle, transform: profileOpen ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }} />
               </button>
               {profileOpen && (
-                <div style={{ position: 'absolute', right: 0, top: '44px', width: '220px', zIndex: 50, background: T.card, border: `1px solid ${T.border}`, borderRadius: '12px', boxShadow: '0 20px 48px rgba(0,0,0,0.12)', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', right: 0, top: '44px', width: '240px', zIndex: 50, background: T.card, border: `1px solid ${T.border}`, borderRadius: '12px', boxShadow: T.dropdownShadow, overflow: 'hidden' }}>
                   <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.borderSubtle}` }}>
                     <div style={{ fontWeight: 700, fontSize: '13px', color: T.textPrimary }}>{user?.name}</div>
                     <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{user?.email}</div>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '8px', background: '#EFF6FF', border: '1px solid #DBEAFE', borderRadius: '99px', padding: '2px 10px', fontSize: '11px', fontWeight: 700, color: T.primary }}>
-                      <Star size={9} /> {user?.role}
+                      <Star size={9} /> {resolveDisplayRole(user?.roles, user?.role)}
                     </div>
                   </div>
                   <div style={{ padding: '6px' }}>
                     <button
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: T.textSecondary, fontFamily: 'Inter,sans-serif' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      type="button"
+                      onClick={() => setSettingsOpen((p) => !p)}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: settingsOpen ? T.hoverBg : 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: T.textSecondary, fontFamily: 'Inter,sans-serif' }}
+                      onMouseEnter={e => { if (!settingsOpen) e.currentTarget.style.background = T.hoverBg }}
+                      onMouseLeave={e => { if (!settingsOpen) e.currentTarget.style.background = 'none' }}
                     >
-                      <Settings size={14} /> Settings
+                      <Settings size={14} />
+                      <span style={{ flex: 1, textAlign: 'left' }}>Settings</span>
+                      <ChevronDown size={13} style={{ color: T.textSubtle, transform: settingsOpen ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }} />
                     </button>
+                    {settingsOpen && (
+                      <div style={{ margin: '2px 0 6px', padding: '4px 6px 6px 28px', borderBottom: `1px solid ${T.borderSubtle}` }}>
+                        {[
+                          { id: 'light', label: 'Light mode', icon: Sun },
+                          { id: 'dark', label: 'Dark mode', icon: Moon },
+                        ].map((opt) => {
+                          const active = theme === opt.id
+                          const Icon = opt.icon
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => setTheme(opt.id)}
+                              style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '8px 10px',
+                                marginTop: '2px',
+                                borderRadius: '8px',
+                                border: active ? `1px solid ${T.primary}` : '1px solid transparent',
+                                background: active ? (theme === 'dark' ? 'rgba(59,130,246,0.15)' : '#EFF6FF') : 'transparent',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: active ? 700 : 500,
+                                color: active ? T.primary : T.textSecondary,
+                                fontFamily: 'Inter,sans-serif',
+                              }}
+                            >
+                              <Icon size={14} />
+                              {opt.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                     <button
                       onClick={() => { navigate('/profile'); setProfileOpen(false) }}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: T.textSecondary, fontFamily: 'Inter,sans-serif' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
+                      onMouseEnter={e => e.currentTarget.style.background = T.hoverBg}
                       onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                       <User size={14} /> My Profile
                     </button>
@@ -412,7 +427,6 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
         {/* PAGE CONTENT */}
         <main style={{ flex: 1, overflowY: 'auto', background: T.pageBg }}>
           <GlobalLoadingBar/>
-          <Breadcrumbs/>
           {children}
         </main>
       </div>

@@ -79,7 +79,7 @@ export const mockUsers = [
   { id:1, name:'Priya Sharma',  username:'preassessor', email:'priya@dhdigital.co.in',   role:'Pre Assessor', status:'Active',   lastLogin:'2025-05-30', claimsHandled:48  },
   { id:2, name:'Rahul Mehta',   username:'assessor',    email:'rahul@dhdigital.co.in',   role:'Assessor',     status:'Active',   lastLogin:'2025-05-30', claimsHandled:124 },
   { id:3, name:'Anita Desai',   username:'verifier',    email:'anita@dhdigital.co.in',   role:'Verifier',     status:'Active',   lastLogin:'2025-05-29', claimsHandled:87  },
-  { id:4, name:'Suresh Kumar',  username:'admin',       email:'suresh@dhdigital.co.in',  role:'Admin',        status:'Active',   lastLogin:'2025-05-30', claimsHandled:0   },
+  { id:4, name:'Suresh Kumar',  username:'superuser',   email:'suresh@dhdigital.co.in',  role:'Super User',   status:'Active',   lastLogin:'2025-05-30', claimsHandled:0   },
   { id:5, name:'Kavita Nair',   username:'knaira',      email:'kavita@dhdigital.co.in',  role:'Pre Assessor', status:'Active',   lastLogin:'2025-05-28', claimsHandled:32  },
   { id:6, name:'Deepak Verma',  username:'dverma',      email:'deepak@dhdigital.co.in',  role:'Assessor',     status:'Inactive', lastLogin:'2025-05-20', claimsHandled:56  },
 ]

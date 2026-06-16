@@ -1,11 +1,11 @@
 const db = require('../config/dbConfig');
 
-const ADMIN_ROLES = new Set(['admin', 'Admin', 'ROLE_ADMIN']);
+const { hasSuperUserAccess } = require('../util/superuserRoles');
 /** Same roles that can open registration-fetch / assessor-fetch (not assignment-gated). */
 const OPERATIONAL_CLAIM_ROLES = new Set(['Pre Assessor', 'Assessor', 'Verifier']);
 
 const userRoles = (req) => (Array.isArray(req.user?.roles) ? req.user.roles : []);
-const isAdmin = (roles) => roles.some((r) => ADMIN_ROLES.has(r));
+const isSuperUser = (roles, username = '') => hasSuperUserAccess(roles, username);
 const hasOperationalClaimRole = (roles) => roles.some((r) => OPERATIONAL_CLAIM_ROLES.has(r));
 
 const getClaimNumberFromRequest = (req) =>
@@ -13,7 +13,7 @@ const getClaimNumberFromRequest = (req) =>
 
 const hasClaimAccess = async (username, roles, claimNumber) => {
   if (!claimNumber || !username) return false;
-  if (isAdmin(roles)) return true;
+  if (isSuperUser(roles, username)) return true;
 
   const query = `
     SELECT CLAIM_NUMBER
@@ -51,7 +51,7 @@ const authorizeClaimBodyAccess = async (req, res, next) => {
     }
 
     // Match assessor-fetch: operational roles may open documents for any claim they can view in the UI
-    if (isAdmin(roles) || hasOperationalClaimRole(roles)) {
+    if (isSuperUser(roles, username) || hasOperationalClaimRole(roles)) {
       req.claimNumber = claimNumber;
       return next();
     }
@@ -92,7 +92,7 @@ const authorizePreviewNodeAccess = async (req, res, next) => {
 
     const claimNumber = String(rows[0].claimId).trim();
 
-    if (isAdmin(roles) || hasOperationalClaimRole(roles)) {
+    if (isSuperUser(roles, username) || hasOperationalClaimRole(roles)) {
       req.claimNumber = claimNumber;
       return next();
     }

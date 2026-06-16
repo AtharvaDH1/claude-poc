@@ -13,12 +13,12 @@ export const V2_ACTIVE_ROUTES = [
   { path: '/registration-fetch/:claimId', label: 'Claim workspace' },
   { path: '/pool-selection', label: 'Pool Selection', roles: 'Assessor/Verifier' },
   { path: '/my-task', label: 'My Tasks', roles: 'Assessor/Verifier' },
-  { path: '/add-screen', label: 'Advance Investigation', roles: 'Assessor/Verifier' },
+  { path: '/add-screen', label: 'Advance Intelligence', roles: 'Assessor/Verifier' },
   { path: '/case/:id', label: 'CAPS case detail', roles: 'Assessor/Verifier' },
-  { path: '/admin', label: 'Admin overview', roles: 'admin' },
-  { path: '/admin/claim-search', label: 'Admin claim assign', roles: 'admin' },
-  { path: '/audit-log', label: 'Login sessions', roles: 'admin' },
-  { path: '/user-management', label: 'User CRUD', roles: 'admin' },
+  { path: '/superuser', label: 'Super User overview', roles: 'superuser' },
+  { path: '/superuser/claim-search', label: 'Claim assignment', roles: 'superuser' },
+  { path: '/superuser/workload', label: 'Workload list', roles: 'superuser' },
+  { path: '/audit-log', label: 'Login sessions', roles: 'superuser' },
   { path: '/profile', label: 'Profile' },
 ]
 
@@ -26,11 +26,14 @@ export const V2_ACTIVE_ROUTES = [
 export const V2_ROUTE_ALIASES = [
   { from: '/assessor-pool', to: '/pool-selection' },
   { from: '/claim-view/:id', to: '/registration-fetch/:id' },
-  { from: '/user-manager', to: '/user-management' },
+  { from: '/user-management', to: '/superuser' },
+  { from: '/user-manager', to: '/superuser' },
   { from: '/admin/audit', to: '/audit-log' },
-  { from: '/admin/users', to: '/user-management' },
-  { from: '/admin-reports', to: '/admin' },
-  { from: '/admin/reports', to: '/admin' },
+  { from: '/admin/users', to: '/superuser' },
+  { from: '/admin', to: '/superuser' },
+  { from: '/admin/claim-search', to: '/superuser/claim-search' },
+  { from: '/admin-reports', to: '/superuser' },
+  { from: '/admin/reports', to: '/superuser' },
 ]
 
 /** Pages in repo, not registered in App.jsx. */
@@ -60,8 +63,8 @@ export const DORMANT_FRONTEND_PAGES = [
     id: 'admin-reports-charts',
     v1Path: '/admin/reports',
     file: 'pages/AdminReports.jsx',
-    backend: 'GET /api/admin/reports/summary',
-    note: 'Route redirects to /admin; charts UI dormant',
+    backend: 'GET /api/superuser/reports/summary',
+    note: 'Route redirects to /superuser; charts UI dormant',
   },
 ]
 

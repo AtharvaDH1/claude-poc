@@ -35,6 +35,9 @@ const saveDecisionController = async (req, res) => {
             data: result.decision
         });
     } catch (error) {
+        if (error.statusCode === 409 || error.statusCode === 404) {
+            return res.status(error.statusCode).json({ success: false, message: error.message });
+        }
         console.error('Error in saveDecisionController:', error);
         res.status(500).json({
             success: false,

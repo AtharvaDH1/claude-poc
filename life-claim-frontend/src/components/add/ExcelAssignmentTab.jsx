@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Upload, CheckSquare } from 'lucide-react'
-import { readExcelFileData, CaseAssignmentService } from '../../services/add/caseAssignmentService'
+import { readExcelFileData, CaseAssignmentService, downloadAssignmentTemplate } from '../../services/add/caseAssignmentService'
 import { T, PrimaryBtn } from './AddUi'
 
-export default function ExcelAssignmentTab({ toast, embedded = false }) {
+export default function ExcelAssignmentTab({ toast, embedded = false, onComplete }) {
   const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -18,6 +18,7 @@ export default function ExcelAssignmentTab({ toast, embedded = false }) {
       const res = await CaseAssignmentService(processed)
       setResult(res)
       toast('success', 'Assignment complete', res?.message || 'Policy assignments processed.')
+      onComplete?.()
     } catch (e) {
       toast('error', 'Upload failed', e?.message || 'Could not process file.')
     } finally {
@@ -29,7 +30,7 @@ export default function ExcelAssignmentTab({ toast, embedded = false }) {
     <div style={{ padding: embedded ? 0 : '24px' }}>
       <div style={{ fontWeight: 700, fontSize: '14px', color: T.textPrimary, marginBottom: '4px' }}>Bulk policy assignment (Excel)</div>
       <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>
-        Columns <strong>POLICY_ID</strong> and <strong>ASSIGNED_TO</strong>. Validated via <code>policynumberusername</code>, then <code>POST /caseassignment/add</code> updates <code>caps_add_details.assigned_to</code>.
+        Upload an Excel file with <strong>POLICY_ID</strong> and <strong>ASSIGNED_TO</strong> columns to assign cases in bulk.
       </div>
 
       <div
@@ -53,9 +54,18 @@ export default function ExcelAssignmentTab({ toast, embedded = false }) {
         <input id="assign-file-input" type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => setFile(e.target.files[0])} />
       </div>
 
-      <PrimaryBtn onClick={handleUpload} disabled={uploading}>
-        <Upload size={14} /> {uploading ? 'Processing…' : 'Upload & assign'}
-      </PrimaryBtn>
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <PrimaryBtn onClick={handleUpload} disabled={uploading}>
+          <Upload size={14} /> {uploading ? 'Processing…' : 'Upload & assign'}
+        </PrimaryBtn>
+        <button
+          type="button"
+          onClick={() => downloadAssignmentTemplate()}
+          style={{ height: '40px', padding: '0 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
+        >
+          Download template
+        </button>
+      </div>
 
       {result && (
         <div style={{ marginTop: '16px', padding: '14px', borderRadius: '10px', background: '#ECFDF5', border: '1px solid #A7F3D0' }}>

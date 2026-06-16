@@ -11,13 +11,13 @@ export const WS = {
 
 export function Accordion({ title, subtitle, open, onToggle, children }) {
   return (
-    <div style={{ border: `1px solid ${WS.border}`, borderRadius: '10px', marginBottom: '12px', overflow: 'hidden' }}>
+    <div style={{ border: `1px solid ${WS.border}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
       <button
         type="button"
         onClick={onToggle}
         style={{
           width: '100%',
-          padding: '14px 18px',
+          padding: '10px 14px',
           border: 'none',
           background: open ? '#EFF6FF' : '#FAFAFA',
           cursor: 'pointer',
@@ -34,7 +34,7 @@ export function Accordion({ title, subtitle, open, onToggle, children }) {
         </div>
         <span style={{ fontSize: '18px', color: WS.textSubtle }}>{open ? '−' : '+'}</span>
       </button>
-      {open && <div style={{ padding: '18px', borderTop: `1px solid ${WS.borderSubtle}` }}>{children}</div>}
+      {open && <div style={{ padding: '12px 14px', borderTop: `1px solid ${WS.borderSubtle}` }}>{children}</div>}
     </div>
   )
 }
@@ -46,6 +46,35 @@ export function ROField({ label, value, span }) {
       <div style={{ fontSize: '13px', fontWeight: 600, color: WS.textSecondary, padding: '8px 10px', background: '#F8FAFC', borderRadius: '6px', border: `1px solid ${WS.border}`, minHeight: '36px' }}>
         {value ?? '—'}
       </div>
+    </div>
+  )
+}
+
+export function SubTabNav({ tabs, active, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: '4px', background: '#F8FAFC', border: `1px solid ${WS.border}`, borderRadius: '8px', padding: '3px', marginBottom: '20px', flexWrap: 'wrap', width: 'fit-content', maxWidth: '100%' }}>
+      {tabs.map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onChange(t)}
+          style={{
+            padding: '6px 16px',
+            borderRadius: '6px',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 700,
+            fontFamily: 'Inter,sans-serif',
+            transition: 'all 0.15s',
+            background: active === t ? WS.primary : 'transparent',
+            color: active === t ? '#fff' : WS.textSubtle,
+            boxShadow: active === t ? '0 2px 6px rgba(29,78,216,0.25)' : 'none',
+          }}
+        >
+          {t}
+        </button>
+      ))}
     </div>
   )
 }

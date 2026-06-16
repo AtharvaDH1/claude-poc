@@ -14,8 +14,9 @@ const getRecentActivities = async () => {
         u.roles as roles
       FROM STATUS_HISTORY sh
       LEFT JOIN users u ON sh.MODIFIED_BY = u.username
+      WHERE sh.MODIFIED_ON >= NOW() - INTERVAL 24 HOUR
       ORDER BY sh.MODIFIED_ON DESC
-      LIMIT 50
+      LIMIT 100
     `;
     
     const [rows] = await db.execute(query);

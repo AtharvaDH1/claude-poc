@@ -1,4 +1,6 @@
 import { workflowStatusFromRow, workflowRoleFromRow } from '../util/claimSearchMap'
+import { computeDaysOpen } from '../util/claimDaysOpen'
+import { acuityFromClaimRow } from '../util/acuity'
 
 export const unwrapWorkspace = (payload) =>
   payload?.data != null ? payload.data : payload
@@ -70,7 +72,11 @@ export function mapClaimViewFromWorkspace(claimNumber, raw) {
     createdBy: claimRow.CREATED_BY || claimRow.createdBy || '—',
     createdOn: (claimRow.CREATED_AT || claimRow.CREATED_ON || '').toString().split('T')[0] || '—',
     priority: claimRow.priority || 'Normal',
-    daysOpen: claimRow.daysOpen || 0,
+    daysOpen: computeDaysOpen(
+      claimRow.CREATED_AT || claimRow.INITIMATION_DATE || claimRow.createdOn,
+      claimRow.MODIFIED_AT || claimRow.modifiedAt,
+      normalizedStatus,
+    ),
     claimType: claimRow.claimType || claimRow.CLAIM_TYPE || '—',
     informationType: intimation.informationType || intimation.INFORMATION_TYPE || '',
     laName:
@@ -123,6 +129,7 @@ export function mapClaimViewFromWorkspace(claimNumber, raw) {
       eagle: d.eagle || {},
       trap: d.trap || {},
     },
+    acuity: acuityFromClaimRow(claimRow),
   }
 }
 

@@ -2,7 +2,7 @@ const dashboardActivityDao = require('../dataAccess/dashboardActivityDao');
 
 const APP_TZ_OFFSET = process.env.APP_TIMEZONE_OFFSET || '+05:30';
 
-const ACTIVITY_WINDOW_SECONDS = Number(process.env.ACTIVITY_WINDOW_HOURS || 168) * 60 * 60; // default 7 days
+const ACTIVITY_WINDOW_SECONDS = Number(process.env.ACTIVITY_WINDOW_HOURS || 24) * 60 * 60; // default last 24 hours
 
 /** Parse MySQL DATETIME (naive IST) without UTC skew from the Node host timezone. */
 function parseDbDateTime(value) {
@@ -130,26 +130,9 @@ const getRecentActivitiesService = async () => {
       dedupeMap.set(key, { row, diffSeconds });
     }
 
-    let results = Array.from(dedupeMap.values()).map(({ row, diffSeconds }) =>
+    return Array.from(dedupeMap.values()).map(({ row, diffSeconds }) =>
       mapRowToActivity(row, diffSeconds)
     );
-
-    // If time filter removed everything, show the latest status-history rows anyway.
-    if (!results.length && rows.length) {
-      const seen = new Set();
-      results = [];
-      for (const row of rows) {
-        const key = `${row.user || ''}|${row.claimId || ''}|${row.status || ''}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const rowTime = parseDbDateTime(row.time) || new Date();
-        const diffSeconds = Math.floor(Math.abs(now.getTime() - rowTime.getTime()) / 1000);
-        results.push(mapRowToActivity(row, diffSeconds));
-        if (results.length >= 20) break;
-      }
-    }
-
-    return results;
   } catch (error) {
     console.error('Error in dashboard activity service:', error);
     throw error;

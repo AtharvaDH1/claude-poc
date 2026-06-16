@@ -3,6 +3,7 @@ const CapsAddContractDetails = require('../../models/add/CapsAddContractDetails'
 const CapsAddLifeAssuredDetails = require('../../models/add/CapsAddLifeAssuredDetails');
 const CapsAddDecision = require('../../models/add/CapsAddDecision');
 const CapsAddAssessorPoolCases = require('../../models/add/CapsAddAssessorPoolCases');
+const CapsAddFindings = require('../../models/add/CapsAddFindings');
 const db = require('../../config/dbConfig');
 
 //using raw query to get the data from the database
@@ -139,8 +140,16 @@ const getAssessorPoolCases = async (attribute = null, value = null, exclusionFil
         if (attribute && value) {
             const dbColumn = attributeMap[attribute.toLowerCase()];
             if (dbColumn) {
+                let searchValue = String(value).trim();
+                if (
+                    (attribute.toLowerCase() === 'policy_number' || attribute.toLowerCase() === 'policy_no') &&
+                    searchValue.length < 8 &&
+                    /^\d+$/.test(searchValue)
+                ) {
+                    searchValue = searchValue.padStart(8, '0');
+                }
                 whereConditions.push(`${dbColumn} = ?`);
-                queryParams.push(value);
+                queryParams.push(searchValue);
             } else {
                 console.warn(`Attempted search with unsupported attribute: ${attribute}`);
                 // Don't add a filter for an unknown attribute to keep it safe
@@ -154,7 +163,7 @@ const getAssessorPoolCases = async (attribute = null, value = null, exclusionFil
             queryParams.push(exclusionFilter);
         }
         
-        // Build the complete query using CAPS_ADD_ASSESSOR_POOL_CASES as the base
+        // Build the complete query — one row per case (latest pool entry if duplicates exist)
         let queryText = `
             SELECT 
                 ap.ID,
@@ -180,12 +189,22 @@ const getAssessorPoolCases = async (attribute = null, value = null, exclusionFil
                 ap.BATCH_ID,
                 ap.CREATED_AT
             FROM CAPS_ADD_ASSESSOR_POOL_CASES ap
+            INNER JOIN (
+                SELECT CASE_ID, MAX(ID) AS latest_id
+                FROM CAPS_ADD_ASSESSOR_POOL_CASES
+                GROUP BY CASE_ID
+            ) latest ON ap.ID = latest.latest_id
         `;
         
         // Build the count query
         let countQueryText = `
-            SELECT COUNT(*)
+            SELECT COUNT(*) AS total
             FROM CAPS_ADD_ASSESSOR_POOL_CASES ap
+            INNER JOIN (
+                SELECT CASE_ID, MAX(ID) AS latest_id
+                FROM CAPS_ADD_ASSESSOR_POOL_CASES
+                GROUP BY CASE_ID
+            ) latest ON ap.ID = latest.latest_id
         `;
         
         // Add WHERE clause if we have conditions
@@ -275,6 +294,41 @@ const getCaseDetailsById = async (caseId) => {
         }
 
         const data = rows[0];
+
+        const [decisionRow, findingsRows] = await Promise.all([
+            CapsAddDecision.findOne({ where: { case_id: caseId }, raw: true }),
+            CapsAddFindings.findAll({ where: { case_id: caseId }, raw: true, order: [['seq_no', 'ASC']] }),
+        ]);
+
+        const findings = (findingsRows || []).map((f) => ({
+            caseId: f.case_id,
+            findings: f.findings,
+            remarks: f.remarks,
+            rule: f.rule,
+            decision: f.decision,
+            severity: f.severity,
+            ailmentName: f.ailment_name,
+            ailmentType: f.ailment_type,
+            evidenceType: f.type_of_evidence,
+        }));
+
+        const decision = decisionRow
+            ? {
+                case_id: decisionRow.case_id,
+                policy_number: decisionRow.policy_number,
+                rule: decisionRow.rule,
+                final_decision: decisionRow.final_decision,
+                scn_sent: decisionRow.scn_sent,
+                add_case_remarks: decisionRow.add_case_remarks,
+                scn_date: decisionRow.scn_date,
+                scn_aging: decisionRow.scn_aging,
+                scn_received: decisionRow.scn_received,
+                scn_decision: decisionRow.scn_decision,
+                sddr_date: decisionRow.sddr_date,
+                sddr_received: decisionRow.sddr_received,
+                sddr_decision: decisionRow.sddr_decision,
+            }
+            : null;
         
         // Structure the response for the frontend
         return {
@@ -288,8 +342,11 @@ const getCaseDetailsById = async (caseId) => {
                 exclusionType: data.EXCLUSION_TYPE_RULE,
                 userId: data.CREATED_BY,
                 assignedTo: data.ASSIGNED_TO,
-                initialCaseRemark: data.ADD_CASE_REMARKS
+                initialCaseRemark: data.ADD_CASE_REMARKS || decisionRow?.add_case_remarks,
+                irisStatus: data.IRIS_STATUS,
             },
+            decision,
+            findings,
             lifeAssured: {
                 name: data.NAME,
                 clientID: data.CLIENT_ID,

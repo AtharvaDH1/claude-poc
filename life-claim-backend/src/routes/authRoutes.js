@@ -5,11 +5,15 @@ const axios = require('axios');
 const qs = require('qs');
 const db = require('../config/dbConfig');
 const { recordLogin, recordLogout } = require('../services/auditLogService');
-const { authTokenLimiter } = require('../middleware/rateLimiters');
+const { authTokenLimiter, logoutAuditLimiter } = require('../middleware/rateLimiters');
 const userDao = require('../dataAccess/userDao');
 const keycloakLoginLockout = require('../services/keycloakLoginLockout');
 const { verifyRecaptchaToken } = require('../services/recaptchaService');
 const { validateKeycloakTokenBody, validateAuthenticateBody } = require('../middleware/requestValidation');
+const loginCrypto = require('../services/loginCrypto');
+const { protect } = require('../middleware/keycloak');
+const { extractKeycloakRoles, extractKeycloakUsername } = require('../util/keycloakRoles');
+const { isRetiredAdminUsername } = require('../util/superuserRoles');
 
 const router = express.Router();
 const SINGLE_SESSION_ENFORCED = process.env.SINGLE_SESSION_ENFORCED !== 'false';
@@ -74,6 +78,13 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
     });
   }
 
+  if (loginUsername && isRetiredAdminUsername(loginUsername)) {
+    return res.status(403).json({
+      error: 'account_retired',
+      error_description: 'The admin account is no longer available. Please sign in with superuser.',
+    });
+  }
+
   if (loginUsername && keycloakLoginLockout.enabled()) {
     const blocked = keycloakLoginLockout.isBlocked(loginUsername);
     if (blocked.blocked) {
@@ -88,11 +99,39 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
   }
 
   try {
+    let password = String(req.body.password || '');
+    const passwordEncrypted =
+      req.body.password_encrypted === true ||
+      req.body.password_encrypted === 'true' ||
+      req.body.password_encrypted === '1';
+
+    if (passwordEncrypted) {
+      if (!loginCrypto.isEncryptionEnabled()) {
+        return res.status(503).json({
+          error: 'encryption_unavailable',
+          error_description: 'Login password encryption is not configured on the server.',
+        });
+      }
+      try {
+        password = loginCrypto.decryptPassword(password);
+      } catch (decryptErr) {
+        return res.status(400).json({
+          error: 'invalid_password_encryption',
+          error_description: decryptErr.message || 'Could not decrypt login password.',
+        });
+      }
+    } else if (process.env.REQUIRE_ENCRYPTED_LOGIN === 'true') {
+      return res.status(400).json({
+        error: 'password_encryption_required',
+        error_description: 'Encrypted login password is required.',
+      });
+    }
+
     const keycloakBody = {
       client_id: req.body.client_id,
       grant_type: req.body.grant_type,
       username: req.body.username,
-      password: req.body.password,
+      password,
     };
     if (req.body.scope) keycloakBody.scope = req.body.scope;
     if (req.body.client_secret) keycloakBody.client_secret = req.body.client_secret;
@@ -105,8 +144,8 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
 
     // Mirror login-audit behavior for Keycloak-based login flow.
     const payload = decodeJwtPayload(response.data?.access_token || '');
-    const username = payload?.preferred_username || req.body?.username;
-    const roles = payload?.realm_access?.roles || [];
+    const username = extractKeycloakUsername(payload) || req.body?.username;
+    const roles = extractKeycloakRoles(payload);
     const sessionId = payload?.sid || payload?.jti || null;
 
     if (SINGLE_SESSION_ENFORCED && username && sessionId) {
@@ -132,7 +171,6 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
       });
     }
 
-    // Return the response from Keycloak
     res.json(response.data);
   } catch (error) {
     if (error.response) {
@@ -171,22 +209,27 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
     console.error(
       `[auth] Keycloak token request failed → ${tokenEndpoint} | ${code} ${msg}`
     );
-    res.status(503).json({
+    const body = {
       error: 'keycloak_unreachable',
-      message:
-        'Login service could not reach Keycloak. Check that Keycloak is running and KEYCLOAK_URL in the backend .env matches its real URL (http vs https, host, port).',
-      detail: msg,
-      code: code || undefined,
-      attemptedUrl: tokenEndpoint,
-    });
+      message: 'Login service is temporarily unavailable. Please try again later.',
+    };
+    if (process.env.NODE_ENV !== 'production') {
+      body.detail = msg;
+      body.code = code || undefined;
+      body.attemptedUrl = tokenEndpoint;
+    }
+    res.status(503).json(body);
   }
 });
 
-router.post('/logout-audit', async (req, res) => {
+router.post('/logout-audit', logoutAuditLimiter, async (req, res) => {
   const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
   const payload = token ? decodeJwtPayload(token) : null;
-  const username = payload?.preferred_username || req.body?.username;
+  const username = payload?.preferred_username || payload?.sub || null;
+  if (!username) {
+    return res.status(400).json({ message: 'Logout audit requires a session token.' });
+  }
   const sessionId = payload?.sid || payload?.jti || null;
   const rawReason = req.body?.logoutReason ?? req.body?.reason;
   const logoutReason =
@@ -206,7 +249,7 @@ router.post('/logout-audit', async (req, res) => {
   res.status(204).send();
 });
 
-router.post('/authenticate', validateAuthenticateBody, async (req, res, next) => {
+router.post('/authenticate', protect(), validateAuthenticateBody, async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     const bearer = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -236,37 +279,6 @@ router.post('/authenticate', validateAuthenticateBody, async (req, res, next) =>
       }
       throw authError; // Rethrow other errors
     }
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Public endpoint: latest login (optional ?username= for per-user; else system-wide).
-router.get('/last-login', async (req, res, next) => {
-  try {
-    const username = String(req.query?.username || '').trim();
-    let rows;
-    if (username) {
-      [rows] = await db.execute(
-        `SELECT USERNAME, LOGIN_AT
-         FROM claims_poc.user_login_audit
-         WHERE USERNAME = ?
-         ORDER BY LOGIN_AT DESC
-         LIMIT 1`,
-        [username]
-      );
-    } else {
-      [rows] = await db.execute(
-        `SELECT USERNAME, LOGIN_AT
-         FROM claims_poc.user_login_audit
-         ORDER BY LOGIN_AT DESC
-         LIMIT 1`
-      );
-    }
-    return res.json({
-      lastLoginAt: rows?.[0]?.LOGIN_AT || null,
-      username: rows?.[0]?.USERNAME || null,
-    });
   } catch (error) {
     next(error);
   }
@@ -305,7 +317,7 @@ router.post('/keycloak/refresh', authTokenLimiter, async (req, res) => {
 /**
  * Keycloak single-session: detect if this browser's session id was replaced by a newer login.
  */
-router.get('/session-check', async (req, res) => {
+router.get('/session-check', protect(), async (req, res) => {
   if (!SINGLE_SESSION_ENFORCED) {
     return res.json({ ok: true, singleSessionEnforced: false });
   }

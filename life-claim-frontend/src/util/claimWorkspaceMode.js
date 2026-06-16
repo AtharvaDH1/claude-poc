@@ -34,14 +34,15 @@ export function areFieldsDisabled(locationState) {
 
 
 
+import { coalesceRoles, isAssessorRoleName, isVerifierRoleName } from './workflowRole'
+
 const norm = (s) => String(s || '').toLowerCase().trim()
 
-
-
 function userHasRole(userRoles, roleName) {
-
-  return (userRoles || []).some((r) => norm(r) === roleName)
-
+  const list = coalesceRoles(userRoles)
+  if (roleName === 'assessor') return list.some(isAssessorRoleName)
+  if (roleName === 'verifier') return list.some(isVerifierRoleName)
+  return list.some((r) => norm(r) === roleName)
 }
 
 
@@ -190,6 +191,55 @@ export function getSubmitGuard(claim, username, locationState) {
 
   return { ok: false, hint: 'Submit is only available when the claim is with Assessor or Verifier.' }
 
+}
+
+
+
+const ASSESSOR_DECISIONS_REQUIRING_REASON = new Set([
+  'reject',
+  'repudiate',
+  'request more documents',
+  'refer to verifier',
+])
+
+/** Assessor must pick a decision before submit. */
+export function isAssessorDecisionComplete(accessorDecision, accessorReason = '') {
+  const decision = String(accessorDecision || '').trim()
+  if (!decision) {
+    return { ok: false, hint: 'Select an assessor decision before submit.' }
+  }
+  if (ASSESSOR_DECISIONS_REQUIRING_REASON.has(norm(decision)) && !String(accessorReason || '').trim()) {
+    return { ok: false, hint: 'Enter reason / remarks for this assessor decision before submit.' }
+  }
+  return { ok: true, hint: '' }
+}
+
+/** Verifier must pick Verified or Rejected (not Pending / empty). */
+export function isVerifierDecisionComplete(verificationStatus) {
+  const status = norm(verificationStatus)
+  if (!status || status === 'pending') {
+    return { ok: false, hint: 'Select Verified or Rejected before submit.' }
+  }
+  return { ok: true, hint: '' }
+}
+
+/** Role guard + decision fields → whether Submit can be used. */
+export function getWorkspaceSubmitState(submitGuard, edits = {}) {
+  if (!submitGuard?.ok) return submitGuard
+  const {
+    accessorDecision = '',
+    accessorReason = '',
+    verificationStatus = '',
+  } = edits
+  if (submitGuard.mode === 'assessor') {
+    const check = isAssessorDecisionComplete(accessorDecision, accessorReason)
+    if (!check.ok) return { ...submitGuard, ok: false, hint: check.hint }
+  }
+  if (submitGuard.mode === 'verifier') {
+    const check = isVerifierDecisionComplete(verificationStatus)
+    if (!check.ok) return { ...submitGuard, ok: false, hint: check.hint }
+  }
+  return { ...submitGuard, hint: 'Ready to submit.' }
 }
 
 

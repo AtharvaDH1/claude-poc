@@ -20,6 +20,14 @@ const {
   sanitizeDateFields,
 } = require("../util/convertCase");
 const { buildRequirementRowSnake } = require("../util/buildRequirementRow");
+const {
+  mapHospitalRowToDb,
+  mapDoctorRowToDb,
+  mapProofRowToDb,
+  mapInsuranceProofRowToDb,
+  mapWitnessRowToDb,
+  mapIncomeRowToDb,
+} = require("../util/eagleTableMappers");
 
 const INTIMATION_DATE_KEYS = [
   "INITIATION_DATE",
@@ -312,11 +320,11 @@ const updateClaim = async (req, res) => {
         transaction,
       });
       for (const item of hospitalDetailsTable) {
-        const itemSnake = camelToSnakeCase({
-          ...item,
-          modifiedBy: modifiedBy,
-        });
-        itemSnake.CLAIM_ID = claimId;
+        const itemSnake = {
+          ...mapHospitalRowToDb({ ...item, modifiedBy }),
+          CLAIM_ID: claimId,
+          MODIFIED_BY: modifiedBy,
+        };
         await HospitalDetailsTable.create(itemSnake, { transaction });
       }
     }
@@ -327,11 +335,11 @@ const updateClaim = async (req, res) => {
         transaction,
       });
       for (const item of doctorDetailsTable) {
-        const itemSnake = camelToSnakeCase({
-          ...item,
-          modifiedBy: modifiedBy,
-        });
-        itemSnake.CLAIM_ID = claimId;
+        const itemSnake = {
+          ...mapDoctorRowToDb({ ...item, modifiedBy }),
+          CLAIM_ID: claimId,
+          MODIFIED_BY: modifiedBy,
+        };
         await DoctorDetailsTable.create(itemSnake, { transaction });
       }
     }
@@ -342,32 +350,29 @@ const updateClaim = async (req, res) => {
         transaction,
       });
       for (const item of proofDetailsTable) {
-        const itemSnake = camelToSnakeCase({
-          ...item,
-          proofType: item.proofType,
-          documentType: item.documentType,
-          issueDate: item.issueDate,
-          documentId: item.documentId,
-          modifiedBy: modifiedBy,
-        });
-        itemSnake.CLAIM_ID = claimId;
+        const itemSnake = {
+          ...mapProofRowToDb({ ...item, modifiedBy }),
+          CLAIM_ID: claimId,
+          MODIFIED_BY: modifiedBy,
+        };
         await ProofDetailsTable.create(itemSnake, { transaction });
       }
     }
 
-    // Update and insert for insuranceProofDetailsTable--same table hence commented
-    // await InsuranceProofDetailsTable.destroy({
-    //   where: { CLAIM_ID: claimId },
-    //   transaction,
-    // });
-    // for (const item of insuranceProofDetailsTable) {
-    //   const itemSnake = camelToSnakeCase({
-    //     ...item,
-    //     modifiedBy: modifiedBy,
-    //   });
-    //   itemSnake.CLAIM_ID = claimId;
-    //   await InsuranceProofDetailsTable.create(itemSnake, { transaction });
-    // }
+    if (body.insuranceProofDetailsTable != null) {
+      await InsuranceProofDetailsTable.destroy({
+        where: { CLAIM_ID: claimId },
+        transaction,
+      });
+      for (const item of insuranceProofDetailsTable) {
+        const itemSnake = {
+          ...mapInsuranceProofRowToDb({ ...item, modifiedBy }),
+          CLAIM_ID: claimId,
+          MODIFIED_BY: modifiedBy,
+        };
+        await InsuranceProofDetailsTable.create(itemSnake, { transaction });
+      }
+    }
 
     if (body.witnessDetailsTable != null) {
       await WitnessDetailsTable.destroy({
@@ -375,12 +380,11 @@ const updateClaim = async (req, res) => {
         transaction,
       });
       for (const item of witnessDetailsTable) {
-        const itemSnake = camelToSnakeCase({
-          ...item,
-          instanceNo: item.instanceNo,
-          modifiedBy: modifiedBy,
-        });
-        itemSnake.CLAIM_ID = String(claimId);
+        const itemSnake = {
+          ...mapWitnessRowToDb({ ...item, modifiedBy }),
+          CLAIM_ID: String(claimId),
+          MODIFIED_BY: modifiedBy,
+        };
         await WitnessDetailsTable.create(itemSnake, { transaction });
       }
     }
@@ -391,11 +395,11 @@ const updateClaim = async (req, res) => {
         transaction,
       });
       for (const item of incomeDetailsTable) {
-        const itemSnake = camelToSnakeCase({
-          ...item,
-          modifiedBy: modifiedBy,
-        });
-        itemSnake.CLAIM_ID = claimId;
+        const itemSnake = {
+          ...mapIncomeRowToDb({ ...item, modifiedBy }),
+          CLAIM_ID: claimId,
+          MODIFIED_BY: modifiedBy,
+        };
         await IncomeDetailsTable.create(itemSnake, { transaction });
       }
     }

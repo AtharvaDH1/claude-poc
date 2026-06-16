@@ -22,6 +22,14 @@ const {
   sanitizeDbDate,
   sanitizeDateFields,
 } = require("../util/convertCase");
+const {
+  mapHospitalRowToDb,
+  mapDoctorRowToDb,
+  mapProofRowToDb,
+  mapInsuranceProofRowToDb,
+  mapWitnessRowToDb,
+  mapIncomeRowToDb,
+} = require("../util/eagleTableMappers");
 
 const INTIMATION_DATE_KEYS = [
   "INITIATION_DATE",
@@ -539,8 +547,12 @@ const registerClaim = async (req, res) => {
 
     //hospital details table in eagle screen
     const HospitalDetailsTablePromises = hospitalDetailsTable.map(async (hospitalItem) => {
-      const HospitalDetailsTableSnake = camelToSnakeCase({ ...hospitalItem, createdBy, modifiedBy });
-      HospitalDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      const HospitalDetailsTableSnake = {
+        ...mapHospitalRowToDb({ ...hospitalItem, createdBy, modifiedBy }),
+        CLAIM_ID: claim.CLAIM_ID,
+        CREATED_BY: createdBy,
+        MODIFIED_BY: modifiedBy,
+      };
       return HospitalDetailsTable.create(HospitalDetailsTableSnake, { transaction });
     });
     // console.log(HospitalDetailsTablePromises)
@@ -548,8 +560,12 @@ const registerClaim = async (req, res) => {
 
     // doctor details tab in eagle screen
     const DoctorDetailsTablePromises = doctorDetailsTable.map(async (doctorItem) => {
-      const DoctorDetailsTableSnake = camelToSnakeCase({ ...doctorItem, createdBy, modifiedBy });
-      DoctorDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; 
+      const DoctorDetailsTableSnake = {
+        ...mapDoctorRowToDb({ ...doctorItem, createdBy, modifiedBy }),
+        CLAIM_ID: claim.CLAIM_ID,
+        CREATED_BY: createdBy,
+        MODIFIED_BY: modifiedBy,
+      };
       return DoctorDetailsTable.create(DoctorDetailsTableSnake, { transaction });
     });
     // console.log(DoctorDetailsTablePromises);
@@ -558,8 +574,12 @@ const registerClaim = async (req, res) => {
 
     // for proof details tab in eagle screen
     const ProofDetailsTablePromises = proofDetailsTable.map(async (proofItem) => {
-      const ProofDetailsTableSnake = camelToSnakeCase({ ...proofItem, createdBy, modifiedBy });
-      ProofDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      const ProofDetailsTableSnake = {
+        ...mapProofRowToDb({ ...proofItem, createdBy, modifiedBy }),
+        CLAIM_ID: claim.CLAIM_ID,
+        CREATED_BY: createdBy,
+        MODIFIED_BY: modifiedBy,
+      };
       return ProofDetailsTable.create(ProofDetailsTableSnake, { transaction });
     });
     const ProofDetailsTableResults = await Promise.all(ProofDetailsTablePromises);
@@ -567,16 +587,24 @@ const registerClaim = async (req, res) => {
     
     // for insurance proof details table in eagle screen
     const InsuranceProofDetailsTablePromises = insuranceProofDetailsTable.map(async (insuranceProofItem) => {
-      const InsuranceProofDetailsTableSnake = camelToSnakeCase({ ...insuranceProofItem, createdBy, modifiedBy });
-      InsuranceProofDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID;
+      const InsuranceProofDetailsTableSnake = {
+        ...mapInsuranceProofRowToDb({ ...insuranceProofItem, createdBy, modifiedBy }),
+        CLAIM_ID: claim.CLAIM_ID,
+        CREATED_BY: createdBy,
+        MODIFIED_BY: modifiedBy,
+      };
       return InsuranceProofDetailsTable.create(InsuranceProofDetailsTableSnake, { transaction });
     });
     const InsuranceProofDetailsTableResults = await Promise.all(InsuranceProofDetailsTablePromises);
     
     // for witness details tab in eagle screen
     const WitnessDetailsTablePromises = witnessDetailsTable.map(async (witnessItem) => {
-      const WitnessDetailsTableSnake = camelToSnakeCase({ ...witnessItem, createdBy, modifiedBy });
-      WitnessDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      const WitnessDetailsTableSnake = {
+        ...mapWitnessRowToDb({ ...witnessItem, createdBy, modifiedBy }),
+        CLAIM_ID: claim.CLAIM_ID,
+        CREATED_BY: createdBy,
+        MODIFIED_BY: modifiedBy,
+      };
       return WitnessDetailsTable.create(WitnessDetailsTableSnake, { transaction });
     });
     
@@ -585,8 +613,12 @@ const registerClaim = async (req, res) => {
 
     // for income details tab in eagle screen
     const IncomeDetailsTablePromises = incomeDetailsTable.map(async (incomeItem) => {
-      const IncomeDetailsTableSnake = camelToSnakeCase({ ...incomeItem, createdBy, modifiedBy });
-      IncomeDetailsTableSnake.CLAIM_ID = claim.CLAIM_ID; // Ensure CLAIM_ID is set correctly
+      const IncomeDetailsTableSnake = {
+        ...mapIncomeRowToDb({ ...incomeItem, createdBy, modifiedBy }),
+        CLAIM_ID: claim.CLAIM_ID,
+        CREATED_BY: createdBy,
+        MODIFIED_BY: modifiedBy,
+      };
       return IncomeDetailsTable.create(IncomeDetailsTableSnake, { transaction });
     });
     

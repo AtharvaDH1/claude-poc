@@ -3,6 +3,8 @@ import {
   REGISTRATION_REQUIREMENTS,
 } from '../config/registrationCatalog'
 
+import { validateIntimationDates } from './intimationDateValidation'
+
 const isEmpty = (v) => v == null || String(v).trim() === ''
 
 const DEMO_SECTION_ORDER = [
@@ -169,8 +171,9 @@ export function validateDemographicsSection(sectionId, data, { policy, fromRegis
         missing.push('Policy Status on DOD/DOE')
       }
       if (isEmpty(data.deathCertificate)) missing.push('Death Certificate Type')
-      if (data.intimationDate && data.dateOfDeathEvent && data.intimationDate < data.dateOfDeathEvent) {
-        missing.push('Intimation Date cannot be before Date of Death')
+      {
+        const dateCheck = validateIntimationDates(data, { policy })
+        if (!dateCheck.valid) missing.push(...dateCheck.errors)
       }
       break
 

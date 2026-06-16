@@ -1,8 +1,17 @@
 import { useState } from 'react'
+import { useToast } from '../../../Toast'
 import { Accordion, SimpleTable, WS } from '../workspaceUi'
-import { mapRequirementsForWorkspace, patchRequirementRowStatus } from '../../../../util/workspaceDisplay'
+import {
+  mapRequirementsForWorkspace,
+  patchRequirementRowStatus,
+  patchRequirementRowReceiptDate,
+  WORKSPACE_REQUIREMENT_ALLOWED_STATUSES,
+  WORKSPACE_REQUIREMENT_PENDING_MSG,
+  getPendingWorkspaceRequirements,
+} from '../../../../util/workspaceDisplay'
 
 export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatch }) {
+  const toast = useToast()
   const [open, setOpen] = useState('base')
   const toggle = (id) => setOpen((p) => (p === id ? '' : id))
   const reqRows = mapRequirementsForWorkspace(requirements)
@@ -11,13 +20,30 @@ export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatc
   const sms = requirements?.smsScriptTable || []
 
   const setReqStatus = (idx, status) => {
+    if (canEdit && String(status).trim().toLowerCase() === 'pending') {
+      toast('warning', 'Invalid status', WORKSPACE_REQUIREMENT_PENDING_MSG)
+      return
+    }
     const table = requirements?.requirementTable || []
     const next = table.map((row, i) => (i === idx ? patchRequirementRowStatus(row, status) : row))
     onPatch({ requirementTable: next })
   }
 
+  const setReqReceiptDate = (idx, receiptDate) => {
+    const table = requirements?.requirementTable || []
+    const next = table.map((row, i) => (i === idx ? patchRequirementRowReceiptDate(row, receiptDate) : row))
+    onPatch({ requirementTable: next })
+  }
+
+  const pendingCount = canEdit ? getPendingWorkspaceRequirements(requirements).length : 0
+
   return (
     <div>
+      {canEdit && pendingCount > 0 && (
+        <div style={{ marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '12px', fontWeight: 600, color: '#92400E' }}>
+          {pendingCount} requirement(s) still Pending — change each to Received or Waived before submit.
+        </div>
+      )}
       <Accordion title="Requirements" subtitle="Same 10-document checklist from registration" open={open === 'base'} onToggle={() => toggle('base')}>
         {reqRows.length === 0 ? (
           <div style={{ color: WS.textMuted, fontSize: '13px' }}>No requirement rows loaded.</div>
@@ -39,8 +65,19 @@ export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatc
                     <td style={{ padding: '10px 12px', fontSize: '12px' }}>{row.source}</td>
                     <td style={{ padding: '10px 12px' }}>
                       {canEdit ? (
-                        <select value={row.status} onChange={(e) => setReqStatus(i, e.target.value)} style={{ height: '32px', borderRadius: '6px', border: `1px solid ${WS.border}`, fontSize: '12px' }}>
-                          {['Pending', 'Received', 'Waived'].map((s) => <option key={s} value={s}>{s}</option>)}
+                        <select
+                          value={row.status === 'Pending' ? '' : row.status}
+                          onChange={(e) => setReqStatus(i, e.target.value)}
+                          style={{ height: '32px', borderRadius: '6px', border: `1px solid ${WS.border}`, fontSize: '12px' }}
+                        >
+                          {row.status === 'Pending' && (
+                            <option value="" disabled>
+                              Pending — select Received or Waived
+                            </option>
+                          )}
+                          {WORKSPACE_REQUIREMENT_ALLOWED_STATUSES.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
                         </select>
                       ) : (
                         <span style={{ fontWeight: 600, fontSize: '12px' }}>{row.status}</span>
@@ -48,7 +85,29 @@ export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatc
                     </td>
                     <td style={{ padding: '10px 12px', fontSize: '12px', color: WS.textMuted }}>{row.triggeredBy}</td>
                     <td style={{ padding: '10px 12px', fontSize: '12px', color: WS.textMuted }}>{row.triggerDate}</td>
-                    <td style={{ padding: '10px 12px', fontSize: '12px', color: WS.textMuted }}>{row.receiptDate}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                      {canEdit ? (
+                        <input
+                          type="date"
+                          value={row.receiptDate || ''}
+                          onChange={(e) => setReqReceiptDate(i, e.target.value)}
+                          disabled={row.status !== 'Received'}
+                          style={{
+                            height: '32px',
+                            padding: '0 8px',
+                            borderRadius: '6px',
+                            border: `1px solid ${WS.border}`,
+                            fontSize: '12px',
+                            fontFamily: 'Inter,sans-serif',
+                            background: row.status === 'Received' ? '#fff' : '#F1F5F9',
+                            cursor: row.status === 'Received' ? 'pointer' : 'not-allowed',
+                            minWidth: '130px',
+                          }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: '12px', color: WS.textMuted }}>{row.receiptDate || '—'}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -26,15 +26,25 @@ const validateBody = (validator) => (req, res, next) => {
   return next();
 };
 
+const isEncryptedPassword = (body) =>
+  body.password_encrypted === true ||
+  body.password_encrypted === 'true' ||
+  body.password_encrypted === '1';
+
 const validateKeycloakTokenBody = validateBody((body) => {
   const errors = {};
   const username = asTrimmed(body.username);
   const password = String(body.password || '');
+  const encrypted = isEncryptedPassword(body);
   if (!usernamePattern.test(username)) {
     errors.username = 'Username format is invalid.';
   }
-  if (!password || !maxLen(password, 256)) {
-    errors.password = 'Password is required and must be <= 256 chars.';
+  if (!password) {
+    errors.password = 'Password is required.';
+  } else if (encrypted && !maxLen(password, 4096)) {
+    errors.password = 'Encrypted password payload is too long.';
+  } else if (!encrypted && !maxLen(password, 256)) {
+    errors.password = 'Password must be <= 256 chars.';
   }
   if (body.captchaToken !== undefined && !maxLen(body.captchaToken, 4096)) {
     errors.captchaToken = 'captchaToken is too long.';

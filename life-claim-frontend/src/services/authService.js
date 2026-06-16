@@ -1,5 +1,6 @@
 import { API_URL } from '../util/config';
 import { notifyOtherTabsLogout } from '../util/authBroadcast';
+import { encryptPasswordForLogin } from '../util/loginCrypto';
 
 const REFRESH_BUFFER_SEC = 90;
 
@@ -40,11 +41,22 @@ function decodeJwtPayload(token) {
 
 const authService = {
   login: async (username, password, captchaToken) => {
+    let passwordPayload = password;
+    let passwordEncrypted = false;
+    try {
+      passwordPayload = await encryptPasswordForLogin(password);
+      passwordEncrypted = true;
+    } catch {
+      passwordPayload = password;
+      passwordEncrypted = false;
+    }
+
     const params = new URLSearchParams();
     params.append('client_id', 'life-claims-frontend');
     params.append('grant_type', 'password');
     params.append('username', username);
-    params.append('password', password);
+    params.append('password', passwordPayload);
+    if (passwordEncrypted) params.append('password_encrypted', 'true');
     if (captchaToken) params.append('captchaToken', captchaToken);
 
     const res = await fetch(`${API_URL}/api/auth/keycloak/token`, {
@@ -158,22 +170,7 @@ const authService = {
 
     return {
       preferred_username: payload.preferred_username || payload.sub,
-      roles: payload.realm_access?.roles || [],
-    };
-  },
-
-  getLastLogin: async (username) => {
-    const q = username ? `?username=${encodeURIComponent(username)}` : '';
-    const res = await fetch(`${API_URL}/api/auth/last-login${q}`, {
-      method: 'GET',
-      credentials: 'include',
-    });
-
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => ({}));
-    return {
-      lastLoginAt: data.lastLoginAt || null,
-      username: data.username || null,
+      roles: [...(payload.realm_access?.roles || []), ...(payload.roles || [])].filter(Boolean),
     };
   },
 

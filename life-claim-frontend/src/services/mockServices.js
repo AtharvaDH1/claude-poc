@@ -187,8 +187,8 @@ export const AUDIT_LOGS = [
   { id:4, user:'Rahul Mehta', role:'Assessor', action:'Claim Viewed', ip:'192.168.1.15', timestamp:'2026-06-03 10:30:44', session:'SES-002' },
   { id:5, user:'Anita Desai', role:'Verifier', action:'Login', ip:'192.168.1.20', timestamp:'2026-06-03 11:00:01', session:'SES-003' },
   { id:6, user:'Anita Desai', role:'Verifier', action:'Claim Approved', ip:'192.168.1.20', timestamp:'2026-06-03 11:45:33', session:'SES-003' },
-  { id:7, user:'Suresh Kumar', role:'Admin', action:'Login', ip:'192.168.1.5', timestamp:'2026-06-03 12:00:00', session:'SES-004' },
-  { id:8, user:'Suresh Kumar', role:'Admin', action:'User Created', ip:'192.168.1.5', timestamp:'2026-06-03 12:15:20', session:'SES-004' },
+  { id:7, user:'Suresh Kumar', role:'Super User', action:'Login', ip:'192.168.1.5', timestamp:'2026-06-03 12:00:00', session:'SES-004' },
+  { id:8, user:'Suresh Kumar', role:'Super User', action:'User Created', ip:'192.168.1.5', timestamp:'2026-06-03 12:00:00', session:'SES-004' },
   { id:9, user:'Rahul Mehta', role:'Assessor', action:'Logout', ip:'192.168.1.15', timestamp:'2026-06-03 13:00:00', session:'SES-002' },
   { id:10, user:'Priya Sharma', role:'Pre Assessor', action:'Logout', ip:'192.168.1.10', timestamp:'2026-06-03 13:30:00', session:'SES-001' },
 ]

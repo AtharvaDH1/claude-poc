@@ -1,6 +1,7 @@
 const db = require("../config/dbConfig");
 const logger = require("../config/logConfig");
 const StatusHistory = require("../models/StatusHistory");
+const claimsService = require("./claimsService");
 const TRACKED_USERS = ["sujal", "simran", "kishor"];
 const TRACKED_USERS_WITH_ALIAS = ["sujal", "simran", "kishor", "kishore"];
 const SESSION_TTL_MINUTES = Number(process.env.AUDIT_SESSION_TTL_MINUTES || 5);
@@ -17,13 +18,13 @@ exports.getSummary = async () => {
   const summaryQuery = `
     SELECT
       COUNT(*) AS totalClaims,
-      /* High-level buckets: use status for workflow; fallback to CLAIM_STATUS */
+      /* Mutually exclusive buckets — pending = all non-approved, non-rejected */
       SUM(
         CASE
-          WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) LIKE 'pending%'
+          WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) IN ('rejected', 'payout rejected', 'assessor rejected', 'verifier rejected')
           THEN 1 ELSE 0
         END
-      ) AS pendingClaims,
+      ) AS rejectedClaims,
       SUM(
         CASE
           WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) IN ('approved', 'payout completed')
@@ -32,10 +33,13 @@ exports.getSummary = async () => {
       ) AS approvedClaims,
       SUM(
         CASE
-          WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) IN ('rejected', 'payout rejected')
+          WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) NOT IN (
+            'rejected', 'payout rejected', 'assessor rejected', 'verifier rejected',
+            'approved', 'payout completed'
+          )
           THEN 1 ELSE 0
         END
-      ) AS rejectedClaims,
+      ) AS pendingClaims,
       /* Weekly registrations (last 7 days including today) */
       SUM(
         CASE
@@ -202,6 +206,63 @@ exports.getSummary = async () => {
       logger.error(`Admin getSummary ${listKeys[i]}: ${e.message}`);
       summary[listKeys[i]] = [];
     }
+  }
+
+  try {
+    const [trendRows] = await db.execute(`
+      SELECT
+        DATE_FORMAT(CREATED_AT, '%b') AS month,
+        MONTH(CREATED_AT) AS monthNum,
+        COUNT(*) AS registered,
+        SUM(CASE WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) IN ('rejected', 'payout rejected', 'assessor rejected', 'verifier rejected') THEN 1 ELSE 0 END) AS rejected,
+        SUM(CASE WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) IN ('approved', 'payout completed') THEN 1 ELSE 0 END) AS approved,
+        SUM(CASE WHEN LOWER(COALESCE(status, CLAIM_STATUS, '')) NOT IN (
+          'rejected', 'payout rejected', 'assessor rejected', 'verifier rejected',
+          'approved', 'payout completed'
+        ) THEN 1 ELSE 0 END) AS pending
+      FROM claims_poc.claims
+      WHERE CREATED_AT >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+      GROUP BY YEAR(CREATED_AT), MONTH(CREATED_AT)
+      ORDER BY YEAR(CREATED_AT), MONTH(CREATED_AT)
+    `);
+    summary.charts = summary.charts || {};
+    summary.charts.monthlyTrend = (trendRows || []).map((r) => ({
+      name: r.month,
+      registered: Number(r.registered || 0),
+      approved: Number(r.approved || 0),
+      rejected: Number(r.rejected || 0),
+      pending: Number(r.pending || 0),
+    }));
+  } catch (e) {
+    logger.error(`Admin getSummary monthlyTrend: ${e.message}`);
+    summary.charts = summary.charts || {};
+    summary.charts.monthlyTrend = [];
+  }
+
+  try {
+    const [typeRows] = await db.execute(`
+      SELECT
+        CASE
+          WHEN LOWER(TRIM(COALESCE(CLAIM_TYPE, ''))) IN ('death', 'death claim') THEN 'Death'
+          WHEN LOWER(TRIM(COALESCE(CLAIM_TYPE, ''))) IN ('rider', 'rider claim') THEN 'Rider'
+          ELSE COALESCE(NULLIF(TRIM(CLAIM_TYPE), ''), 'Other')
+        END AS claimType,
+        COUNT(*) AS cnt
+      FROM claims_poc.claims
+      GROUP BY 1
+      ORDER BY cnt DESC
+    `);
+    const typeColors = ['#1D4ED8', '#0891B2', '#7C3AED', '#059669', '#D97706', '#64748B'];
+    summary.charts = summary.charts || {};
+    summary.charts.claimTypes = (typeRows || []).map((r, i) => ({
+      name: r.claimType,
+      value: Number(r.cnt || 0),
+      color: typeColors[i % typeColors.length],
+    }));
+  } catch (e) {
+    logger.error(`Admin getSummary claimTypes: ${e.message}`);
+    summary.charts = summary.charts || {};
+    summary.charts.claimTypes = [];
   }
 
   return summary;
@@ -381,8 +442,35 @@ exports.getAuditEvents = async ({ limit = 50, user, from, to }) => {
         rolesArr = [];
       }
 
-      const ROLE_PRIORITY = ["Pre Assessor", "Assessor", "Verifier", "clerk", "business", "admin"];
-      const displayRole = ROLE_PRIORITY.find((role) => rolesArr.includes(role)) || rolesArr[0] || "—";
+      const { hasSuperUserRole, isSuperUserUsername } = require("../util/superuserRoles");
+      const norm = (r) =>
+        String(r || "")
+          .toLowerCase()
+          .replace(/_/g, " ")
+          .replace(/-/g, " ")
+          .trim();
+      const hasRoleNamed = (want) =>
+        rolesArr.some((r) => {
+          const n = norm(r);
+          const w = norm(want);
+          if (w === "pre assessor") return n.includes("pre") && n.includes("assessor");
+          if (w === "assessor") return n === "assessor" || (n.includes("assessor") && !n.includes("pre"));
+          if (w === "verifier") return n === "verifier" || n.includes("verifier");
+          if (w === "superuser") return n === "superuser" || n === "super user";
+          return n === w;
+        });
+      let displayRole = "—";
+      if (hasSuperUserRole(rolesArr) || isSuperUserUsername(r.USERNAME)) {
+        displayRole = "Super User";
+      } else if (hasRoleNamed("Pre Assessor")) {
+        displayRole = "Pre Assessor";
+      } else if (hasRoleNamed("Assessor")) {
+        displayRole = "Assessor";
+      } else if (hasRoleNamed("Verifier")) {
+        displayRole = "Verifier";
+      } else if (rolesArr[0]) {
+        displayRole = hasSuperUserRole([rolesArr[0]]) ? "Super User" : String(rolesArr[0]);
+      }
 
       const reasonSuffix =
         includeLogoutReason && r.LOGOUT_REASON ? ` — ${r.LOGOUT_REASON}` : "";
@@ -496,10 +584,16 @@ exports.assignClaim = async ({ claimNumber, assignee, role, actingUser }) => {
   }
 
   const normalizedStatus = String(claim.STATUS || "").toLowerCase();
-  const claimRole = String(claim.ROLE || "").trim();
-  const targetRole = String(role || "").trim();
+  const normPoolRole = (r) => {
+    const n = String(r || "").toLowerCase().replace(/_/g, " ").replace(/-/g, " ").trim();
+    if (n.includes("pre") && n.includes("assessor")) return "Pre Assessor";
+    if (n === "assessor" || (n.includes("assessor") && !n.includes("pre"))) return "Assessor";
+    if (n === "verifier" || n.includes("verifier")) return "Verifier";
+    return String(r || "").trim();
+  };
+  const claimRole = normPoolRole(claim.ROLE);
+  const targetRole = normPoolRole(role);
 
-  // Ensure the claim is already in the correct role pool (case-insensitive for DB casing)
   if (claimRole.toLowerCase() !== targetRole.toLowerCase()) {
     const err = new Error("Claim is not currently in the selected role pool");
     err.status = 400;
@@ -533,7 +627,25 @@ exports.assignClaim = async ({ claimNumber, assignee, role, actingUser }) => {
     }
   }
 
-  // Build update statement
+  const wasUnassigned = !String(claim.ASSIGNED_TO || "").trim();
+  let nextStatus = String(claim.STATUS || "").trim();
+
+  if (targetRole === "Assessor") {
+    if (
+      normalizedStatus === "pending assessor allocation" ||
+      (wasUnassigned && normalizedStatus.includes("pending assessor"))
+    ) {
+      nextStatus = "Pending Assessor Action";
+    }
+  } else if (targetRole === "Verifier") {
+    if (
+      normalizedStatus === "pending verifier allocation" ||
+      (wasUnassigned && normalizedStatus.includes("pending verifier"))
+    ) {
+      nextStatus = "Pending Verifier Action";
+    }
+  }
+
   let updateSql =
     "UPDATE claims_poc.claims SET ASSIGNED_TO = ?, MODIFIED_BY = ?, MODIFIED_AT = NOW()";
   const params = [assignee, actingUser || assignee];
@@ -551,13 +663,26 @@ exports.assignClaim = async ({ claimNumber, assignee, role, actingUser }) => {
 
   await db.execute(updateSql, params);
 
-  // Optional: log in status history
+  const priorStatus = String(claim.STATUS || "").trim();
+  if (nextStatus && nextStatus !== priorStatus) {
+    try {
+      await claimsService.changeStatus(
+        claimNumber,
+        nextStatus,
+        assignee,
+        targetRole === "Pre Assessor" ? null : targetRole
+      );
+    } catch (e) {
+      logger.error(`assignClaim changeStatus notify error: ${e.message}`);
+    }
+  }
+
   try {
     await StatusHistory.create({
       CLAIM_NUMBER: claimNumber,
       POLICY_NUMBER: claim.POLICY_ID || "",
       MODIFIED_BY: actingUser || assignee,
-      STATUS: claim.STATUS,
+      STATUS: nextStatus || claim.STATUS,
     });
   } catch (e) {
     logger.error(`assignClaim StatusHistory error: ${e.message}`);
@@ -566,9 +691,128 @@ exports.assignClaim = async ({ claimNumber, assignee, role, actingUser }) => {
   return {
     claimNumber,
     policyNumber: claim.POLICY_ID,
-    role,
-    status: claim.STATUS,
+    role: targetRole,
+    status: nextStatus || claim.STATUS,
     assignedTo: assignee,
+    previousAssignee: claim.ASSIGNED_TO || null,
+  };
+};
+
+/**
+ * Return a claim to the allocation pool — clears assignee and reverts action → allocation status.
+ */
+exports.unassignClaim = async ({ claimNumber, role, actingUser }) => {
+  if (!claimNumber || !role) {
+    const err = new Error("claimNumber and role are required");
+    err.status = 400;
+    throw err;
+  }
+
+  const [rows] = await db.query(
+    `
+      SELECT
+        CLAIM_NUMBER,
+        POLICY_ID,
+        COALESCE(status, CLAIM_STATUS) AS STATUS,
+        ROLE,
+        ASSIGNED_TO,
+        ASSESSMENT_USERNAME,
+        APPROVER_USERNAME
+      FROM claims_poc.claims
+      WHERE CLAIM_NUMBER = ?
+    `,
+    [claimNumber]
+  );
+
+  const claim = rows && rows[0];
+  if (!claim) {
+    const err = new Error("Claim not found");
+    err.status = 404;
+    throw err;
+  }
+
+  const normalizedStatus = String(claim.STATUS || "").toLowerCase();
+  const normPoolRole = (r) => {
+    const n = String(r || "").toLowerCase().replace(/_/g, " ").replace(/-/g, " ").trim();
+    if (n.includes("pre") && n.includes("assessor")) return "Pre Assessor";
+    if (n === "assessor" || (n.includes("assessor") && !n.includes("pre"))) return "Assessor";
+    if (n === "verifier" || n.includes("verifier")) return "Verifier";
+    return String(r || "").trim();
+  };
+  const claimRole = normPoolRole(claim.ROLE);
+  const targetRole = normPoolRole(role);
+
+  if (claimRole.toLowerCase() !== targetRole.toLowerCase()) {
+    const err = new Error("Claim is not currently in the selected role pool");
+    err.status = 400;
+    throw err;
+  }
+
+  const hasAssignee = Boolean(String(claim.ASSIGNED_TO || "").trim());
+  if (!hasAssignee) {
+    const err = new Error("Claim is not assigned to anyone");
+    err.status = 400;
+    throw err;
+  }
+
+  let nextStatus = String(claim.STATUS || "").trim();
+  if (targetRole === "Assessor") {
+    if (normalizedStatus !== "pending assessor action") {
+      const err = new Error("Only claims in Pending Assessor Action can be returned to the pool");
+      err.status = 400;
+      throw err;
+    }
+    nextStatus = "Pending Assessor Allocation";
+  } else if (targetRole === "Verifier") {
+    if (normalizedStatus !== "pending verifier action") {
+      const err = new Error("Only claims in Pending Verifier Action can be returned to the pool");
+      err.status = 400;
+      throw err;
+    }
+    nextStatus = "Pending Verifier Allocation";
+  } else if (targetRole === "Pre Assessor") {
+    if (!normalizedStatus.startsWith("pending")) {
+      const err = new Error("Claim status is not pending for Pre Assessor");
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  let updateSql =
+    "UPDATE claims_poc.claims SET ASSIGNED_TO = NULL, MODIFIED_BY = ?, MODIFIED_AT = NOW()";
+  const params = [actingUser || "superuser"];
+
+  if (targetRole === "Assessor") {
+    updateSql += ", ASSESSMENT_USERNAME = NULL, status = ?, CLAIM_STATUS = ?";
+    params.push(nextStatus, nextStatus);
+  } else if (targetRole === "Verifier") {
+    updateSql += ", APPROVER_USERNAME = NULL, status = ?, CLAIM_STATUS = ?";
+    params.push(nextStatus, nextStatus);
+  }
+
+  updateSql += " WHERE CLAIM_NUMBER = ?";
+  params.push(claimNumber);
+
+  await db.execute(updateSql, params);
+
+  try {
+    await StatusHistory.create({
+      CLAIM_NUMBER: claimNumber,
+      POLICY_NUMBER: claim.POLICY_ID || "",
+      MODIFIED_BY: actingUser || "superuser",
+      STATUS: nextStatus,
+    });
+  } catch (e) {
+    logger.error(`unassignClaim StatusHistory error: ${e.message}`);
+  }
+
+  return {
+    claimNumber,
+    policyNumber: claim.POLICY_ID,
+    role: targetRole,
+    status: nextStatus,
+    assignedTo: null,
+    previousAssignee: claim.ASSIGNED_TO || null,
   };
 };
 

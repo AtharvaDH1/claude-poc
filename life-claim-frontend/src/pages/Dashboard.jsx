@@ -2,19 +2,20 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Navigate } from 'react-router-dom'
-import { isAdminOnlyUser, hasAdminRole, postLoginPath } from '../util/loginHelpers'
+import { isSuperUserOnlyUser, hasSuperUserRole, postLoginPath } from '../util/loginHelpers'
 import { openClaimWorkspace } from '../util/navigation'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import dashboardService from '../services/dashboardService'
-import { workflowStatusFromRow } from '../util/claimSearchMap'
+import { classifyClaimBucket } from '../util/dashboardMetrics'
+import { buildClaimTimelineSteps, matchesDateFilter } from '../util/claimDaysOpen'
+import { coalesceRoles, resolveWorkflowRole } from '../util/workflowRole'
 import { mapDashboardActivities } from '../util/mapDashboardActivity'
 import { getActivityStyle } from '../util/activityStyles'
 import { changeClaimStatus } from '../services/claimsService'
 import {
   Clock, CheckCircle, XCircle, Layers,
-  Download, Eye, Edit3,
-  TrendingUp, TrendingDown, ClipboardList,
+  Eye, Edit3,
   AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, IndianRupee,
   Plus, FileText, X, Search, Star, CheckSquare
 } from 'lucide-react'
@@ -39,10 +40,10 @@ const T = {
 }
 
 const METRICS = [
-  { key: 'total',      label: 'Total Claims',     icon: Layers,       accent: '#1D4ED8', light: '#EFF6FF',  change: +12 },
-  { key: 'pending',    label: 'Pending Review',   icon: Clock,        accent: '#D97706', light: '#FFFBEB',  change: -5  },
-  { key: 'approved',   label: 'Approved',         icon: CheckCircle,  accent: '#059669', light: '#ECFDF5',  change: +18 },
-  { key: 'rejected',   label: 'Rejected',         icon: XCircle,      accent: '#DC2626', light: '#FEF2F2',  change: +2  },
+  { key: 'total',      label: 'Total Claims',     icon: Layers,       accent: '#1D4ED8', light: '#EFF6FF' },
+  { key: 'pending',    label: 'Pending Review',   icon: Clock,        accent: '#D97706', light: '#FFFBEB' },
+  { key: 'approved',   label: 'Approved',         icon: CheckCircle,  accent: '#059669', light: '#ECFDF5' },
+  { key: 'rejected',   label: 'Rejected',         icon: XCircle,      accent: '#DC2626', light: '#FEF2F2' },
 ]
 
 const DATE_FILTERS = ['All', 'Today', 'This Week', 'This Month']
@@ -84,10 +85,9 @@ function highlight(text, query) {
 }
 
 /* ── MetricCard ── */
-function MetricCard({ config, value, change }) {
+function MetricCard({ config, value }) {
   const count = useCountUp(value)
   const Icon = config.icon
-  const up = change > 0
   const [hov, setHov] = useState(false)
   return (
     <div
@@ -108,15 +108,6 @@ function MetricCard({ config, value, change }) {
         }}>
           <Icon size={18} style={{ color: config.accent }} />
         </div>
-        <div style={{
-          display:'flex', alignItems:'center', gap:'4px',
-          background: up ? '#ECFDF5' : '#FEF2F2',
-          color: up ? '#059669' : '#DC2626',
-          fontSize:'11px', fontWeight:700, padding:'3px 8px', borderRadius:'99px',
-        }}>
-          {up ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
-          {Math.abs(change)}%
-        </div>
       </div>
       <div style={{ fontSize:'32px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.03em', lineHeight:1 }}>
         {count.toLocaleString()}
@@ -127,8 +118,16 @@ function MetricCard({ config, value, change }) {
 }
 
 /* ── Value Metric Card (₹) ── */
-function ValueCard({ value, sla, overdue }) {
-  const count = useCountUp(Math.round(value / 1e5))
+function formatPipelineValue(value) {
+  const n = Number(value) || 0
+  if (n >= 1e7) return `₹${(n / 1e7).toFixed(1)}Cr+`
+  if (n >= 1e5) return `₹${Math.round(n / 1e5)}L+`
+  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)}K`
+  return n > 0 ? `₹${n.toLocaleString('en-IN')}` : '₹0'
+}
+
+function ValueCard({ value, sla, overdue, avgDays }) {
+  const display = formatPipelineValue(value)
   return (
     <div style={{
       background: 'linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 100%)',
@@ -144,7 +143,7 @@ function ValueCard({ value, sla, overdue }) {
         </div>
       </div>
       <div style={{ fontSize:'28px', fontWeight:800, color:'#fff', letterSpacing:'-0.03em', lineHeight:1 }}>
-        ₹{count}L+
+        {display}
       </div>
       <div style={{ fontSize:'13px', color:'rgba(255,255,255,0.55)', marginTop:'6px', fontWeight:500 }}>Claims in pipeline</div>
       <div style={{ marginTop:'14px', paddingTop:'12px', borderTop:'1px solid rgba(255,255,255,0.12)', display:'flex', justifyContent:'space-between' }}>
@@ -159,7 +158,7 @@ function ValueCard({ value, sla, overdue }) {
         </div>
         <div style={{ width:'1px', background:'rgba(255,255,255,0.12)' }} />
         <div style={{ textAlign:'center' }}>
-          <div style={{ fontSize:'16px', fontWeight:800, color:'#fff' }}>3.2d</div>
+          <div style={{ fontSize:'16px', fontWeight:800, color:'#fff' }}>{avgDays}d</div>
           <div style={{ fontSize:'10px', color:'rgba(255,255,255,0.45)', fontWeight:600, marginTop:'2px' }}>Avg. Days</div>
         </div>
       </div>
@@ -211,12 +210,7 @@ const ChartTip = ({ active, payload, label }) => {
 /* ── Hover Preview ── */
 function HoverPreview({ claim, x, y }) {
   if (!claim) return null
-  const steps = [
-    { label:'Claim Registered',    date: claim.created,  done:true },
-    { label:'Under Assessment',    date:'2025-05-29',    done: claim.status !== 'Pending' },
-    { label: claim.status === 'Approved' ? 'Approved & Closed' : claim.status === 'Rejected' ? 'Claim Rejected' : 'Awaiting Decision',
-      date: claim.modified, done: claim.status !== 'Pending', active: claim.status === 'Pending' },
-  ]
+  const steps = buildClaimTimelineSteps(claim)
   // Keep preview within viewport
   const left = x + 280 > window.innerWidth ? x - 296 : x + 18
   const top  = Math.max(8, Math.min(y - 80, window.innerHeight - 320))
@@ -283,42 +277,48 @@ export default function Dashboard() {
   const [hoverClaim, setHoverClaim] = useState(null)
   const [mouse, setMouse] = useState({ x:0, y:0 })
   const [alertDismissed, setAlertDismissed] = useState(false)
-  const [claims, setClaims]   = useState([])
-  const [metrics, setMetrics] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 })
+  const [allClaims, setAllClaims] = useState([])
+  const [metrics, setMetrics] = useState({
+    total: 0, pending: 0, approved: 0, rejected: 0,
+    totalPipelineValue: 0, slaCompliance: 0, overdueCount: 0, avgDaysOpen: 0,
+    approvalRate: 0, fraudFlags: 0,
+  })
+  const [chartData, setChartData] = useState([])
+  const [chartTrendSum, setChartTrendSum] = useState(0)
+  const [pieData, setPieData] = useState([])
+  const [typeData, setTypeData] = useState([])
   const [activity, setActivity] = useState([])
   const [, setTimeTick] = useState(0)
   const [apiLoading, setApiLoading] = useState(false)
+
+  const workflowRole = resolveWorkflowRole(coalesceRoles(user?.roles, user?.role))
+  const dashboardGreeting = workflowRole ? 'Hello' : `Good morning, ${user?.name?.split(' ')[0]} 👋`
 
   useEffect(() => {
     if (!user?.username) return
     setApiLoading(true)
     Promise.all([
       dashboardService.getDashboardStats(user.username, user.roles || []),
-      dashboardService.getRecentClaims(user.username, 20),
       dashboardService.getRecentActivities(),
     ])
-      .then(([stats, recentClaims, activities]) => {
+      .then(([stats, activities]) => {
         setMetrics({
           total: stats.totalClaims || 0,
           pending: stats.pendingClaims || 0,
           approved: stats.approvedClaims || 0,
           rejected: stats.rejectedClaims || 0,
+          totalPipelineValue: stats.totalPipelineValue || 0,
+          slaCompliance: stats.slaCompliance || 0,
+          overdueCount: stats.overdueCount || 0,
+          avgDaysOpen: stats.avgDaysOpen || 0,
+          approvalRate: stats.approvalRate || 0,
+          fraudFlags: stats.fraudFlags || 0,
         })
-        setClaims((recentClaims || []).map(c => {
-          const ws = workflowStatusFromRow(c)
-          return {
-          id:       c.CLAIM_NUMBER || c.id,
-          policy:   c.POLICY_ID    || c.policy,
-          claimant: c.CREATED_BY   || c.claimant || 'Unknown',
-          type:     c.CLAIM_TYPE   || c.type     || 'Death Claim',
-          status:   ws === '—' ? 'Pending' : ws,
-          priority: c.priority     || 'Normal',
-          amount:   c.amount       || 0,
-          created:  (c.CREATED_AT  || c.created  || '').toString().split('T')[0],
-          modified: (c.MODIFIED_AT || c.modified || '').toString().split('T')[0],
-          daysOpen: c.daysOpen || 0,
-          }
-        }))
+        setChartData(stats.monthlyTrend || [])
+        setChartTrendSum(stats.monthlyTrendSum || 0)
+        setPieData(stats.pieData || [])
+        setTypeData(stats.typeBreakdown || [])
+        setAllClaims(stats.allClaims || [])
         setActivity(mapDashboardActivities(activities))
       })
       .catch(() => toast('error', 'Load Failed', 'Could not load dashboard data.'))
@@ -331,73 +331,53 @@ export default function Dashboard() {
   }, [])
 
   const highPriorityClaims = useMemo(
-    () => claims.filter(c => c.priority === 'High' && String(c.status || '').toLowerCase().includes('pending')),
-    [claims]
+    () => allClaims.filter(c => c.priority === 'High' && c.bucket === 'pending'),
+    [allClaims]
   )
 
   const derivedMetrics = useMemo(() => {
-    const total = metrics.total || 0
-    const totalValue = claims.reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
+    const pending = metrics.pending || 0
     const approved = metrics.approved || 0
+    const rejected = metrics.rejected || 0
     return {
-      total,
-      totalValue,
-      slaCompliance: total ? Math.round((approved / total) * 100) : 0,
-      overdueCount: claims.filter(c => Number(c.daysOpen) > 10).length,
+      total: metrics.total || 0,
+      statusTotal: pending + approved + rejected,
+      totalValue: metrics.totalPipelineValue || 0,
+      slaCompliance: metrics.slaCompliance || 0,
+      overdueCount: metrics.overdueCount || 0,
+      avgDaysOpen: metrics.avgDaysOpen || 0,
     }
-  }, [claims, metrics])
+  }, [metrics])
 
-  const chartData = useMemo(() => {
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-    const buckets = {}
-    claims.forEach(c => {
-      if (!c.created) return
-      const d = new Date(c.created)
-      if (Number.isNaN(d.getTime())) return
-      const key = monthNames[d.getMonth()]
-      if (!buckets[key]) buckets[key] = { name: key, approved: 0, rejected: 0, pending: 0 }
-      const status = String(c.status || '').toLowerCase()
-      if (status.includes('approv')) buckets[key].approved++
-      else if (status.includes('reject')) buckets[key].rejected++
-      else buckets[key].pending++
-    })
-    const ordered = monthNames.map(m => buckets[m] || { name: m, approved: 0, rejected: 0, pending: 0 })
-    return ordered.filter(m => m.approved + m.rejected + m.pending > 0).slice(-6)
-  }, [claims])
+  const typeTotal = useMemo(
+    () => typeData.reduce((sum, d) => sum + (d.value || 0), 0),
+    [typeData]
+  )
 
-  const pieData = useMemo(() => [
-    { name: 'Approved', value: metrics.approved || 0, color: '#059669' },
-    { name: 'Pending', value: metrics.pending || 0, color: '#D97706' },
-    { name: 'Rejected', value: metrics.rejected || 0, color: '#DC2626' },
-  ].filter(d => d.value > 0), [metrics])
+  const statusFilterMatch = useCallback((status, filter, roles) => {
+    const bucket = classifyClaimBucket({ status, STATUS: status }, roles)
+    if (filter === 'All') return true
+    if (filter === 'Pending') return bucket === 'pending'
+    if (filter === 'Approved') return bucket === 'approved'
+    if (filter === 'Rejected') return bucket === 'rejected'
+    return true
+  }, [])
 
-  const typeData = useMemo(() => {
-    const types = {}
-    claims.forEach(c => {
-      const t = c.type || 'Other'
-      types[t] = (types[t] || 0) + 1
-    })
-    const colors = ['#1D4ED8', '#0891B2', '#7C3AED', '#059669', '#D97706']
-    return Object.entries(types).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }))
-  }, [claims])
+  const userRoles = user?.roles || []
+  const showWorkClaimAction = hasRole(['Assessor', 'Verifier'])
 
-  /* ── Sort handler ── */
   const handleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
   }
 
-  /* ── Filtered + sorted claims ── */
-  const filtered = claims
+  const filtered = allClaims
     .filter(c => {
       const q = search.toLowerCase()
       const matchQ = !q || c.id.toLowerCase().includes(q) || c.claimant.toLowerCase().includes(q) || c.policy.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)
-      const st = String(c.status || '').toLowerCase()
-      const matchS = statusFilter === 'All'
-        || (statusFilter === 'Pending' && st.includes('pending'))
-        || (statusFilter === 'Approved' && (st.includes('approv') || st.includes('payout completed')))
-        || (statusFilter === 'Rejected' && (st.includes('reject') || st.includes('repudi')))
-      return matchQ && matchS
+      const matchS = statusFilterMatch(c.status, statusFilter, userRoles)
+      const matchD = matchesDateFilter(c.createdRaw || c.created, dateFilter)
+      return matchQ && matchS && matchD
     })
     .sort((a, b) => {
       let av = a[sortCol], bv = b[sortCol]
@@ -408,12 +388,8 @@ export default function Dashboard() {
       return 0
     })
 
-  /* ── Export ── */
-  const handleExport = () => {
-    toast('info', 'Export Started', 'Your report is being generated...')
-    setTimeout(() => toast('success', 'Report Ready', 'claims_report.csv downloaded.'), 2000)
-  }
-
+  const hasTableFilters = Boolean(search) || statusFilter !== 'All' || dateFilter !== 'All'
+  const tableRows = hasTableFilters ? filtered : filtered.slice(0, 20)
 
   /* ── SortIcon ── */
   const SortIcon = ({ col }) => {
@@ -439,8 +415,8 @@ export default function Dashboard() {
     </div>
   )
 
-  if (isAdminOnlyUser(user?.roles)) {
-    return <Navigate to={postLoginPath(user?.roles)} replace />
+  if (isSuperUserOnlyUser(user?.roles, user?.username)) {
+    return <Navigate to={postLoginPath(user?.roles, user?.username)} replace />
   }
 
   return (
@@ -471,30 +447,22 @@ export default function Dashboard() {
                 </button>
               </>
             )}
-            {hasAdminRole(user?.roles) && (
-              <button type="button" onClick={() => navigate('/admin')}
+            {hasSuperUserRole(user?.roles) && (
+              <button type="button" onClick={() => navigate('/superuser')}
                 style={{ padding:'9px 16px', borderRadius:'8px', border:'none', background:T.primary, fontSize:'12px', fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.25)' }}>
-                Go to Admin Overview
+                Super User Overview
               </button>
             )}
           </div>
 
           {/* Page heading */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'20px' }}>
-            <div>
-              <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em' }}>
-                Good morning, {user?.name?.split(' ')[0]} 👋
-              </h1>
-              <p style={{ fontSize:'13px', color:T.textMuted, marginTop:'4px', fontWeight:500 }}>
-                Here's an overview of all claims activity.
-              </p>
-            </div>
-            <button type="button" onClick={handleExport}
-              style={{ display:'flex', alignItems:'center', gap:'7px', padding:'9px 18px', borderRadius:'8px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(29,78,216,0.3)', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.background=T.primaryHover; e.currentTarget.style.transform='translateY(-1px)' }}
-              onMouseLeave={e => { e.currentTarget.style.background=T.primary; e.currentTarget.style.transform='' }}>
-              <Download size={14}/> Export Report
-            </button>
+          <div style={{ marginBottom:'20px' }}>
+            <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em' }}>
+              {dashboardGreeting}
+            </h1>
+            <p style={{ fontSize:'13px', color:T.textMuted, marginTop:'4px', fontWeight:500 }}>
+              Here's an overview of all claims activity.
+            </p>
           </div>
 
           {/* ── PRIORITY ALERT BANNER ── */}
@@ -524,8 +492,8 @@ export default function Dashboard() {
 
           {/* ── METRICS ROW ── */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'16px', marginBottom:'20px' }}>
-            {METRICS.map(m => <MetricCard key={m.key} config={m} value={metrics[m.key] || 0} change={m.change}/>)}
-            <ValueCard value={derivedMetrics.totalValue} sla={derivedMetrics.slaCompliance} overdue={derivedMetrics.overdueCount}/>
+            {METRICS.map(m => <MetricCard key={m.key} config={m} value={metrics[m.key] || 0}/>)}
+            <ValueCard value={derivedMetrics.totalValue} sla={derivedMetrics.slaCompliance} overdue={derivedMetrics.overdueCount} avgDays={derivedMetrics.avgDaysOpen}/>
           </div>
 
           {/* ── CHARTS ROW ── */}
@@ -533,7 +501,7 @@ export default function Dashboard() {
 
             {/* Bar chart */}
             {card(<>
-              {cardHeader('Claims Trend','Last 6 months',
+              {cardHeader('Claims Trend', `Last 6 months · ${chartTrendSum} of ${derivedMetrics.total} claims registered`,
                 <div style={{ display:'flex', gap:'14px' }}>
                   {[['#059669','Approved'],['#D97706','Pending'],['#DC2626','Rejected']].map(([c,l])=>(
                     <div key={l} style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'11px', fontWeight:600, color:T.textMuted }}>
@@ -559,7 +527,7 @@ export default function Dashboard() {
 
             {/* Donut */}
             {card(<>
-              {cardHeader('Status Split',`${derivedMetrics.total} total`)}
+              {cardHeader('Status Split', `${derivedMetrics.statusTotal} claims`)}
               <div style={{ padding:'12px 20px 16px' }}>
                 <ResponsiveContainer width="100%" height={140}>
                   <PieChart>
@@ -578,7 +546,7 @@ export default function Dashboard() {
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
                         <span style={{ fontSize:'12px', fontWeight:800, color:T.textPrimary }}>{d.value}</span>
-                        <span style={{ fontSize:'10px', color:T.textSubtle }}>{derivedMetrics.total ? Math.round(d.value/derivedMetrics.total*100) : 0}%</span>
+                        <span style={{ fontSize:'10px', color:T.textSubtle }}>{d.pct ?? 0}%</span>
                       </div>
                     </div>
                   ))}
@@ -588,7 +556,7 @@ export default function Dashboard() {
 
             {/* Claim type breakdown */}
             {card(<>
-              {cardHeader('By Type','')}
+              {cardHeader('By Type', `${typeTotal || derivedMetrics.total} claims`)}
               <div style={{ padding:'12px 16px', display:'flex', flexDirection:'column', gap:'12px' }}>
                 {(typeData.length ? typeData : [{ name:'No claims', value:1, color:'#E2E8F0' }]).map(d => (
                   <div key={d.name}>
@@ -596,10 +564,10 @@ export default function Dashboard() {
                       <span style={{ fontSize:'12px', fontWeight:600, color:T.textSecondary }}>{d.name}</span>
                       <span style={{ fontSize:'12px', fontWeight:800, color:T.textPrimary }}>{d.value}</span>
                     </div>
-                    <div style={{ height:'5px', borderRadius:'99px', background:'#F1F5F9', overflow:'hidden' }}>
-                      <div style={{ height:'100%', borderRadius:'99px', background:d.color, width:`${derivedMetrics.total ? Math.round(d.value/derivedMetrics.total*100) : 0}%`, transition:'width 1s ease' }}/>
+                      <div style={{ height:'5px', borderRadius:'99px', background:'#F1F5F9', overflow:'hidden' }}>
+                      <div style={{ height:'100%', borderRadius:'99px', background:d.color, width:`${d.pct ?? 0}%`, transition:'width 1s ease' }}/>
                     </div>
-                    <div style={{ fontSize:'10px', color:T.textSubtle, marginTop:'3px', fontWeight:500 }}>{derivedMetrics.total ? Math.round(d.value/derivedMetrics.total*100) : 0}% of total</div>
+                    <div style={{ fontSize:'10px', color:T.textSubtle, marginTop:'3px', fontWeight:500 }}>{d.pct ?? 0}% of claims</div>
                   </div>
                 ))}
               </div>
@@ -619,7 +587,11 @@ export default function Dashboard() {
                       Recent Claims
                       {search && <span style={{ fontSize:'12px', fontWeight:600, color:T.primary, marginLeft:'8px' }}>{filtered.length} results for "{search}"</span>}
                     </div>
-                    <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'2px', fontWeight:500 }}>{filtered.length} of {claims.length} records</div>
+                    <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'2px', fontWeight:500 }}>
+                      {hasTableFilters
+                        ? `${tableRows.length} matching · ${derivedMetrics.total} total claims`
+                        : `${tableRows.length} of ${allClaims.length} recent · ${derivedMetrics.total} total claims`}
+                    </div>
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
                     {/* Date filter */}
@@ -679,13 +651,13 @@ export default function Dashboard() {
                           <div style={{ fontSize:'13px', color:T.textSubtle, marginTop:'4px' }}>
                             Try adjusting your search or filter
                           </div>
-                          <button onClick={() => { setSearch(''); setStatusFilter('All') }}
+                          <button onClick={() => { setSearch(''); setStatusFilter('All'); setDateFilter('All') }}
                             style={{ marginTop:'16px', padding:'8px 20px', borderRadius:'8px', border:`1px solid ${T.border}`, background:T.card, fontSize:'13px', fontWeight:600, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
                             Clear filters
                           </button>
                         </td>
                       </tr>
-                    ) : filtered.map(claim => {
+                    ) : tableRows.map(claim => {
                       const pr = { High:{ c:'#DC2626', bg:'#FEF2F2' }, Normal:{ c:'#64748B', bg:'#F8FAFC' }, Low:{ c:'#059669', bg:'#ECFDF5' } }[claim.priority] || {}
                       const overdue = claim.daysOpen > 10
                       return (
@@ -715,10 +687,10 @@ export default function Dashboard() {
                             </span>
                           </td>
                           <td style={{ padding:'12px 16px' }}>
-                            <div style={{ display:'flex', gap:'4px', opacity:0, transition:'opacity 0.15s' }} className="row-actions">
+                            <div style={{ display:'flex', gap:'4px' }}>
                               {[
                                 { I:Eye, title:'View (read-only)', hc:'#1D4ED8', hb:'#EFF6FF', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'claimSearch' }) },
-                                { I:Edit3, title:'Work claim', hc:'#059669', hb:'#ECFDF5', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) },
+                                ...(showWorkClaimAction ? [{ I:Edit3, title:'Work claim', hc:'#059669', hb:'#ECFDF5', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) }] : []),
                               ].map(({I,title,hc,hb,fn},i)=>(
                                 <button key={i} title={title} onClick={e => { e.stopPropagation(); fn() }}
                                   style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:'#F8FAFC', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
@@ -739,7 +711,7 @@ export default function Dashboard() {
               {/* Pagination */}
               <div style={{ padding:'12px 16px', borderTop:`1px solid ${T.borderSubtle}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <span style={{ fontSize:'12px', color:T.textMuted, fontWeight:500 }}>
-                  Showing <strong>{Math.min(filtered.length,10)}</strong> of <strong>{filtered.length}</strong> results
+                  Showing <strong>{tableRows.length}</strong> of <strong>{filtered.length}</strong> results
                 </span>
                 <div style={{ display:'flex', gap:'4px' }}>
                   {[1,2,3].map(p=>(
@@ -753,7 +725,7 @@ export default function Dashboard() {
             <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
 
               {card(<>
-                {cardHeader('Activity',undefined,
+                {cardHeader('Activity', 'Last 24 hours',
                   <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
                     <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:'#EF4444', animation:'pulseRed 1.5s infinite' }}/>
                     <span style={{ fontSize:'11px', fontWeight:700, color:'#EF4444' }}>LIVE</span>
@@ -762,7 +734,7 @@ export default function Dashboard() {
                 <div style={{ padding:'12px 16px', display:'flex', flexDirection:'column', gap:'12px' }}>
                   {!activity.length && (
                     <div style={{ fontSize:'12px', color:T.textMuted, textAlign:'center', padding:'16px 8px' }}>
-                      No recent claim activity yet. Updates appear here when claims are registered or worked.
+                      No claim activity in the last 24 hours.
                     </div>
                   )}
                   {activity.map(a => {
@@ -785,10 +757,10 @@ export default function Dashboard() {
               {/* Quick stats */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
                 {[
-                  { label:'Approval Rate', value:'94%',  color:'#059669', bg:'#ECFDF5', border:'#A7F3D0', icon:'✅' },
-                  { label:'SLA Compliance',value:'91%',  color:'#1D4ED8', bg:'#EFF6FF', border:'#BFDBFE', icon:'🎯' },
-                  { label:'Fraud Flags',   value:'2',    color:'#DC2626', bg:'#FEF2F2', border:'#FECACA', icon:'🚩' },
-                  { label:'Avg. Days',     value:'3.2d', color:'#D97706', bg:'#FFFBEB', border:'#FDE68A', icon:'⏱️' },
+                  { label:'Approval Rate', value:`${metrics.approvalRate || 0}%`, color:'#059669', bg:'#ECFDF5', border:'#A7F3D0', icon:'✅' },
+                  { label:'SLA Compliance',value:`${metrics.slaCompliance || 0}%`, color:'#1D4ED8', bg:'#EFF6FF', border:'#BFDBFE', icon:'🎯' },
+                  { label:'High Priority', value:String(metrics.fraudFlags || 0), color:'#DC2626', bg:'#FEF2F2', border:'#FECACA', icon:'🚩' },
+                  { label:'Avg. Days',     value:`${metrics.avgDaysOpen || 0}d`, color:'#D97706', bg:'#FFFBEB', border:'#FDE68A', icon:'⏱️' },
                 ].map(s=>(
                   <div key={s.label} style={{ borderRadius:'10px', padding:'14px', background:s.bg, border:`1px solid ${s.border}`, cursor:'default', transition:'transform 0.15s' }}
                     onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
@@ -806,9 +778,6 @@ export default function Dashboard() {
       {/* Overlays */}
       <HoverPreview claim={hoverClaim} x={mouse.x} y={mouse.y}/>
 
-      <style>{`
-        tr:hover .row-actions { opacity: 1 !important; }
-      `}</style>
     </AppLayout>
   )
 }

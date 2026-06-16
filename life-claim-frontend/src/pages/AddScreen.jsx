@@ -57,7 +57,7 @@ function TabNav({ active, setActive }) {
   )
 }
 
-/** Section I — ADD / CAPS (Assessor & Verifier). Separate from life-claim /registration-fetch. */
+/** Advance Intelligence — CAPS workflow (Assessor & Verifier). Separate from life-claim /registration-fetch. */
 export default function AddScreen() {
   const toast = useToast()
   const [activeTab, setActiveTab] = useState('case-search')
@@ -67,10 +67,10 @@ export default function AddScreen() {
       <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }}>
         <div style={{ marginBottom: '24px' }}>
           <h1 style={{ fontSize: '22px', fontWeight: 800, color: T.textPrimary, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
-            Advance Investigation
+            Advance Intelligence
           </h1>
           <p style={{ fontSize: '13px', color: T.textMuted, fontWeight: 500, margin: 0, lineHeight: 1.5 }}>
-            Supplemental referral / exclusion workflow · case ids in <code>caps_add_details</code> · open cases at <strong>/case/:id</strong> (not CL claim workspace).
+            CAPS referral and exclusion workflow for assessors and verifiers.
           </p>
         </div>
 

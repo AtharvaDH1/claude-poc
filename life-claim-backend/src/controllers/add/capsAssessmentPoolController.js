@@ -1,4 +1,6 @@
 const capsAssessmentPoolDOA = require('../../dataAccess/add/capsAssessmentPoolDoa');
+const { hasSuperUserAccess } = require('../../util/superuserRoles');
+const { extractKeycloakRoles, extractKeycloakUsername } = require('../../util/keycloakRoles');
 
 const dataEnrichmentService = require('../../services/add/dataEnrichmentService');
 const exposeErrorDetails = process.env.NODE_ENV !== 'production';
@@ -37,8 +39,9 @@ const getCaseDetails = async (req, res) => {
         
         // Ensure req.user exists before destructuring, providing fallbacks for Keycloak tokens
         const user = req.user || {};
-        const username = user.username || (req.kauth && req.kauth.grant && req.kauth.grant.access_token.content.preferred_username) || '';
-        const roles = user.roles || (req.kauth && req.kauth.grant && req.kauth.grant.access_token.content.realm_access.roles) || [];
+        const tokenContent = req.kauth?.grant?.access_token?.content || {};
+        const username = user.username || extractKeycloakUsername(tokenContent);
+        const roles = user.roles?.length ? user.roles : extractKeycloakRoles(tokenContent);
 
         if (!caseId) {
             return res.status(400).json({ success: false, error: 'Case ID is required' });
@@ -51,8 +54,8 @@ const getCaseDetails = async (req, res) => {
         }
 
         // Security: IDOR Protection
-        const isAdmin = Array.isArray(roles) ? roles.includes('admin') || roles.includes('Admin') : roles === 'admin';
-        if (!isAdmin && username) {
+        const isSuper = hasSuperUserAccess(Array.isArray(roles) ? roles : [roles], username);
+        if (!isSuper && username) {
             // Check if the case is assigned to the current user
             if (data.caseInfo.assignedTo && data.caseInfo.assignedTo !== username) {
                 console.warn(`Forceful Browsing attempt: User ${username} tried to access unassigned case ${caseId}`);

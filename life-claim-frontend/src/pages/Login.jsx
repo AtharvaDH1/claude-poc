@@ -12,6 +12,8 @@ import {
 } from '../util/loginHelpers'
 import { isCaptchaOptional } from '../config/appEnv'
 import { COMPANY } from '../config/companyBrand'
+import BrandLogo from '../components/BrandLogo'
+import { isRetiredAdminUsername } from '../util/superuserRole'
 
 const CAPTCHA_UNAVAILABLE = '__CAPTCHA_UNAVAILABLE__'
 
@@ -23,46 +25,6 @@ const FEATURES = [
   { icon: '📊', text: 'Real-time dashboards and claim analytics' },
   { icon: '🛡️', text: 'Auto-lockout after failed attempts with session monitoring' },
 ]
-
-const LIVE_STATS = [
-  { label: 'Claims Today',    value: 48,   decimals: 0, prefix: '',  suffix: ''   },
-  { label: 'Pipeline Value',  value: 48.7, decimals: 1, prefix: '₹', suffix: 'L' },
-  { label: 'SLA Compliance',  value: 94.2, decimals: 1, prefix: '',  suffix: '%' },
-  { label: 'Avg. Resolution', value: 3.2,  decimals: 1, prefix: '',  suffix: 'd' },
-]
-
-function useCountUp(target, decimals = 0, duration = 1600, delay = 0) {
-  const [v, setV] = useState(0)
-  useEffect(() => {
-    const t = setTimeout(() => {
-      let raf
-      const t0 = performance.now()
-      const tick = now => {
-        const p = Math.min((now - t0) / duration, 1)
-        setV(parseFloat(((1 - Math.pow(1 - p, 4)) * target).toFixed(decimals)))
-        if (p < 1) raf = requestAnimationFrame(tick)
-      }
-      raf = requestAnimationFrame(tick)
-      return () => cancelAnimationFrame(raf)
-    }, delay)
-    return () => clearTimeout(t)
-  }, [target, duration, delay, decimals])
-  return v
-}
-
-function StatTile({ stat, delay }) {
-  const val = useCountUp(stat.value, stat.decimals, 1600, delay)
-  return (
-    <div style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'16px', backdropFilter:'blur(8px)' }}>
-      <div style={{ fontSize:'26px', fontWeight:900, color:'#fff', letterSpacing:'-0.03em', lineHeight:1 }}>
-        {stat.prefix}{val.toLocaleString()}{stat.suffix}
-      </div>
-      <div style={{ fontSize:'11px', fontWeight:600, color:'rgba(255,255,255,0.4)', marginTop:'6px', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-        {stat.label}
-      </div>
-    </div>
-  )
-}
 
 function FloatingInput({ label, type='text', value, onChange, onKeyDown, onKeyUp, autoFocus, inputRef, rightSlot, error }) {
   const [focused, setFocused] = useState(false)
@@ -121,7 +83,6 @@ export default function Login() {
   const [form,      setForm]      = useState({ username:'', password:'' })
   const [showPass,  setShowPass]  = useState(false)
   const [capsLock,  setCapsLock]  = useState(false)
-  const [rememberMe,setRememberMe]= useState(false)
   const [loading,   setLoading]   = useState(false)
   const [success,   setSuccess]   = useState(false)
   const [errors,    setErrors]    = useState({ username:'', password:'', captcha:'', general:'' })
@@ -132,11 +93,7 @@ export default function Login() {
   const [mounted,   setMounted]   = useState(false)
   const [sessionNotice, setSessionNotice] = useState('')
   const [offline, setOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false)
-  const [lastLoginAt, setLastLoginAt] = useState(null)
-
   useEffect(() => {
-    const saved = localStorage.getItem('poc_remember_user')
-    if (saved) setForm(f => ({ ...f, username: saved }))
     if (!sessionStorage.getItem('token')) {
       const staleReason = sessionStorage.getItem('auth_logout_reason')
       if (staleReason === 'session') {
@@ -163,21 +120,6 @@ export default function Login() {
     }
   }, [])
 
-  useEffect(() => {
-    const uname = form.username.trim()
-    if (uname.length < 2) {
-      setLastLoginAt(null)
-      return undefined
-    }
-    const t = setTimeout(() => {
-      authService.getLastLogin(uname).then((row) => {
-        if (row?.lastLoginAt) setLastLoginAt(row.lastLoginAt)
-        else setLastLoginAt(null)
-      }).catch(() => setLastLoginAt(null))
-    }, 400)
-    return () => clearTimeout(t)
-  }, [form.username])
-
   const handleCaps = e => setCapsLock(e.getModifierState?.('CapsLock') ?? false)
 
   const validate = () => {
@@ -199,6 +141,14 @@ export default function Login() {
       return
     }
     const uname = form.username.trim()
+    if (isRetiredAdminUsername(uname)) {
+      setErrors(p => ({
+        ...p,
+        general: 'The admin account is no longer available. Please sign in with superuser.',
+      }))
+      triggerShake()
+      return
+    }
     const localLock = getLocalLockout(uname)
     if (localLock.locked) {
       const mins = Math.max(1, Math.ceil(localLock.remainingMs / 60000))
@@ -219,10 +169,8 @@ export default function Login() {
       sessionStorage.removeItem('auth_logout_reason')
       setSessionNotice('')
       clearLocalLoginFailures(uname)
-      if (rememberMe) localStorage.setItem('poc_remember_user', uname)
-      else localStorage.removeItem('poc_remember_user')
       setSuccess(true)
-      const dest = postLoginPath(userData?.roles)
+      const dest = postLoginPath(userData?.roles, userData?.username)
       setTimeout(() => navigate(dest), 1000)
     } catch (err) {
       let msg = err.message || 'Login failed'
@@ -236,6 +184,8 @@ export default function Login() {
         } else if (r.remaining > 0) {
           msg = `Invalid username or password. ${r.remaining} attempt(s) remaining before lockout.`
         }
+      } else if (/admin account is no longer available|account_retired/i.test(msg)) {
+        msg = 'The admin account is no longer available. Please sign in with superuser.'
       } else if (/concurrent login/i.test(msg)) {
         sessionStorage.setItem('auth_logout_reason', 'concurrent')
       }
@@ -268,10 +218,8 @@ export default function Login() {
 
         {/* Logo */}
         <div style={{ position:'relative', zIndex:1, animation:'fadeUp 0.5s 0.1s ease both' }}>
-          <div style={{ background:'#fff', borderRadius:'14px', padding:'14px 18px', display:'inline-block', boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
-            <img src={COMPANY.logoPath} alt={COMPANY.name} style={{ height:'52px', width:'auto', display:'block' }} />
-          </div>
-          <div style={{ color:'rgba(255,255,255,0.45)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', marginTop:'12px' }}>
+          <BrandLogo variant="desktop" />
+          <div style={{ color:'rgba(255,255,255,0.45)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', marginTop:'10px' }}>
             {COMPANY.product}
           </div>
         </div>
@@ -291,11 +239,6 @@ export default function Login() {
           <p style={{ color:'rgba(255,255,255,0.45)', fontSize:'15px', lineHeight:1.7, maxWidth:'360px', marginBottom:'40px' }}>
             A modern platform for managing life insurance claims — from registration to resolution.
           </p>
-
-          {/* Live stats grid */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'20px' }}>
-            {LIVE_STATS.map((s, i) => <StatTile key={s.label} stat={s} delay={400 + i * 80} />)}
-          </div>
 
           {/* Features */}
           <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
@@ -335,7 +278,7 @@ export default function Login() {
 
           {/* Mobile logo */}
           <div className="lg:hidden" style={{ marginBottom:'36px' }}>
-            <img src={COMPANY.logoPath} alt={COMPANY.name} style={{ height:'44px', width:'auto', display:'block' }} />
+            <BrandLogo variant="mobile" />
             <div style={{ fontSize:'11px', fontWeight:600, color:'#64748B', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'8px' }}>
               {COMPANY.product}
             </div>
@@ -357,12 +300,6 @@ export default function Login() {
             <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
               <span style={{ fontSize:'15px', flexShrink:0 }}>📡</span>
               <div style={{ fontSize:'12px', fontWeight:600, color:'#92400E' }}>You appear to be offline.</div>
-            </div>
-          )}
-
-          {lastLoginAt && (
-            <div style={{ marginBottom:'16px', padding:'10px 14px', borderRadius:'10px', background:'#F0F9FF', border:'1px solid #BAE6FD', fontSize:'12px', fontWeight:600, color:'#0369A1' }}>
-              Your last login: {new Date(lastLoginAt).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })}
             </div>
           )}
 
@@ -420,7 +357,7 @@ export default function Login() {
               </div>
             </div>
 
-            <div style={{ marginBottom:'16px' }}>
+            <div style={{ marginBottom:'22px' }}>
               <RecaptchaField
                 key={captchaRemountKey}
                 ref={recaptchaRef}
@@ -451,21 +388,6 @@ export default function Login() {
                   reCAPTCHA unavailable on this network — you can still sign in (POC/SIT bypass).
                 </div>
               )}
-            </div>
-
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'22px' }}>
-              <label style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer', userSelect:'none' }}>
-                <div onClick={() => setRememberMe(p => !p)}
-                  style={{ width:'18px', height:'18px', borderRadius:'5px', border:`1.5px solid ${rememberMe ? '#1D4ED8' : '#D1D5DB'}`, background: rememberMe ? '#1D4ED8' : '#fff', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s', cursor:'pointer', flexShrink:0 }}>
-                  {rememberMe && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                </div>
-                <span style={{ fontSize:'13px', fontWeight:500, color:'#374151' }}>Remember username</span>
-              </label>
-              <button type="button" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'13px', fontWeight:600, color:'#1D4ED8', fontFamily:'Inter,sans-serif', padding:0, transition:'color 0.15s' }}
-                onMouseEnter={e => e.currentTarget.style.color='#1E40AF'}
-                onMouseLeave={e => e.currentTarget.style.color='#1D4ED8'}>
-                Forgot password?
-              </button>
             </div>
 
             <button type="submit" disabled={loading || success || (!captchaUnavailable && !captchaOk && !recaptchaRef.current?.getToken?.())}

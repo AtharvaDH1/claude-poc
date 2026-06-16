@@ -1,4 +1,6 @@
-/** Operational roles — admin-only users skip these (v1 manual §A1). */
+import { hasSuperUserRole, hasSuperUserAccess, isSuperUserOnlyUser } from './superuserRole'
+
+/** Operational roles — super-user-only accounts skip these. */
 const OPERATIONAL_ROLES = [
   'Pre Assessor',
   'Pre-Assessor',
@@ -10,18 +12,7 @@ const OPERATIONAL_ROLES = [
 
 const norm = (r) => String(r || '').toLowerCase().trim()
 
-export function isAdminOnlyUser(roles = []) {
-  const list = Array.isArray(roles) ? roles : []
-  const hasAdmin = list.some((r) => norm(r) === 'admin')
-  const hasOperational = list.some((r) =>
-    OPERATIONAL_ROLES.some((op) => norm(op) === norm(r))
-  )
-  return hasAdmin && !hasOperational
-}
-
-export function hasAdminRole(roles = []) {
-  return (Array.isArray(roles) ? roles : []).some((r) => norm(r) === 'admin')
-}
+export { hasSuperUserRole, hasSuperUserAccess, isSuperUserOnlyUser }
 
 export function hasOperationalRole(roles = []) {
   return (Array.isArray(roles) ? roles : []).some((r) =>
@@ -29,26 +20,28 @@ export function hasOperationalRole(roles = []) {
   )
 }
 
-/** v1 `/admin` → v2 admin landing (single AppLayout, no legacy AdminLayout). */
-export function postLoginPath(roles = []) {
-  if (isAdminOnlyUser(roles)) return '/admin'
+/** Super User landing after sign-in. */
+export function postLoginPath(roles = [], username = '') {
+  if (isSuperUserOnlyUser(roles, username)) return '/superuser'
   return '/dashboard'
 }
 
-/** Paths admin-only users may use (v2 unified shell). */
-export const ADMIN_SHELL_PATHS = [
-  '/admin',
-  '/admin/claim-search',
-  '/admin-reports',
-  '/user-management',
+/** Paths super-user-only accounts may use. */
+export const SUPERUSER_SHELL_PATHS = [
+  '/superuser',
+  '/superuser/claim-search',
   '/user-manager',
   '/audit-log',
   '/profile',
 ]
 
-export function isAdminShellPath(pathname = '') {
+export function isSuperUserShellPath(pathname = '') {
   const p = pathname || ''
-  return ADMIN_SHELL_PATHS.some(
+  if (SUPERUSER_SHELL_PATHS.some((base) => p === base || p.startsWith(`${base}/`))) {
+    return true
+  }
+  // Legacy /admin URLs still allowed until redirect runs
+  return ['/admin', '/admin/claim-search', '/admin-reports'].some(
     (base) => p === base || p.startsWith(`${base}/`)
   )
 }

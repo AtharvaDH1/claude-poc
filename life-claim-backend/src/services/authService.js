@@ -5,6 +5,7 @@ const userDao = require('../dataAccess/userDao');
 const logger = require('../config/logConfig');
 const crypto = require('crypto'); // Added crypto for session generation
 const { recordLogin, recordLogout } = require('./auditLogService');
+const { isRetiredAdminUsername } = require('../util/superuserRoles');
 const { verifyRecaptchaToken } = require('./recaptchaService');
 const CLOSE_LOGOUT_GRACE_MS = Number(process.env.CLOSE_LOGOUT_GRACE_MS || 8000);
 const pendingCloseLogoutTimers = new Map();
@@ -29,6 +30,12 @@ const clearPendingCloseLogout = (sessionId) => {
 
 const loginUser = async (username, password, captchaToken, requestMeta = {}) => {
   await verifyRecaptchaToken(captchaToken);
+
+  if (isRetiredAdminUsername(username)) {
+    const err = new Error('The admin account is no longer available. Please sign in with superuser.');
+    err.status = 403;
+    throw err;
+  }
 
   // Proceed with user lookup
   const user = await userDao.getUserByUsername(username);

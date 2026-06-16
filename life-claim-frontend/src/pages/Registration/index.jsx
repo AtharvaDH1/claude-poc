@@ -9,6 +9,7 @@ import AssessmentTab from './AssessmentTab'
 import DecisionTab from './DecisionTab'
 import RegisterFormGate from './RegisterFormGate'
 import { isPreAssessorRole } from '../../util/preAssessor'
+import { primaryOperationalRole } from '../../util/workflowRole'
 import { useToast } from '../../components/Toast'
 import { withRegistrationNotificationDefaults } from '../../config/registrationNotificationDefaults'
 
@@ -31,8 +32,8 @@ export default function Registration() {
   const isView      = !!claimId
   const { user }    = useAuth()
   const toast       = useToast()
-  const userRole    = user?.roles?.includes('Pre Assessor') ? 'Pre Assessor' : (user?.role || 'Pre Assessor')
-  const isPreAssessor = isPreAssessorRole(userRole, user?.roles)
+  const userRole = primaryOperationalRole(user?.roles, user?.role) || 'Pre Assessor'
+  const isPreAssessor = isPreAssessorRole(userRole, user?.roles) || userRole === 'pre assessor'
 
   const prefillPolicy = location.state?.policy || null
   const prefillPolicyNo = location.state?.policyNumber || prefillPolicy?.policyId || ''
@@ -173,6 +174,7 @@ export default function Registration() {
             {activeTab === 'assessment' && (
               <AssessmentTab
                 userRole={userRole}
+                isPreAssessor={isPreAssessor}
                 data={policyData}
                 update={update}
                 policy={policy}
@@ -185,6 +187,8 @@ export default function Registration() {
                 update={update}
                 policy={policy}
                 isPreAssessor={isPreAssessor}
+                userRoles={user?.roles || []}
+                userRole={userRole}
               />
             )}
           </div>

@@ -3,6 +3,7 @@
 const { getKeycloak } = require('./keycloak');
 const authService = require('../services/authService');
 const jwt = require('jsonwebtoken');
+const { extractKeycloakRoles, extractKeycloakUsername } = require('../util/keycloakRoles');
 
 const authenticate = async (req, res, next) => {
 const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || (req.cookies && req.cookies.token);
@@ -55,8 +56,8 @@ function runKeycloak(req, res, next) {
       const token = req.kauth.grant.access_token.content;
       req.user = {
         userId: token.sub,
-        username: token.preferred_username,
-        roles: token.realm_access ? token.realm_access.roles : [],
+        username: extractKeycloakUsername(token),
+        roles: extractKeycloakRoles(token),
         email: token.email
       };
     }

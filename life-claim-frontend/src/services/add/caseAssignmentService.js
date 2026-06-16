@@ -1,181 +1,149 @@
-import { API_URL } from '../../util/config';
 import wrapper from '../../util/ApiWrapper';
 import * as XLSX from 'xlsx';
+import { normalizePolicyNumber } from '../../components/add/addCaseMappers';
 
-// Utility function to get authenticated user information
 const getAuthenticatedUser = () => {
-    const username = sessionStorage.getItem("loggedUser");
+    const username = sessionStorage.getItem('loggedUser');
     if (!username) {
-        throw new Error("No authenticated user found");
+        throw new Error('No authenticated user found');
     }
     return { username };
 };
 
-// Function to read and process Excel file data
 export const readExcelFileData = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        
+
         reader.onload = (event) => {
             try {
                 const data = new Uint8Array(event.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
-                // Get the first worksheet
                 const worksheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[worksheetName];
-                // Convert worksheet to JSON with headers
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                // Check if we have data and at least 2 rows (header + data)
+
                 if (jsonData.length < 2) {
                     reject(new Error('File must contain header row and at least one data row'));
                     return;
                 }
-                
-                // Get headers from first row
-                const headers = jsonData[0];
-                // Remove header row and process data rows
-                const dataRows = jsonData.slice(1);
-                // Convert to array of objects with proper keys
-                const processedData = dataRows.map(row => {
-                    const rowData = {};
-                    headers.forEach((header, index) => {
-                        rowData[header] = row[index] || '';
-                    });
-                    return rowData;
-                }).filter(row => row.POLICY_ID && row.ASSIGNED_TO); // Filter out empty rows
-                
+
+                const headers = jsonData[0].map((h) => String(h || '').trim().toUpperCase());
+                const policyIdx = headers.indexOf('POLICY_ID');
+                const assignIdx = headers.indexOf('ASSIGNED_TO');
+                if (policyIdx < 0 || assignIdx < 0) {
+                    reject(new Error('Header row must include POLICY_ID and ASSIGNED_TO'));
+                    return;
+                }
+
+                const processedData = jsonData.slice(1).map((row) => ({
+                    POLICY_ID: String(row[policyIdx] ?? '').trim(),
+                    ASSIGNED_TO: String(row[assignIdx] ?? '').trim(),
+                })).filter((row) => row.POLICY_ID && row.ASSIGNED_TO);
+
                 resolve(processedData);
-                
             } catch (error) {
-                console.error('Error reading file:', error);
                 reject(new Error('Error reading file. Please check the file format.'));
             }
         };
-        
-        reader.onerror = () => {
-            reject(new Error('Error reading file'));
-        };
-        
+
+        reader.onerror = () => reject(new Error('Error reading file'));
         reader.readAsArrayBuffer(file);
     });
 };
 
-// get the policy_number and assigned_to from the database
-async function getPolicyNumberAndUsername(){
-    console.log('Services >> add >> caseAssignmentService >> getPolicyNumberAndUsername');
-    try{
-        const response = await wrapper.fetchWithToken(`/caseassignment/policynumberusername`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-        });
+export function downloadAssignmentTemplate() {
+    const headers = ['POLICY_ID', 'ASSIGNED_TO'];
+    const sample = [['04027489', 'atharva']];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Assignment');
+    XLSX.writeFile(wb, 'case_assignment_template.xlsx');
+}
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('result:', result);
-        return result;
-        
-    }catch(error){
-        console.error('Error in getPolicyNumberAndAssignedTo:', error);
-        throw error;
+export async function getAssignmentReferenceData() {
+    const response = await wrapper.fetchWithToken('/caseassignment/policynumberusername', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    });
+    const result = await response.json();
+    const payload = result?.data || result;
+    const policies = (payload?.responsePolicyNumber || []).map((p) =>
+        normalizePolicyNumber(typeof p === 'string' ? p : p.policy_number || p.POLICY_NUMBER)
+    ).filter(Boolean);
+    const usernames = (payload?.responseUsername || []).map((u) =>
+        typeof u === 'string' ? u : u.username || u.USERNAME
+    ).filter(Boolean);
+    return { policies, usernames };
+}
+
+export async function assignCasesToUser(caseIds, assignedTo) {
+    const { username } = getAuthenticatedUser();
+    const response = await wrapper.fetchWithToken('/caseassignment/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            caseIds,
+            assignedTo,
+            assignedBy: username,
+        }),
+    });
+    const result = await response.json();
+    if (!result?.success) {
+        throw new Error(result?.message || result?.error || 'Assignment failed');
     }
+    return result;
 }
 
 export async function CaseAssignmentService(processedData) {
-    try {
-        const { username } = getAuthenticatedUser();
-        const policyNumberAndUsername = await getPolicyNumberAndUsername();
+    const { username } = getAuthenticatedUser();
+    const { policies: dbPolicyNumber, usernames: dbUsername } = await getAssignmentReferenceData();
+    const dbPolicySet = new Set(dbPolicyNumber.map(normalizePolicyNumber));
+    const dbUserSet = new Set(dbUsername.map((u) => String(u).trim()));
 
-        const payload = policyNumberAndUsername?.data || policyNumberAndUsername;
-        const dbPolicyNumber = (payload?.responsePolicyNumber || []).map((p) =>
-            typeof p === 'string' ? p : p.policy_number || p.POLICY_NUMBER
-        ).filter(Boolean);
-        const dbUsername = (payload?.responseUsername || []).map((u) =>
-            typeof u === 'string' ? u : u.username || u.USERNAME
-        ).filter(Boolean);
-        console.log('services >> add >> caseAssignmentService >> dbPolicyNumber:', dbPolicyNumber);
-        console.log('services >> add >> caseAssignmentService >> dbUsername:', dbUsername);
+    const validationErrors = [];
+    const validData = [];
 
-        console.log('services >> add >> caseAssignmentService >> policyNumberAndUsername:', policyNumberAndUsername);
-        console.log('services >> add >> caseAssignmentService >> processedData:', processedData);
-       
-        // Validate processed data against database values
-        const validationErrors = [];
-        const validData = [];
+    processedData.forEach((item, index) => {
+        const policyId = normalizePolicyNumber(item.POLICY_ID);
+        const assignedTo = String(item.ASSIGNED_TO || '').trim();
+        const isPolicyValid = dbPolicySet.has(policyId);
+        const isUsernameValid = dbUserSet.has(assignedTo);
 
-        processedData.forEach((item, index) => {
-            const policyId = item.POLICY_ID;
-            const assignedTo = item.ASSIGNED_TO;
-            
-            // Check if policy number exists in database
-            const isPolicyValid = dbPolicyNumber.includes(policyId);
-            // Check if username exists in database
-            const isUsernameValid = dbUsername.includes(assignedTo);
-            
-            if (!isPolicyValid || !isUsernameValid) {
-                const errors = [];
-                if (!isPolicyValid) {
-                    errors.push(`Policy ID: ${policyId} not found in database`);
-                }
-                if (!isUsernameValid) {
-                    errors.push(`Username: ${assignedTo} not found in database`);
-                }
-                validationErrors.push({
-                    row: index + 2, // +2 because index starts at 0 and we skip header row
-                    policyId,
-                    assignedTo,
-                    errors
-                });
-            } else {
-                validData.push(item);
-            }
-        });
-
-        // If there are validation errors, throw an error with details
-        if (validationErrors.length > 0) {
-            const errorMessage = validationErrors.map(error => 
-                `Row ${error.row}: ${error.errors.join(', ')}`
-            ).join('; ');
-            
-            throw new Error(`Validation failed: ${errorMessage}`);
-        }
-
-        // If all data is valid, proceed with backend call
-        if (validData.length > 0) {
-            const response = await wrapper.fetchWithToken(`/caseassignment/add`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    data: validData,
-                    uploadedBy: username,
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            const body = result?.data ? result : { data: result }
-            const updated = body.data?.updated?.length ?? validData.length
-            const failed = body.data?.failed?.length ?? 0
-            return {
-                success: true,
-                message: body.message || `Assigned ${updated} policy row(s)${failed ? `; ${failed} failed` : ''}.`,
-                data: body.data || body,
-            };
+        if (!isPolicyValid || !isUsernameValid) {
+            const errors = [];
+            if (!isPolicyValid) errors.push(`Policy ID ${item.POLICY_ID} was not found`);
+            if (!isUsernameValid) errors.push(`Username ${assignedTo} not found in users`);
+            validationErrors.push({ row: index + 2, policyId: item.POLICY_ID, assignedTo, errors });
         } else {
-            throw new Error('No valid data found to process');
+            validData.push({ POLICY_ID: policyId, ASSIGNED_TO: assignedTo });
         }
-        
-    } catch (error) {
-        console.error('Error in case assignment service:', error);
-        throw error;
+    });
+
+    if (validationErrors.length > 0) {
+        const errorMessage = validationErrors.map((error) =>
+            `Row ${error.row}: ${error.errors.join(', ')}`
+        ).join('; ');
+        throw new Error(`Validation failed: ${errorMessage}`);
     }
+
+    if (!validData.length) {
+        throw new Error('No valid data found to process');
+    }
+
+    const response = await wrapper.fetchWithToken('/caseassignment/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: validData, uploadedBy: username }),
+    });
+    const result = await response.json();
+    if (!result?.success) {
+        throw new Error(result?.message || 'Bulk assignment failed');
+    }
+    const updated = result.data?.updated?.length ?? validData.length;
+    const failed = result.data?.failed?.length ?? 0;
+    return {
+        success: true,
+        message: result.message || `Assigned ${updated} policy row(s)${failed ? `; ${failed} failed` : ''}.`,
+        data: result.data,
+    };
 }

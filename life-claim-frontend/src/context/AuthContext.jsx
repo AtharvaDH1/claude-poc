@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, us
 import authService from '../services/authService'
 import { AUTH_LOGOUT_CHANNEL } from '../util/authBroadcast'
 import { readEnv } from '../util/env'
+import { coalesceRoles } from '../util/workflowRole'
+import { extractKeycloakRoles, extractKeycloakUsername } from '../util/keycloakRoles'
+import { isSuperUserRole, hasSuperUserAccess, resolveDisplayRole } from '../util/superuserRole'
 
 const AuthContext = createContext(null)
 
@@ -15,15 +18,15 @@ function decodeTokenUser(token) {
     atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
   )
   const payload = JSON.parse(jsonPayload)
-  const roles = payload.realm_access?.roles || payload.roles || []
-  const username = payload.preferred_username || payload.sub
+  const roles = coalesceRoles(extractKeycloakRoles(payload))
+  const username = extractKeycloakUsername(payload)
   const name = [payload.given_name, payload.family_name].filter(Boolean).join(' ') || username
   return {
-    id: payload.sub,
+    id: payload.sub || payload.userId,
     username,
     name,
     email: payload.email,
-    role: roles[0] || '',
+    role: resolveDisplayRole(roles, username),
     roles,
     avatar: (payload.given_name?.[0] || username[0] || '').toUpperCase() + (payload.family_name?.[0] || '').toUpperCase(),
     access_token: token,
@@ -150,11 +153,20 @@ export function AuthProvider({ children }) {
   const extendSession = useCallback(() => { resetIdleTimer(); setIdleWarning(false) }, [resetIdleTimer])
 
   const hasRole = useCallback((required) => {
-    if (!user?.roles?.length) return false
     const req = Array.isArray(required) ? required : [required]
-    const norm = (s) => String(s || '').toLowerCase()
+    if (req.some(isSuperUserRole) && hasSuperUserAccess(user?.roles, user?.username)) {
+      return true
+    }
+    const allRoles = coalesceRoles(user?.roles, user?.role)
+    if (!allRoles.length) return false
+    const norm = (s) => String(s || '').toLowerCase().replace(/-/g, ' ').replace(/_/g, ' ').trim()
     return req.some((r) =>
-      user.roles.some((ur) => ur === r || norm(ur) === norm(r))
+      allRoles.some((ur) => {
+        const a = norm(ur)
+        const b = norm(r)
+        if (isSuperUserRole(ur) && isSuperUserRole(r)) return true
+        return ur === r || a === b || (b === 'pre assessor' && a.includes('pre') && a.includes('assessor'))
+      })
     )
   }, [user])
 

@@ -2,76 +2,49 @@ import { API_URL } from "../util/config";
 import claimsService from "./claimsServices";
 import wrapper from "../util/ApiWrapper";
 import adminService from "./adminService";
+import { buildDashboardMetrics } from "../util/dashboardMetrics";
 
 const dashboardService = {
-  // Get dashboard statistics
   getDashboardStats: async (username, roles = []) => {
     try {
       const claims = await claimsService.getClaimByUsername(username);
-      
       if (!claims || !Array.isArray(claims)) {
         return {
           totalClaims: 0,
           pendingClaims: 0,
           approvedClaims: 0,
           rejectedClaims: 0,
+          totalPipelineValue: 0,
+          avgDaysOpen: 0,
+          overdueCount: 0,
+          slaCompliance: 0,
+          approvalRate: 0,
+          fraudFlags: 0,
+          typeBreakdown: [],
+          monthlyTrend: [],
+          monthlyTrendSum: 0,
+          pieData: [],
+          allClaims: [],
         };
       }
 
-      // Logic based on roles
-      const isAssessor = Array.isArray(roles) ? roles.includes("Assessor") : roles === "Assessor";
-      const isVerifier = Array.isArray(roles) ? roles.includes("Verifier") : roles === "Verifier";
-
-      let pendingClaimsCount, approvedClaimsCount, rejectedClaimsCount;
-
-      if (isAssessor) {
-        pendingClaimsCount = claims.filter(c => (c.STATUS || c.status || "").toLowerCase() === "pending assessor action").length;
-        rejectedClaimsCount = claims.filter(c => {
-          const s = (c.STATUS || c.status || "").toLowerCase();
-          return s === "rejected" || s === "assessor rejected" || s === "payout rejected";
-        }).length;
-        approvedClaimsCount = claims.filter(c => {
-          const s = (c.STATUS || c.status || "").toLowerCase();
-          const r = (c.ROLE || c.role || "").toLowerCase();
-          return s === "approved" || (s === "pending verifier allocation" && r === "verifier");
-        }).length;
-      } else if (isVerifier) {
-        pendingClaimsCount = claims.filter(c => (c.STATUS || c.status || "").toLowerCase() === "pending verifier action").length;
-        rejectedClaimsCount = claims.filter(c => {
-          const s = (c.STATUS || c.status || "").toLowerCase();
-          return s === "verifier rejected" || s === "payout rejected" || s === "rejected";
-        }).length;
-        approvedClaimsCount = claims.filter(c => {
-          const s = (c.STATUS || c.status || "").toLowerCase();
-          return s === "payout completed" || s === "approved";
-        }).length;
-      } else {
-        // Default logic for other roles
-        pendingClaimsCount = claims.filter(
-          (claim) => {
-            const s = (claim.STATUS || claim.status || "").toLowerCase();
-            return s === "pending" || s === "in progress" || !s || s === "pending assessor action" || s === "pending verifier action";
-          }
-        ).length;
-        approvedClaimsCount = claims.filter(
-          (claim) => {
-            const s = (claim.STATUS || claim.status || "").toLowerCase();
-            return s === "approved" || s === "pending verifier allocation" || s === "payout completed";
-          }
-        ).length;
-        rejectedClaimsCount = claims.filter(
-          (claim) => {
-            const s = (claim.STATUS || claim.status || "").toLowerCase();
-            return s === "rejected" || s === "verifier rejected" || s === "assessor rejected" || s === "payout rejected";
-          }
-        ).length;
-      }
-
+      const metrics = buildDashboardMetrics(claims, roles);
       return {
-        totalClaims: claims.length,
-        pendingClaims: pendingClaimsCount,
-        approvedClaims: approvedClaimsCount,
-        rejectedClaims: rejectedClaimsCount,
+        totalClaims: metrics.total,
+        pendingClaims: metrics.pending,
+        approvedClaims: metrics.approved,
+        rejectedClaims: metrics.rejected,
+        totalPipelineValue: metrics.totalPipelineValue,
+        avgDaysOpen: metrics.avgDaysOpen,
+        overdueCount: metrics.overdueCount,
+        slaCompliance: metrics.slaCompliance,
+        approvalRate: metrics.approvalRate,
+        fraudFlags: metrics.fraudFlags,
+        typeBreakdown: metrics.typeBreakdown,
+        monthlyTrend: metrics.monthlyTrend,
+        monthlyTrendSum: metrics.monthlyTrendSum,
+        pieData: metrics.pieData,
+        allClaims: metrics.claims,
       };
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
@@ -80,11 +53,21 @@ const dashboardService = {
         pendingClaims: 0,
         approvedClaims: 0,
         rejectedClaims: 0,
+        totalPipelineValue: 0,
+        avgDaysOpen: 0,
+        overdueCount: 0,
+        slaCompliance: 0,
+        approvalRate: 0,
+        fraudFlags: 0,
+        typeBreakdown: [],
+        monthlyTrend: [],
+        monthlyTrendSum: 0,
+        pieData: [],
+        allClaims: [],
       };
     }
   },
 
-  // Get recent activities for Activity Pulse
   getRecentActivities: async () => {
     try {
       const response = await wrapper.fetchWithToken("/dashboard/activities", {
@@ -101,26 +84,18 @@ const dashboardService = {
     }
   },
 
-  // Get recent claims
   getRecentClaims: async (username, limit = 10) => {
     try {
       const claims = await claimsService.getClaimByUsername(username);
-      
-      if (!claims || !Array.isArray(claims)) {
-        return [];
-      }
+      if (!claims || !Array.isArray(claims)) return [];
 
-      // Sort by date (most recent first) and limit
-      // Backend already sorts, but we'll sort again as safety measure using correct field names
-      const sortedClaims = claims
+      return claims
         .sort((a, b) => {
           const dateA = new Date(a.MODIFIED_AT || a.CREATED_AT || a.createdAt || a.updatedAt || 0);
           const dateB = new Date(b.MODIFIED_AT || b.CREATED_AT || b.createdAt || b.updatedAt || 0);
           return dateB - dateA;
         })
         .slice(0, limit);
-
-      return sortedClaims;
     } catch (error) {
       console.error("Error fetching recent claims:", error);
       return [];

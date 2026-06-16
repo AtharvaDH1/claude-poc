@@ -68,7 +68,7 @@ export default function DecisionQueueTab({ toast, mode = 'approver' }) {
   return (
     <div style={{ padding: '24px' }}>
       <div style={{ fontWeight: 700, fontSize: '14px', color: T.textPrimary, marginBottom: '4px' }}>{mode === 'approver' ? 'Approver pool' : 'Decision queue'}</div>
-      <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Search via <code>POST /capsAddDetails/getData</code> · bulk approve/reject via <code>approver-approve</code>.</div>
+      <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Search cases pending approval and approve or reject in bulk.</div>
 
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <select value={caseType} onChange={(e) => setCaseType(e.target.value)} style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${T.border}`, fontFamily: 'Inter,sans-serif', fontSize: '13px' }}>

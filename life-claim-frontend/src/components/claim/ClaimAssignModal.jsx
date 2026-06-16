@@ -12,7 +12,7 @@ export default function ClaimAssignModal({ open, onClose, claimNumber, mode = 'a
   const [assignee, setAssignee] = useState('')
   const [role, setRole] = useState(mode === 'verifier' ? 'Verifier' : 'Assessor')
   const [saving, setSaving] = useState(false)
-  const [useAdminApi, setUseAdminApi] = useState(false)
+  const [useSuperUserApi, setUseSuperUserApi] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -28,7 +28,7 @@ export default function ClaimAssignModal({ open, onClose, claimNumber, mode = 'a
     setSaving(true)
     try {
       const username = sessionStorage.getItem('loggedUser') || ''
-      if (useAdminApi) {
+      if (useSuperUserApi) {
         await adminService.assignClaim({ claimNumber, assignee: assignee.trim(), role })
       } else if (role === 'Verifier') {
         await claimSearch.updateVerifier(assignee.trim(), claimNumber, username)
@@ -71,8 +71,8 @@ export default function ClaimAssignModal({ open, onClose, claimNumber, mode = 'a
             </datalist>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: T.textMuted }}>
-            <input type="checkbox" checked={useAdminApi} onChange={(e) => setUseAdminApi(e.target.checked)} />
-            Use admin assign API
+            <input type="checkbox" checked={useSuperUserApi} onChange={(e) => setUseSuperUserApi(e.target.checked)} />
+            Use super user assign API
           </label>
         </div>
         <div style={{ padding: '14px 22px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

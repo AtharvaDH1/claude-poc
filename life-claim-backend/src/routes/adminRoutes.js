@@ -5,9 +5,9 @@ const authorize = require("../middleware/authorize");
 
 const router = express.Router();
 
-// Apply authentication and admin authorization to all admin routes
+// Apply authentication and superuser authorization to all platform routes
 router.use(authMiddleware.authenticate);
-router.use(authorize("admin"));
+router.use(authorize("superuser", "super user"));
 
 // Platform-wide dashboard summary
 router.get("/summary", adminController.getSummary);
@@ -25,6 +25,7 @@ router.post("/audit/force-logout", adminController.forceLogoutTrackedUser);
 
 // Admin claim assignment
 router.post("/claims/assign", adminController.assignClaim);
+router.post("/claims/unassign", adminController.unassignClaim);
 
 module.exports = router;
 

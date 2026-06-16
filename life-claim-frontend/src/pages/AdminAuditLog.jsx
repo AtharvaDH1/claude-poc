@@ -1,31 +1,68 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import AppLayout from '../layouts/AppLayout'
 import { useToast } from '../components/Toast'
 import { getAuditLogs } from '../services/userService'
-import adminService from '../services/adminService'
-import { Search, Download, X } from 'lucide-react'
+import { Search, Download, X, ChevronUp, ChevronDown } from 'lucide-react'
+import { resolveDisplayRole, isSuperUserUsername } from '../util/superuserRole'
+import { coalesceRoles } from '../util/workflowRole'
 
 const T = { primary:'#1D4ED8', card:'#fff', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
-
-const ACTION_COLORS = {
-  'Login':          { bg:'#EFF6FF', color:T.primary,   border:'#BFDBFE' },
-  'Logout':         { bg:'#F8FAFC', color:T.textSubtle, border:T.border  },
-  'Claim Registered':{ bg:'#ECFDF5', color:'#059669',   border:'#A7F3D0' },
-  'Claim Approved': { bg:'#ECFDF5', color:'#059669',   border:'#A7F3D0' },
-  'Claim Rejected': { bg:'#FEF2F2', color:'#DC2626',   border:'#FECACA' },
-  'Claim Viewed':   { bg:'#FFFBEB', color:'#D97706',   border:'#FDE68A' },
-  'User Created':   { bg:'#F5F3FF', color:'#7C3AED',   border:'#DDD6FE' },
-}
 
 const ROLE_COLORS = {
   'Pre Assessor': { bg:'#EFF6FF', color:T.primary },
   'Assessor':     { bg:'#F5F3FF', color:'#7C3AED' },
   'Verifier':     { bg:'#ECFDF5', color:'#059669'  },
-  'Admin':        { bg:'#FEF2F2', color:'#DC2626'  },
+  'Super User':   { bg:'#FEF2F2', color:'#DC2626'  },
   'System':       { bg:'#F8FAFC', color:T.textSubtle },
 }
 
 const PAGE_SIZE = 10
+
+const ROLE_FILTER_OPTIONS = ['All', 'Pre Assessor', 'Assessor', 'Verifier', 'Super User']
+
+const TABLE_COLUMNS = [
+  { key: 'timestamp', label: 'Signed in' },
+  { key: 'user', label: 'User' },
+  { key: 'role', label: 'Role' },
+  { key: 'status', label: 'Status' },
+  { key: 'duration', label: 'Duration' },
+  { key: 'ip', label: 'IP Address' },
+]
+
+function formatDuration(minutes, isActive) {
+  const n = Number(minutes)
+  if (!Number.isFinite(n) || n < 0) return isActive ? 'In progress' : '—'
+  if (n < 1) return isActive ? '< 1 min' : '< 1 min'
+  if (n < 60) return `${n} min`
+  const h = Math.floor(n / 60)
+  const m = n % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+function parseAuditRoles(l) {
+  if (Array.isArray(l.roles)) return l.roles
+  const raw = l.USER_ROLES
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function resolveAuditRole(l) {
+  const username = l.username || l.USERNAME || l.user || ''
+  const roles = coalesceRoles(parseAuditRoles(l), l.userRole)
+  const display = resolveDisplayRole(roles, username)
+  if (display) return display
+  if (isSuperUserUsername(username)) return 'Super User'
+  return '—'
+}
 
 function dateRangeForPeriod(period) {
   const to = new Date().toISOString().slice(0, 10)
@@ -47,19 +84,38 @@ export default function AdminAuditLog() {
   const [page, setPage] = useState(0)
   const [hovRow, setHovRow] = useState(null)
   const [logs, setLogs] = useState([])
-  const [tracked, setTracked] = useState([])
+  const [sortKey, setSortKey] = useState('timestamp')
+  const [sortDir, setSortDir] = useState('desc')
 
-  const mapAuditRow = (l, i) => ({
-    id: l.id ?? i + 1,
-    user: l.username || l.USERNAME || l.user || 'Unknown',
-    role: l.userRole || (Array.isArray(l.roles) ? l.roles[0] : l.roles) || 'User',
-    action: l.logoutAt || l.LOGOUT_AT ? 'Logout' : 'Login',
-    ip: l.ipAddress || l.IP_ADDRESS || l.ip || '—',
-    timestamp: (l.loginAt || l.LOGIN_AT)
-      ? new Date(l.loginAt || l.LOGIN_AT).toLocaleString('en-IN')
-      : '—',
-    session: l.id != null ? String(l.id) : (l.session_id || l.SESSION_ID || '—'),
-  })
+  const mapAuditRow = (l, i) => {
+    const loginAt = l.loginAt || l.LOGIN_AT
+    const logoutAt = l.logoutAt || l.LOGOUT_AT
+    const ended = Boolean(logoutAt)
+    const durationMin = Number(l.durationMin ?? l.DURATION_MIN ?? 0)
+    return {
+      id: l.id ?? i + 1,
+      user: l.username || l.USERNAME || l.user || 'Unknown',
+      role: resolveAuditRole(l),
+      status: ended ? 'Signed out' : 'Active',
+      isActive: !ended,
+      duration: formatDuration(durationMin, !ended),
+      durationMin,
+      loginDay: loginAt ? new Date(loginAt).toISOString().slice(0, 10) : '',
+      ip: l.ipAddress || l.IP_ADDRESS || l.ip || '—',
+      sortAt: loginAt ? new Date(loginAt).getTime() : 0,
+      timestamp: loginAt ? new Date(loginAt).toLocaleString('en-IN') : '—',
+    }
+  }
+
+  const toggleSort = (key) => {
+    setPage(0)
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'timestamp' || key === 'duration' ? 'desc' : 'asc')
+    }
+  }
 
   const loadLogs = () => {
     const range = dateRangeForPeriod(period)
@@ -71,14 +127,54 @@ export default function AdminAuditLog() {
       .catch(() => setLogs([]))
   }
 
+  useEffect(() => {
+    setPage(0)
+    loadLogs()
+  }, [period])
+
+  const actions = ['All', 'Active', 'Signed out']
+
+  const filtered = logs.filter(l => {
+    const q = search.toLowerCase()
+    const mQ = !q || l.user.toLowerCase().includes(q) || l.status.toLowerCase().includes(q) || l.role.toLowerCase().includes(q) || l.ip.includes(q)
+    const mR = roleFilter === 'All' || l.role === roleFilter
+    const mA = actionFilter === 'All' || l.status === actionFilter
+    return mQ && mR && mA
+  })
+
+  const sorted = useMemo(() => {
+    const list = [...filtered]
+    const dir = sortDir === 'asc' ? 1 : -1
+    const cmpStr = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' }) * dir
+    list.sort((a, b) => {
+      switch (sortKey) {
+        case 'timestamp':
+          return (a.sortAt - b.sortAt) * dir
+        case 'duration':
+          return (a.durationMin - b.durationMin) * dir
+        case 'user':
+          return cmpStr(a.user, b.user)
+        case 'role':
+          return cmpStr(a.role, b.role)
+        case 'status':
+          return cmpStr(a.status, b.status)
+        case 'ip':
+          return cmpStr(a.ip, b.ip)
+        default:
+          return 0
+      }
+    })
+    return list
+  }, [filtered, sortKey, sortDir])
+
   const exportCsv = () => {
-    if (!filtered.length) {
+    if (!sorted.length) {
       toast('warning', 'No data', 'Nothing to export for current filters.')
       return
     }
-    const header = ['Timestamp', 'User', 'Role', 'Action', 'IP', 'Session ID']
-    const lines = filtered.map((l) =>
-      [l.timestamp, l.user, l.role, l.action, l.ip, l.session]
+    const header = ['Signed in', 'User', 'Role', 'Status', 'Duration', 'IP Address']
+    const lines = sorted.map((l) =>
+      [l.timestamp, l.user, l.role, l.status, l.duration, l.ip]
         .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
         .join(',')
     )
@@ -89,52 +185,36 @@ export default function AdminAuditLog() {
     a.download = `login-audit-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    toast('success', 'Exported', `${filtered.length} row(s) downloaded.`)
+    toast('success', 'Exported', `${sorted.length} row(s) downloaded.`)
   }
 
-  useEffect(() => {
-    adminService.getTrackedUsersStatus().then(setTracked).catch(() => setTracked([]))
-  }, [])
-
-  useEffect(() => {
-    setPage(0)
-    loadLogs()
-  }, [period])
-
-  const roles = ['All', ...new Set(logs.map(l => l.role))]
-  const actions = ['All', ...new Set(logs.map(l => l.action))]
-
-  const filtered = logs.filter(l => {
-    const q = search.toLowerCase()
-    const mQ = !q || l.user.toLowerCase().includes(q) || l.action.toLowerCase().includes(q) || l.session.includes(q)
-    const mR = roleFilter === 'All' || l.role === roleFilter
-    const mA = actionFilter === 'All' || l.action === actionFilter
-    return mQ && mR && mA
-  })
-
-  const stats = {
-    totalSessions: new Set(logs.map(l => l.session)).size,
-    logins: logs.filter(l => l.action === 'Login').length,
-    claimActions: logs.filter(l => l.action.startsWith('Claim')).length,
-  }
+  const stats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return {
+      totalSessions: logs.length,
+      activeSessions: logs.filter((l) => l.isActive).length,
+      loginsToday: logs.filter((l) => l.loginDay === today).length,
+      signedOut: logs.filter((l) => !l.isActive).length,
+    }
+  }, [logs])
 
   return (
-    <AppLayout>
+    <AppLayout pageTitle="Login Sessions">
       <div style={{ padding:'24px', fontFamily:'Inter,sans-serif' }}>
         <div style={{ marginBottom:'24px' }}>
-          <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em', margin:'0 0 4px' }}>Login session audit</h1>
+          <h1 style={{ fontSize:'22px', fontWeight:800, color:T.textPrimary, letterSpacing:'-0.02em', margin:'0 0 4px' }}>Login Sessions</h1>
           <p style={{ fontSize:'13px', color:T.textMuted, fontWeight:500 }}>
-            Session events from <code>user_login_audit</code> (J6). User CRUD is at <strong>/user-management</strong>, not here.
+            Review sign-in and sign-out activity across the platform.
           </p>
         </div>
 
         {/* Summary */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'14px', marginBottom:'20px' }}>
           {[
-            { label:'Total Events', value:logs.length, color:T.primary, bg:'#EFF6FF' },
-            { label:'Active Sessions', value:stats.totalSessions, color:'#059669', bg:'#ECFDF5' },
-            { label:'Logins Today', value:stats.logins, color:'#7C3AED', bg:'#F5F3FF' },
-            { label:'Claim Actions', value:stats.claimActions, color:'#D97706', bg:'#FFFBEB' },
+            { label:'Total Sessions', value:stats.totalSessions, color:T.primary, bg:'#EFF6FF' },
+            { label:'Active Now', value:stats.activeSessions, color:'#059669', bg:'#ECFDF5' },
+            { label:'Logins Today', value:stats.loginsToday, color:'#7C3AED', bg:'#F5F3FF' },
+            { label:'Signed Out', value:stats.signedOut, color:'#64748B', bg:'#F8FAFC' },
           ].map(s => (
             <div key={s.label} style={{ background:T.card, borderRadius:'10px', padding:'16px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
               <div style={{ fontSize:'28px', fontWeight:900, color:s.color }}>{s.value}</div>
@@ -147,13 +227,17 @@ export default function AdminAuditLog() {
         <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', padding:'14px 18px', marginBottom:'16px', display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center' }}>
           <div style={{ flex:1, minWidth:'200px', display:'flex', alignItems:'center', gap:'8px', padding:'0 12px', height:'38px', borderRadius:'8px', background:'#F8FAFC', border:`1.5px solid ${T.border}` }}>
             <Search size={14} style={{ color:T.textSubtle, flexShrink:0 }}/>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search user, action, session..."
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search user, role, status, IP..."
               style={{ flex:1, background:'none', border:'none', outline:'none', fontSize:'13px', color:T.textPrimary, fontWeight:500, fontFamily:'Inter,sans-serif' }}/>
             {search && <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:T.textSubtle, display:'flex' }}><X size={13}/></button>}
           </div>
-          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
-            style={{ padding:'0 12px', height:'38px', borderRadius:'8px', border:`1.5px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:500, color:T.textSecondary, fontFamily:'Inter,sans-serif', outline:'none', cursor:'pointer' }}>
-            {roles.map(r => <option key={r}>{r}</option>)}
+          <select
+            value={roleFilter}
+            onChange={(e) => { setRoleFilter(e.target.value); setPage(0) }}
+            aria-label="Filter by role"
+            style={{ padding:'0 12px', height:'38px', borderRadius:'8px', border:`1.5px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:500, color:T.textSecondary, fontFamily:'Inter,sans-serif', outline:'none', cursor:'pointer' }}
+          >
+            {ROLE_FILTER_OPTIONS.map((r) => <option key={r} value={r}>{r === 'All' ? 'All roles' : r}</option>)}
           </select>
           <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
             style={{ padding:'0 12px', height:'38px', borderRadius:'8px', border:`1.5px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:500, color:T.textSecondary, fontFamily:'Inter,sans-serif', outline:'none', cursor:'pointer' }}>
@@ -174,31 +258,51 @@ export default function AdminAuditLog() {
         <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', overflow:'hidden' }}>
           <div style={{ padding:'14px 18px', borderBottom:`1px solid ${T.borderSubtle}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ fontWeight:700, fontSize:'14px', color:T.textPrimary }}>Audit Trail</div>
-            <div style={{ fontSize:'12px', color:T.textMuted, fontWeight:500 }}>{filtered.length} records · page {page + 1}/{Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))}</div>
+            <div style={{ fontSize:'12px', color:T.textMuted, fontWeight:500 }}>{sorted.length} records · page {page + 1}/{Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))}</div>
           </div>
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
-                  {['#','Timestamp','User','Role','Action','IP Address','Session ID'].map(h => (
-                    <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
-                  ))}
+                  {TABLE_COLUMNS.map(({ key, label }) => {
+                    const active = sortKey === key
+                    const SortIcon = sortDir === 'asc' ? ChevronUp : ChevronDown
+                    return (
+                      <th key={key} style={{ padding:'4px 8px', textAlign:'left', whiteSpace:'nowrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(key)}
+                          style={{
+                            display:'inline-flex', alignItems:'center', gap:'4px',
+                            padding:'6px 6px', border:'none', background:'transparent',
+                            cursor:'pointer', fontFamily:'Inter,sans-serif',
+                            fontSize:'11px', fontWeight:700, color: active ? T.primary : T.textSubtle,
+                            textTransform:'uppercase', letterSpacing:'0.05em',
+                          }}
+                        >
+                          {label}
+                          {active ? <SortIcon size={12} /> : <ChevronDown size={12} style={{ opacity: 0.35 }} />}
+                        </button>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE).map((log, i) => {
-                  const ac = ACTION_COLORS[log.action] || { bg:'#F8FAFC', color:T.textSubtle, border:T.border }
+                {sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE).map((log, i) => {
+                  const statusStyle = log.isActive
+                    ? { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' }
+                    : { bg:'#F8FAFC', color:T.textSubtle, border:T.border }
                   const rc = ROLE_COLORS[log.role] || { bg:'#F8FAFC', color:T.textSubtle }
                   return (
-                    <tr key={log.id} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background:hovRow===i?'#F8FAFC':'', transition:'background 0.1s' }}
+                    <tr key={`${log.id}-${i}`} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background:hovRow===i?'#F8FAFC':'', transition:'background 0.1s' }}
                       onMouseEnter={() => setHovRow(i)} onMouseLeave={() => setHovRow(null)}>
-                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textSubtle, fontWeight:600 }}>{log.id}</td>
                       <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontWeight:500, whiteSpace:'nowrap', fontFamily:'monospace' }}>{log.timestamp}</td>
                       <td style={{ padding:'11px 14px', fontSize:'13px', fontWeight:700, color:T.textSecondary }}>{log.user}</td>
                       <td style={{ padding:'11px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'2px 9px', borderRadius:'99px', background:rc.bg, color:rc.color }}>{log.role}</span></td>
-                      <td style={{ padding:'11px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background:ac.bg, border:`1px solid ${ac.border}`, color:ac.color }}>{log.action}</span></td>
+                      <td style={{ padding:'11px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background:statusStyle.bg, border:`1px solid ${statusStyle.border}`, color:statusStyle.color }}>{log.status}</span></td>
+                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontWeight:600 }}>{log.duration}</td>
                       <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontFamily:'monospace' }}>{log.ip}</td>
-                      <td style={{ padding:'11px 14px', fontSize:'12px', color:T.textMuted, fontFamily:'monospace' }}>{log.session}</td>
                     </tr>
                   )
                 })}
@@ -207,36 +311,7 @@ export default function AdminAuditLog() {
           </div>
           <div style={{ padding:'12px 18px', display:'flex', justifyContent:'flex-end', gap:'8px', borderTop:`1px solid ${T.borderSubtle}` }}>
             <button type="button" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} style={{ padding:'6px 14px', borderRadius:'6px', border:`1px solid ${T.border}`, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Prev</button>
-            <button type="button" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage((p) => p + 1)} style={{ padding:'6px 14px', borderRadius:'6px', border:`1px solid ${T.border}`, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Next</button>
-          </div>
-        </div>
-
-        <div style={{ marginTop: '24px', background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.borderSubtle}`, fontWeight: 700, fontSize: '14px', color: T.textPrimary }}>Live sessions (tracked users)</div>
-          <div style={{ padding: '16px 18px' }}>
-            {tracked.length === 0 ? (
-              <div style={{ fontSize: '13px', color: T.textMuted }}>No active tracked sessions.</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
-                {tracked.map((u, i) => (
-                  <div key={i} style={{ padding: '14px', borderRadius: '10px', border: `1px solid ${T.border}`, background: '#F8FAFC' }}>
-                    <div style={{ fontWeight: 700, fontSize: '13px', color: T.textPrimary }}>{u.username || u.USERNAME || 'User'}</div>
-                    <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '4px' }}>{u.status || u.sessionStatus || 'Online'}</div>
-                    <button type="button" onClick={async () => {
-                      try {
-                        await adminService.forceLogoutTrackedUser(u.username || u.USERNAME)
-                        toast('success', 'Logged out', 'User session ended.')
-                        setTracked((p) => p.filter((_, j) => j !== i))
-                      } catch (e) {
-                        toast('error', 'Force logout', e.message)
-                      }
-                    }} style={{ marginTop: '10px', padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#DC2626', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
-                      Force logout
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <button type="button" disabled={(page + 1) * PAGE_SIZE >= sorted.length} onClick={() => setPage((p) => p + 1)} style={{ padding:'6px 14px', borderRadius:'6px', border:`1px solid ${T.border}`, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Next</button>
           </div>
         </div>
       </div>

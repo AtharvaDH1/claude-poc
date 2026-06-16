@@ -74,10 +74,10 @@ router.post('/logout-on-close', authMiddleware.authenticate, async (req, res) =>
 
 
 router.get('/user/:id', protect(), selfOrAdminUserRead, userController.getUserByUsername);
-router.get('/user', authMiddleware.authenticate, authorize('admin'), userController.getUsers);
-router.post('/user', authMiddleware.authenticate, authorize('admin'), validateCreateUserBody, userController.createUser);
-router.put('/user/:id', authMiddleware.authenticate, authorize('admin'), validateUpdateUserBody, userController.updateUser);
-router.delete('/user/:id', authMiddleware.authenticate, authorize('admin'), userController.deleteUser);
+router.get('/user', authMiddleware.authenticate, authorize('superuser', 'super user'), userController.getUsers);
+router.post('/user', authMiddleware.authenticate, authorize('superuser', 'super user'), validateCreateUserBody, userController.createUser);
+router.put('/user/:id', authMiddleware.authenticate, authorize('superuser', 'super user'), validateUpdateUserBody, userController.updateUser);
+router.delete('/user/:id', authMiddleware.authenticate, authorize('superuser', 'super user'), userController.deleteUser);
 
 // router.get('/roles', authMiddleware.authenticate, roleController.getAllRoles);
 // router.post('/addrole', authMiddleware.authenticate, roleController.createRole);
