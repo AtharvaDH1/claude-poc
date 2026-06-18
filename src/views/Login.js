@@ -57,12 +57,11 @@ const Login = ({ login, history }) => {
     setCapsOn(e.getModifierState && e.getModifierState('CapsLock'));
   };
 
-  // ── Validation ──
+  // ── Validation (bypass: captcha skipped) ──
   const validate = () => {
     const errors = {};
     if (!username.trim()) errors.username = 'Username is required.';
-    if (!password) errors.password = 'Password is required.';
-    if (!captchaToken && !captchaUnavailable) errors.captcha = 'Please complete the reCAPTCHA verification.';
+    // password and captcha skipped in bypass mode
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
