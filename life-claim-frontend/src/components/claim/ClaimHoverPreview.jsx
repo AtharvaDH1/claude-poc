@@ -1,26 +1,19 @@
+import { useTheme } from '../../context/ThemeContext'
 /** Hover card for claim number (Pool / My Task / Dashboard pattern). */
-const T = {
-  primary: '#1D4ED8',
-  border: '#E2E8F0',
-  borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A',
-  textSecondary: '#334155',
-  textMuted: '#64748B',
-  textSubtle: '#94A3B8',
-}
 
-function statusStyle(status) {
+function statusStyle(status, T) {
   const s = String(status || '').toLowerCase()
-  if (s.includes('pending assessor')) return { bg: '#FFFBEB', border: '#FDE68A', color: '#92400E' }
-  if (s.includes('pending verifier')) return { bg: '#EFF6FF', border: '#BFDBFE', color: '#1E40AF' }
-  if (s.includes('approved') || s.includes('accept')) return { bg: '#ECFDF5', border: '#A7F3D0', color: '#065F46' }
-  if (s.includes('reject')) return { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B' }
-  return { bg: '#F8FAFC', border: T.border, color: T.textMuted }
+  if (s.includes('pending assessor')) return { bg: T.pending.bg, border: T.pending.border, color: T.pending.text }
+  if (s.includes('pending verifier')) return { bg: T.info.bg, border: T.info.border, color: T.info.color }
+  if (s.includes('approved') || s.includes('accept')) return { bg: T.approved.bg, border: T.approved.border, color: T.approved.text }
+  if (s.includes('reject')) return { bg: T.rejected.bg, border: T.rejected.border, color: T.rejected.text }
+  return { bg: T.surfaceMuted, border: T.border, color: T.textMuted }
 }
 
 export default function ClaimHoverPreview({ claim, x, y }) {
+  const { tokens: T } = useTheme()
   if (!claim) return null
-  const sc = statusStyle(claim.status)
+  const sc = statusStyle(claim.status, T)
   const left = x + 280 > (typeof window !== 'undefined' ? window.innerWidth : 1200) ? x - 296 : x + 18
   const top = Math.max(8, Math.min(y - 60, (typeof window !== 'undefined' ? window.innerHeight : 800) - 280))
 
@@ -32,11 +25,11 @@ export default function ClaimHoverPreview({ claim, x, y }) {
         top,
         width: '278px',
         zIndex: 9999,
-        background: '#fff',
+        background: T.card,
         borderRadius: '14px',
         padding: '16px 18px',
         border: `1px solid ${T.border}`,
-        boxShadow: '0 20px 48px rgba(0,0,0,0.14)',
+        boxShadow: T.dropdownShadow,
         pointerEvents: 'none',
       }}
     >
@@ -52,7 +45,7 @@ export default function ClaimHoverPreview({ claim, x, y }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
         {[['Role', claim.role], ['Created', claim.createdOn], ['By', claim.createdBy], ['Type', claim.claimType]].map(([k, v]) => (
           <div key={k}>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase' }}>{k}</div>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{k}</div>
             <div style={{ fontWeight: 600, color: T.textSecondary, marginTop: '2px' }}>{v || '—'}</div>
           </div>
         ))}

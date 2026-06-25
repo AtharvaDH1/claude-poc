@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../Toast'
+import { useTheme } from '../../context/ThemeContext'
+import { alertBannerStyle } from '../../ui/pageTokens'
 import {
   fraudPreventionService,
   ruleTwoService,
@@ -10,15 +12,8 @@ import {
   updateAccessorFeedback,
 } from '../../services/fraudPreventionService'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-}
 
-const overlay = {
+const overlayStyle = {
   position: 'fixed',
   inset: 0,
   background: 'rgba(0,0,0,0.45)',
@@ -29,26 +24,16 @@ const overlay = {
   backdropFilter: 'blur(3px)',
 }
 
-const panel = {
-  background: T.card,
-  borderRadius: '16px',
-  width: 'min(720px, 94vw)',
-  maxHeight: '88vh',
-  overflow: 'hidden',
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
-}
-
 function RuleBlock({ title, children, flagged }) {
+  const { tokens: T } = useTheme()
+  const panel = flagged ? alertBannerStyle(T, 'danger') : { background: T.surfaceMuted, border: `1px solid ${T.border}` }
   return (
     <div
       style={{
         marginBottom: '12px',
         padding: '14px',
         borderRadius: '10px',
-        border: `1px solid ${flagged ? '#FECACA' : T.border}`,
-        background: flagged ? '#FEF2F2' : '#F8FAFC',
+        ...panel,
       }}
     >
       <div style={{ fontWeight: 700, fontSize: '13px', color: T.textPrimary, marginBottom: '8px' }}>
@@ -67,6 +52,7 @@ export default function ClaimFraudPreventionModal({
   userRole,
   username,
 }) {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -156,9 +142,20 @@ export default function ClaimFraudPreventionModal({
 
   const rule1Flagged = rule1 && (rule1.pincodeExist === 'No' || rule1.cityExist === 'No')
 
+  const panelStyle = {
+    background: T.card,
+    borderRadius: '16px',
+    width: 'min(720px, 94vw)',
+    maxHeight: '88vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
+  }
+
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={panel} onClick={(e) => e.stopPropagation()}>
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '18px 22px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: '16px', color: T.textPrimary }}>Fraud Prevention</div>
@@ -234,7 +231,7 @@ export default function ClaimFraudPreventionModal({
         </div>
 
         <div style={{ padding: '14px 22px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.surfaceMuted, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
             Cancel
           </button>
           <button

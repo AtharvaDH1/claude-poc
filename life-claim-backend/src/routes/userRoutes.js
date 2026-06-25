@@ -41,7 +41,7 @@ router.post('/login', legacyLoginLimiter, validateLegacyLoginBody, async (req, r
 
     res.json(result);
   } catch (error) {
-    console.error('[Login Error]', error.message, error.stack);
+    console.error('[Login Error]', error.message);
     const status = error.status || 401;
     res.status(status).json({ 
       message: error.message || 'Login failed',

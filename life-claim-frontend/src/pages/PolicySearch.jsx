@@ -5,14 +5,11 @@ import AppLayout from '../layouts/AppLayout'
 import { historySearch } from '../services/historySearchService'
 import { mapClaimSearchRow } from '../util/claimSearchMap'
 import { Search, FileText, Plus, X, RotateCcw } from 'lucide-react'
+import { useTheme } from '../context/ThemeContext'
+import { selectFieldStyle } from '../ui/pageTokens'
+import { PremiumGrid, PremiumGridToolbar, PremiumGridScroll, GridStatusBadge } from '../ui/PremiumDataGrid'
+import { statusToGridTone } from '../util/statusBadgeTone'
 
-const T = {
-  primary: '#1D4ED8', primaryHover: '#1E40AF',
-  pageBg: '#F1F5F9', card: '#FFFFFF',
-  border: '#E2E8F0', borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A', textSecondary: '#334155',
-  textMuted: '#64748B', textSubtle: '#94A3B8',
-}
 
 const USER_ROLES = [{ value: 'pre-assessor', label: 'Pre-Assessor' }]
 
@@ -21,6 +18,7 @@ function mapClaimRow(row) {
 }
 
 export default function PolicySearch() {
+  const { tokens: T } = useTheme()
   const navigate = useNavigate()
   const toast = useToast()
   const [userRole, setUserRole] = useState('pre-assessor')
@@ -28,8 +26,6 @@ export default function PolicySearch() {
   const [results, setResults] = useState([])
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [hovRow, setHovRow] = useState(null)
-
   const roleOk = Boolean(userRole)
   const canSearch = roleOk && policyNumber.trim()
   const canRegister = roleOk
@@ -93,7 +89,7 @@ export default function PolicySearch() {
               <select
                 value={userRole}
                 onChange={(e) => setUserRole(e.target.value)}
-                style={{ height: '42px', borderRadius: '8px', border: `1.5px solid ${T.border}`, padding: '0 12px', fontSize: '13px', fontFamily: 'Inter,sans-serif' }}
+                style={selectFieldStyle(T, { height: '42px', borderRadius: '8px', border: `1.5px solid ${T.border}`, padding: '0 12px', fontSize: '13px' })}
               >
                 <option value="">Select role</option>
                 {USER_ROLES.map((r) => (
@@ -132,13 +128,13 @@ export default function PolicySearch() {
             <button
               type="button"
               onClick={handleClear}
-              style={{ padding: '0 16px', height: '42px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#fff', fontSize: '13px', fontWeight: 600, color: T.textSecondary, cursor: 'pointer', fontFamily: 'Inter,sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}
+              style={{ padding: '0 16px', height: '42px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.card, fontSize: '13px', fontWeight: 600, color: T.textSecondary, cursor: 'pointer', fontFamily: 'Inter,sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <RotateCcw size={14} /> Clear
             </button>
           </div>
           <p style={{ fontSize: '11px', color: T.textSubtle, marginTop: '12px' }}>
-            History search queries MySQL claims only. Life Asia policy fetch happens on the registration form.
+            Shows claim history for this policy. Full policy details load on the registration form.
           </p>
         </div>
 
@@ -159,40 +155,35 @@ export default function PolicySearch() {
             No matching claims in history.
           </div>
         ) : (
-          <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.borderSubtle}`, fontWeight: 700, fontSize: '14px' }}>
-              Results ({results.length})
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <PremiumGrid>
+            <PremiumGridToolbar>
+              <div style={{ fontWeight: 700, fontSize: '14px' }}>Results ({results.length})</div>
+            </PremiumGridToolbar>
+            <PremiumGridScroll>
+              <table>
                 <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+                  <tr>
                     {['Claim number', 'Claim type', 'Policy number', 'Policy status', 'Claim status', 'Created on', 'Created by'].map((h) => (
-                      <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {results.map((row, i) => (
-                    <tr
-                      key={`${row.claimNumber}-${i}`}
-                      onMouseEnter={() => setHovRow(i)}
-                      onMouseLeave={() => setHovRow(null)}
-                      style={{ borderBottom: `1px solid ${T.borderSubtle}`, background: hovRow === i ? '#F8FAFC' : 'transparent' }}
-                    >
-                      <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: '12px', fontWeight: 700, color: T.primary }}>{row.claimNumber}</td>
-                      <td style={{ padding: '12px 14px', fontSize: '13px' }}>{row.claimType}</td>
-                      <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: '12px' }}>{row.policyNumber}</td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px' }}>{row.policyStatus}</td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px' }}>{row.claimStatus}</td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px' }}>{row.createdOn}</td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px' }}>{row.createdBy}</td>
+                    <tr key={`${row.claimNumber}-${i}`}>
+                      <td><div className="premium-grid__cell-primary">{row.claimNumber}</div></td>
+                      <td>{row.claimType}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{row.policyNumber}</td>
+                      <td>{row.policyStatus}</td>
+                      <td><GridStatusBadge tone={statusToGridTone(row.claimStatus)}>{row.claimStatus}</GridStatusBadge></td>
+                      <td style={{ fontSize: '12px', color: T.textMuted }}>{row.createdOn}</td>
+                      <td style={{ fontSize: '12px', color: T.textMuted }}>{row.createdBy}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
+            </PremiumGridScroll>
+          </PremiumGrid>
         )}
       </div>
     </AppLayout>

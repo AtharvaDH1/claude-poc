@@ -3,36 +3,13 @@ import authService from '../services/authService'
 import { AUTH_LOGOUT_CHANNEL } from '../util/authBroadcast'
 import { readEnv } from '../util/env'
 import { coalesceRoles } from '../util/workflowRole'
-import { extractKeycloakRoles, extractKeycloakUsername } from '../util/keycloakRoles'
-import { isSuperUserRole, hasSuperUserAccess, resolveDisplayRole } from '../util/superuserRole'
+import { isSuperUserRole, hasSuperUserAccess } from '../util/superuserRole'
+import { buildUserFromProfile, clearLegacyTokenStorage } from '../util/authUser'
 
 const AuthContext = createContext(null)
 
 const IDLE_MS = (parseInt(readEnv('IDLE_TIMEOUT_MINUTES', '5'), 10) || 5) * 60 * 1000
 const WARN_MS = 60 * 1000
-
-function decodeTokenUser(token) {
-  const base64Url = token.split('.')[1]
-  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-  const jsonPayload = decodeURIComponent(
-    atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-  )
-  const payload = JSON.parse(jsonPayload)
-  const roles = coalesceRoles(extractKeycloakRoles(payload))
-  const username = extractKeycloakUsername(payload)
-  const name = [payload.given_name, payload.family_name].filter(Boolean).join(' ') || username
-  return {
-    id: payload.sub || payload.userId,
-    username,
-    name,
-    email: payload.email,
-    role: resolveDisplayRole(roles, username),
-    roles,
-    avatar: (payload.given_name?.[0] || username[0] || '').toUpperCase() + (payload.family_name?.[0] || '').toUpperCase(),
-    access_token: token,
-    loginTime: new Date().toISOString(),
-  }
-}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -43,8 +20,7 @@ export function AuthProvider({ children }) {
   const bc = useRef(null)
 
   const clearSession = useCallback(() => {
-    sessionStorage.removeItem('token')
-    sessionStorage.removeItem('refreshToken')
+    clearLegacyTokenStorage()
     sessionStorage.removeItem('loggedUser')
     setUser(null)
     setIdleWarning(false)
@@ -54,11 +30,9 @@ export function AuthProvider({ children }) {
     let cancelled = false
     ;(async () => {
       try {
-        const auth = await authService.authenticate()
-        const token = sessionStorage.getItem('token')
-        if (!cancelled && token) setUser(decodeTokenUser(token))
-        if (!cancelled && auth?.preferred_username) {
-          sessionStorage.setItem('loggedUser', auth.preferred_username)
+        const profile = await authService.authenticate()
+        if (!cancelled && profile) {
+          setUser(buildUserFromProfile(profile))
         }
       } catch (err) {
         if (!cancelled) {
@@ -78,7 +52,7 @@ export function AuthProvider({ children }) {
     try {
       bc.current = new BroadcastChannel(AUTH_LOGOUT_CHANNEL)
       bc.current.onmessage = (ev) => {
-        if (!sessionStorage.getItem('token')) return
+        if (!user) return
         const reason = ev?.data?.reason || 'session'
         if (!sessionStorage.getItem('auth_logout_reason')) {
           sessionStorage.setItem('auth_logout_reason', reason)
@@ -87,13 +61,13 @@ export function AuthProvider({ children }) {
       }
     } catch {}
     return () => { try { bc.current?.close() } catch {} }
-  }, [clearSession])
+  }, [clearSession, user])
 
   const resetIdleTimer = useCallback(() => {
     clearTimeout(idleTimer.current)
     clearTimeout(warnTimer.current)
     setIdleWarning(false)
-    if (!sessionStorage.getItem('token')) return
+    if (!user) return
     warnTimer.current = setTimeout(() => setIdleWarning(true), IDLE_MS - WARN_MS)
     idleTimer.current = setTimeout(async () => {
       sessionStorage.setItem('auth_logout_reason', 'idle')
@@ -101,7 +75,7 @@ export function AuthProvider({ children }) {
       clearSession()
       try { bc.current?.postMessage({ type: 'logout', reason: 'idle' }) } catch {}
     }, IDLE_MS)
-  }, [clearSession])
+  }, [clearSession, user])
 
   useEffect(() => {
     if (!user) return
@@ -135,8 +109,8 @@ export function AuthProvider({ children }) {
   }, [user, clearSession])
 
   const login = useCallback(async (username, password, captchaToken) => {
-    const data = await authService.login(username, password, captchaToken)
-    const userData = decodeTokenUser(data.access_token)
+    const profile = await authService.login(username, password, captchaToken)
+    const userData = buildUserFromProfile(profile)
     setUser(userData)
     return userData
   }, [])

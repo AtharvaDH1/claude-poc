@@ -1,6 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Download } from 'lucide-react'
 import { saveDecision, saveFindings } from '../../services/add/decisionService'
-import { T, SectionTitle, PrimaryBtn } from './AddUi'
+import { SectionTitle, PrimaryBtn, useAddUiTokens } from './AddUi'
+import { actionButtonStyle } from '../../ui/pageTokens'
+import { isAssessorReadOnly, addCaseStatusLabel } from '../../util/addCaseStatus'
+import { downloadScnNoticePdf, SCN_REPLY_MAX_DAYS } from '../../util/downloadScnNoticePdf'
 
 const emptyRow = () => ({
   findings: '',
@@ -10,8 +14,7 @@ const emptyRow = () => ({
   severity: '',
   ailmentName: '',
   ailmentType: '',
-  evidenceType: '',
-})
+  evidenceType: '' })
 
 function pickMaster(row) {
   const r = row?.dataValues || row
@@ -20,8 +23,7 @@ function pickMaster(row) {
     remarks: r.remarks || r.REMARKS || '',
     rule: r.rule || r.RULE || '',
     decision: r.decision || r.DECISION || '',
-    severity: r.severity || r.SEVERITY || '',
-  }
+    severity: r.severity || r.SEVERITY || '' }
 }
 
 function computeSummary(rows) {
@@ -47,23 +49,39 @@ function computeSummary(rows) {
   return { rule: best?.rule || '', finalDecision: best?.decision || '' }
 }
 
-const inputStyle = {
-  width: '100%',
-  minWidth: '72px',
-  padding: '6px 8px',
-  border: `1px solid ${T.border}`,
-  borderRadius: '6px',
-  fontSize: '12px',
-  fontFamily: 'Inter,sans-serif',
-  boxSizing: 'border-box',
+// assessor lock uses shared helper from addCaseStatus
+
+function hasScnIssued(decision) {
+  if (!decision) return false
+  const sent = String(decision.scn_sent || '').trim().toLowerCase()
+  if (sent === 'yes' || sent === 'y') return true
+  return Boolean(decision.scn_date)
 }
 
-function isFinalizedByApprover(status) {
-  const s = String(status || '').toLowerCase()
-  return s.includes('approved by approver') || s.includes('rejected by approver')
-}
-
-export default function CapsDecisionPanel({ caseId, policyNo, master = [], savedFindings = [], savedDecision = null, caseStatus = '', onSaved, toast }) {
+export default function CapsDecisionPanel({
+  caseId,
+  caseStatus,
+  policyNo,
+  krn,
+  master,
+  savedFindings,
+  savedDecision,
+  onSaved,
+  toast,
+}) {
+  const T = useAddUiTokens()
+  const inputStyle = {
+    width: '100%',
+    minWidth: '72px',
+    padding: '6px 8px',
+    border: `1px solid ${T.border}`,
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontFamily: 'Inter,sans-serif',
+    boxSizing: 'border-box',
+    background: T.inputBg,
+    color: T.textPrimary,
+  }
   const masterList = useMemo(() => (Array.isArray(master) ? master.map(pickMaster) : []), [master])
   const findingsOptions = useMemo(() => [...new Set(masterList.map((m) => m.findings).filter(Boolean))], [masterList])
 
@@ -79,10 +97,22 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
     scn_decision: '',
     sddr_date: '',
     sddr_received: '',
-    sddr_decision: '',
-  })
+    sddr_decision: '' })
   const [saving, setSaving] = useState(false)
-  const readOnly = isFinalizedByApprover(caseStatus)
+  const [scnPdfReady, setScnPdfReady] = useState(false)
+  const scnIssuedRef = useRef(false)
+  const readOnly = isAssessorReadOnly(caseStatus)
+  const statusBanner = addCaseStatusLabel(caseStatus)
+  const showScnPdf =
+    scnIssuedRef.current ||
+    scnPdfReady ||
+    hasScnIssued(decisionForm) ||
+    hasScnIssued(savedDecision)
+
+  useEffect(() => {
+    scnIssuedRef.current = false
+    setScnPdfReady(false)
+  }, [caseId])
 
   useEffect(() => {
     if (savedFindings?.length) {
@@ -94,8 +124,7 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
         severity: f.severity != null ? String(f.severity) : '',
         ailmentName: f.ailmentName || f.ailment_name || '',
         ailmentType: f.ailmentType || f.ailment_type || '',
-        evidenceType: f.evidenceType || f.type_of_evidence || '',
-      })))
+        evidenceType: f.evidenceType || f.type_of_evidence || '' })))
     } else {
       setRows([emptyRow()])
     }
@@ -114,8 +143,10 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
         scn_decision: savedDecision.scn_decision || '',
         sddr_date: savedDecision.sddr_date ? String(savedDecision.sddr_date).split('T')[0] : '',
         sddr_received: savedDecision.sddr_received || '',
-        sddr_decision: savedDecision.sddr_decision || '',
-      })
+        sddr_decision: savedDecision.sddr_decision || '' })
+      const issued = hasScnIssued(savedDecision)
+      if (issued) scnIssuedRef.current = true
+      setScnPdfReady((prev) => issued || prev)
     }
   }, [savedDecision, caseId])
 
@@ -124,8 +155,7 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
     setDecisionForm((prev) => ({
       ...prev,
       rule: summary.rule || prev.rule,
-      final_decision: summary.finalDecision || prev.final_decision,
-    }))
+      final_decision: summary.finalDecision || prev.final_decision }))
   }, [rows])
 
   const updateRow = (index, field, value) => {
@@ -156,7 +186,7 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
 
   const handleSaveFindings = async () => {
     if (readOnly) {
-      toast('warning', 'Locked', 'This case has already been decided by an approver.')
+      toast('warning', 'Locked', statusBanner || 'This case cannot be edited.')
       return
     }
     const payload = rows
@@ -170,8 +200,7 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
         severity: r.severity,
         ailment_name: r.ailmentName,
         ailment_type: r.ailmentType,
-        type_of_evidence: r.evidenceType,
-      }))
+        type_of_evidence: r.evidenceType }))
     if (!payload.length) {
       toast('warning', 'Findings', 'Add at least one row with findings and remarks.')
       return
@@ -191,9 +220,22 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
 
   const handleSaveDecision = async () => {
     if (readOnly) {
-      toast('warning', 'Locked', 'This case has already been decided by an approver.')
+      toast('warning', 'Locked', statusBanner || 'This case cannot be edited.')
       return
     }
+    if (!decisionForm.final_decision?.trim()) {
+      toast('warning', 'Decision', 'Select or enter a final decision before saving.')
+      return
+    }
+    const todayStr = new Date().toISOString().split('T')[0]
+    const scnPayload = {
+      scn_sent: 'Yes',
+      scn_date: todayStr,
+      scn_aging: 0,
+    }
+    const merged = { ...decisionForm, ...scnPayload }
+    setDecisionForm(merged)
+
     const username = sessionStorage.getItem('loggedUser') || 'system'
     setSaving(true)
     try {
@@ -201,26 +243,45 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
         {
           case_id: parseInt(caseId, 10),
           policy_number: policyNo,
-          rule: decisionForm.rule,
-          final_decision: decisionForm.final_decision,
-          scn_sent: decisionForm.scn_sent,
-          add_case_remarks: decisionForm.add_case_remarks,
-          scn_date: decisionForm.scn_date || null,
-          scn_aging: decisionForm.scn_aging ? parseInt(decisionForm.scn_aging, 10) : null,
-          scn_received: decisionForm.scn_received,
-          scn_decision: decisionForm.scn_decision,
-          sddr_date: decisionForm.sddr_date || null,
-          sddr_received: decisionForm.sddr_received,
-          sddr_decision: decisionForm.sddr_decision,
-        },
+          rule: merged.rule,
+          final_decision: merged.final_decision,
+          scn_sent: merged.scn_sent,
+          add_case_remarks: merged.add_case_remarks,
+          scn_date: merged.scn_date || null,
+          scn_aging: merged.scn_aging != null && merged.scn_aging !== '' ? parseInt(merged.scn_aging, 10) : 0,
+          scn_received: merged.scn_received,
+          scn_decision: merged.scn_decision,
+          sddr_date: merged.sddr_date || null,
+          sddr_received: merged.sddr_received,
+          sddr_decision: merged.sddr_decision },
         username,
       )
-      toast('success', 'Saved', 'Decision saved.')
-      onSaved?.()
+      scnIssuedRef.current = true
+      setScnPdfReady(true)
+      toast('success', 'Saved', `Final decision saved. SCN issued — reply within ${SCN_REPLY_MAX_DAYS} days.`)
+      await onSaved?.()
     } catch (e) {
       toast('error', 'Save failed', e?.message || 'Could not save decision.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDownloadScnPdf = async () => {
+    try {
+      await downloadScnNoticePdf({
+        caseId,
+        policyNo,
+        krn,
+        scnDate: decisionForm.scn_date,
+        scnAging: decisionForm.scn_aging,
+        finalDecision: decisionForm.final_decision,
+        remarks: decisionForm.add_case_remarks,
+        findings: rows,
+      })
+      toast('success', 'PDF downloaded', `SCN notice for case ${caseId} saved.`)
+    } catch (e) {
+      toast('error', 'Download failed', e?.message || 'Could not generate SCN PDF.')
     }
   }
 
@@ -235,11 +296,45 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
     { key: 'evidenceType', label: 'Evidence' },
   ]
 
+  const scnDownloadBtn = (
+    <button
+      type="button"
+      onClick={handleDownloadScnPdf}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        ...actionButtonStyle(T, 'success', { size: 'lg' }),
+      }}
+    >
+      <Download size={18} strokeWidth={2.5} />
+      Download SCN notice (PDF)
+    </button>
+  )
+
   return (
     <div>
-      {readOnly && (
-        <div style={{ marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '12px', fontWeight: 600, color: '#92400E' }}>
-          This case has already been approved or rejected by an approver — findings and decision cannot be changed.
+      {showScnPdf && (
+        <div
+          style={{
+            marginBottom: '20px',
+            padding: '16px 18px',
+            borderRadius: '12px',
+            border: `2px solid ${T.success?.border || '#059669'}`,
+            background: T.success?.bg || 'rgba(5,150,105,0.12)',
+            boxShadow: '0 4px 14px rgba(5,150,105,0.15)',
+          }}
+        >
+          <div style={{ fontSize: '13px', fontWeight: 700, color: T.textPrimary, marginBottom: '6px' }}>
+            SCN issued — documents required within {SCN_REPLY_MAX_DAYS} days
+          </div>
+          <div style={{ fontSize: '12px', color: T.textSecondary, marginBottom: '14px', lineHeight: 1.5 }}>
+            Sent: <strong>{decisionForm.scn_sent || 'Yes'}</strong>
+            {' · '}Date: <strong>{decisionForm.scn_date || '—'}</strong>
+            {' · '}Aging: <strong>{decisionForm.scn_aging ?? 0} day(s)</strong>
+          </div>
+          {scnDownloadBtn}
         </div>
       )}
       <SectionTitle>Findings (from decision master)</SectionTitle>
@@ -249,7 +344,7 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
       <div style={{ overflowX: 'auto', marginBottom: '10px' }}>
         <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', border: `1px solid ${T.border}` }}>
           <thead>
-            <tr style={{ background: '#FAFAFA' }}>
+            <tr style={{ background: T.surfaceMuted }}>
               {cols.map((c) => (
                 <th key={c.key} style={{ padding: '8px', fontSize: '10px', fontWeight: 700, color: T.textSubtle, textAlign: 'left' }}>{c.label}</th>
               ))}
@@ -276,7 +371,7 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
                         value={row[c.key] ?? ''}
                         onChange={(e) => !c.readOnly && updateRow(i, c.key, e.target.value)}
                         readOnly={c.readOnly || readOnly}
-                        style={{ ...inputStyle, background: c.readOnly ? '#F8FAFC' : '#fff' }}
+                        style={{ ...inputStyle, background: c.readOnly ? T.inputBgReadonly : T.inputBg }}
                       />
                     )}
                   </td>
@@ -315,8 +410,8 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
               value={decisionForm[key] || ''}
               onChange={(e) => setDecisionForm((p) => ({ ...p, [key]: e.target.value }))}
               style={inputStyle}
-              readOnly={readOnly}
-              disabled={readOnly}
+              readOnly={readOnly || ['scn_sent', 'scn_aging', 'scn_date'].includes(key)}
+              disabled={readOnly || ['scn_sent', 'scn_aging', 'scn_date'].includes(key)}
             />
           </div>
         ))}
@@ -331,8 +426,11 @@ export default function CapsDecisionPanel({ caseId, policyNo, master = [], saved
           />
         </div>
       </div>
-      <div style={{ marginTop: '12px' }}>
-        <PrimaryBtn onClick={handleSaveDecision} disabled={saving || readOnly}>Save decision</PrimaryBtn>
+      <div style={{ marginTop: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <PrimaryBtn onClick={handleSaveDecision} disabled={saving || readOnly}>
+          {saving ? 'Saving…' : 'Save final decision'}
+        </PrimaryBtn>
+        {showScnPdf && scnDownloadBtn}
       </div>
     </div>
   )

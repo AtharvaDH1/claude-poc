@@ -6,16 +6,14 @@ import { claimSearch } from '../services/claimSearchService'
 import { mapClaimSearchRow } from '../util/claimSearchMap'
 import { openClaimWorkspace } from '../util/navigation'
 import { Search, Eye, X, RotateCcw } from 'lucide-react'
+import { useTheme } from '../context/ThemeContext'
+import { PremiumGrid, PremiumGridToolbar, PremiumGridScroll, GridStatusBadge } from '../ui/PremiumDataGrid'
+import { statusToGridTone } from '../util/statusBadgeTone'
+import HelpLink from '../components/HelpLink'
 
-const T = {
-  primary: '#1D4ED8', primaryHover: '#1E40AF',
-  pageBg: '#F1F5F9', card: '#FFFFFF',
-  border: '#E2E8F0', borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A', textSecondary: '#334155',
-  textMuted: '#64748B', textSubtle: '#94A3B8',
-}
 
 export default function ClaimSearch() {
+  const { tokens: T } = useTheme()
   const navigate = useNavigate()
   const toast = useToast()
   const [claimNumber, setClaimNumber] = useState('')
@@ -75,7 +73,7 @@ export default function ClaimSearch() {
         <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: '20px' }}>
           <div style={{ fontWeight: 700, fontSize: '14px', color: T.textPrimary, marginBottom: '16px' }}>Search by claim number</div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px', height: '42px', borderRadius: '8px', background: '#F8FAFC', border: `1.5px solid ${T.border}` }}>
+            <div style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px', height: '42px', borderRadius: '8px', background: T.inputBg, border: `1.5px solid ${T.border}` }}>
               <Search size={15} style={{ color: T.textSubtle, flexShrink: 0 }} />
               <input
                 value={claimNumber}
@@ -101,7 +99,7 @@ export default function ClaimSearch() {
             <button
               type="button"
               onClick={handleClear}
-              style={{ padding: '0 16px', height: '42px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: T.textSecondary, fontFamily: 'Inter,sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}
+              style={{ padding: '0 16px', height: '42px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.inputBg, fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: T.textSecondary, fontFamily: 'Inter,sans-serif', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <RotateCcw size={14} /> Clear
             </button>
@@ -115,37 +113,41 @@ export default function ClaimSearch() {
           <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '48px 24px', textAlign: 'center' }}>
             <Search size={28} style={{ color: T.primary, margin: '0 auto 12px' }} />
             <div style={{ fontWeight: 700, fontSize: '15px', color: T.textPrimary }}>Enter a claim number</div>
-            <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>Uses POST /api/claim-search against claims_poc.</div>
+            <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>Search by claim number to view claim details.</div>
+            <HelpLink questionId="cw-open">How do I open a claim?</HelpLink>
           </div>
         ) : !result ? (
           <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '48px 24px', textAlign: 'center', color: T.textMuted, fontSize: '14px', fontWeight: 600 }}>
             No claim found for &ldquo;{claimNumber.trim()}&rdquo;
+            <div>
+              <HelpLink questionId="cw-open">Tips for finding claims</HelpLink>
+            </div>
           </div>
         ) : (
-          <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: '13px', fontWeight: 700, color: T.textPrimary }}>
-              Claim found
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <PremiumGrid>
+            <PremiumGridToolbar>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: T.textPrimary }}>Claim found</div>
+            </PremiumGridToolbar>
+            <PremiumGridScroll>
+              <table>
                 <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+                  <tr>
                     {['Claim Number', 'Claim Type', 'Policy Number', 'Policy Status', 'Claim Status', 'Role', 'Created On', 'Created By', 'Action'].map((h) => (
-                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 700, color: T.primary, fontFamily: 'monospace' }}>{result.claimNumber}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '13px', color: T.textSecondary }}>{result.claimType}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '13px', fontFamily: 'monospace', color: T.textMuted }}>{result.policyNumber}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '13px', color: T.textMuted }}>{result.policyStatus}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 600, color: T.textSecondary }}>{result.claimStatus}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '13px', color: T.textMuted }}>{result.claimRole}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{result.createdOn}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{result.createdBy}</td>
-                    <td style={{ padding: '12px 16px' }}>
+                    <td><div className="premium-grid__cell-primary">{result.claimNumber}</div></td>
+                    <td>{result.claimType}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{result.policyNumber}</td>
+                    <td>{result.policyStatus}</td>
+                    <td><GridStatusBadge tone={statusToGridTone(result.claimStatus)}>{result.claimStatus}</GridStatusBadge></td>
+                    <td>{result.claimRole}</td>
+                    <td style={{ fontSize: '12px', color: T.textMuted }}>{result.createdOn}</td>
+                    <td style={{ fontSize: '12px', color: T.textMuted }}>{result.createdBy}</td>
+                    <td>
                       <button
                         type="button"
                         onClick={handleView}
@@ -157,8 +159,8 @@ export default function ClaimSearch() {
                   </tr>
                 </tbody>
               </table>
-            </div>
-          </div>
+            </PremiumGridScroll>
+          </PremiumGrid>
         )}
       </div>
     </AppLayout>

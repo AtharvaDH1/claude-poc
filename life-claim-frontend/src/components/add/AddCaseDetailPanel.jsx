@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useAddUiTokens } from '../../components/add/AddUi'
 import { useToast } from '../Toast'
 import { getCaseDetails, refreshLifeAsiaData } from '../../services/add/AssessmentPool'
 import { getDecisionMasterData } from '../../services/add/decisionService'
 import CapsDecisionPanel from './CapsDecisionPanel'
-import { T, ROField, ROGrid, SectionTitle, PrimaryBtn } from './AddUi'
+import { formatProductName } from '../../util/formatProductName'
+import { ROField, ROGrid, SectionTitle, PrimaryBtn } from './AddUi'
 
 const CASE_SUB_TABS = ['Demographics', 'Assessment', 'Decisions', 'Requirement & Comm']
 
@@ -14,7 +16,14 @@ function formatHeaderDate(raw) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function AddCaseDetailPanel({ caseId, fallback, compact = false, detail: detailProp, onDetailChange }) {
+export default function AddCaseDetailPanel({
+  caseId,
+  fallback,
+  detail: detailProp,
+  onDetailChange,
+  compact = false,
+}) {
+  const T = useAddUiTokens()
   const toast = useToast()
   const [subTab, setSubTab] = useState('Demographics')
   const [loading, setLoading] = useState(!detailProp && !!caseId)
@@ -22,9 +31,9 @@ export default function AddCaseDetailPanel({ caseId, fallback, compact = false, 
   const [master, setMaster] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = async () => {
+  const load = async ({ silent = false } = {}) => {
     if (!caseId) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const [caseRes, masterRes] = await Promise.all([
         getCaseDetails(caseId),
@@ -38,12 +47,16 @@ export default function AddCaseDetailPanel({ caseId, fallback, compact = false, 
       onDetailChange?.(data)
       setMaster(masterRes?.data || masterRes)
     } catch (e) {
-      toast('error', 'Load failed', e?.message || 'Could not load case details.')
-      setDetail(null)
+      if (!silent) {
+        toast('error', 'Load failed', e?.message || 'Could not load case details.')
+        setDetail(null)
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
+
+  const refreshAfterSave = () => load({ silent: true })
 
   useEffect(() => {
     if (detailProp) {
@@ -128,7 +141,7 @@ export default function AddCaseDetailPanel({ caseId, fallback, compact = false, 
           <SectionTitle>Contract</SectionTitle>
           <ROGrid cols={compact ? 2 : 3}>
             <ROField label="Application No" value={contract.applicationNo} />
-            <ROField label="Product" value={contract.productName || contract.product_name} />
+            <ROField label="Product" value={formatProductName(contract.productName || contract.product_name)} />
             <ROField label="Product Code" value={contract.productCode || contract.product_code} />
             <ROField label="Base SA" value={contract.baseSA || contract.baseSa || contract.base_sa} />
             <ROField label="Policy Status" value={contract.policyStatus || contract.policy_status} />
@@ -162,20 +175,20 @@ export default function AddCaseDetailPanel({ caseId, fallback, compact = false, 
       <CapsDecisionPanel
         caseId={caseId}
         policyNo={info.policyNo}
+        krn={info.krn}
         caseStatus={info.activityStatus}
         master={master}
         savedFindings={detail?.findings || []}
         savedDecision={detail?.decision}
-        onSaved={load}
+        onSaved={refreshAfterSave}
         toast={toast}
       />
     ),
     'Requirement & Comm': (
-      <div style={{ color: T.textMuted, fontSize: '13px', padding: '12px', background: '#FAFAFA', borderRadius: '8px', border: `1px solid ${T.border}` }}>
+      <div style={{ color: T.textMuted, fontSize: '13px', padding: '12px', background: T.surfaceMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
         Letter and SMS communication for case <strong style={{ color: T.primary }}>{caseId}</strong> will be available here. Requirements for linked life claims are managed in the main claim workspace.
       </div>
-    ),
-  }
+    ) }
 
   return (
     <div>
@@ -195,8 +208,7 @@ export default function AddCaseDetailPanel({ caseId, fallback, compact = false, 
               fontWeight: subTab === t ? 700 : 500,
               color: subTab === t ? T.primary : T.textMuted,
               fontFamily: 'Inter,sans-serif',
-              marginBottom: '-1px',
-            }}
+              marginBottom: '-1px' }}
           >
             {t}
           </button>

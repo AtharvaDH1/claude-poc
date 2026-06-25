@@ -4,14 +4,12 @@ import { API_URL } from "../util/config";
 const claimsServices = {
     getClaimByUsername: async (username) => {
         try {
-            const token = sessionStorage.getItem('token');
-
             const response = await fetch(`${API_URL}/api/claims/claimByUsername`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
+                credentials: 'include',
                 body: JSON.stringify({ username }),
             });
 
@@ -29,14 +27,12 @@ const claimsServices = {
     },
     assignClaim: async (claims, username) => {
         try {
-            const token = sessionStorage.getItem('token');
-
             const response = await fetch(`${API_URL}/api/claims/assignClaim`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
+                credentials: 'include',
                 body: JSON.stringify({ claims, username }),
             });
             const data = await response.json();

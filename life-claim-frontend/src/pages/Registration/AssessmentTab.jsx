@@ -1,11 +1,21 @@
 import React, { useState } from 'react'
-import { Field, Input, Select, Textarea, SubTabNav, Grid, Btn, InfoCard, T } from './shared'
+import { useRegTokens } from '../../pages/Registration/shared'
+import { Field, Input, Select, Textarea, SubTabNav, Grid, Btn, InfoCard } from './shared'
 import { getSystemDecision } from '../../services/masterService'
 import { useToast } from '../../components/Toast'
 import { validateAssessment, showValidationToast } from '../../util/registrationValidation'
+import { statusPillStyle, fieldInputStyle, alertBannerStyle } from '../../ui/pageTokens'
 import { REGISTRATION_ASSESSMENT_QUESTIONS } from '../../config/registrationCatalog'
 
-export default function AssessmentTab({ data, update, onComplete, userRole, isPreAssessor: isPreAssessorProp, policy }) {
+export default function AssessmentTab({
+  userRole,
+  isPreAssessor: isPreAssessorProp,
+  data,
+  update,
+  policy,
+  onComplete,
+}) {
+  const T = useRegTokens()
   const toast = useToast()
   const isPreAssessor = isPreAssessorProp ?? (userRole === 'Pre Assessor')
   const isAssessorPlus = !isPreAssessor
@@ -14,6 +24,10 @@ export default function AssessmentTab({ data, update, onComplete, userRole, isPr
   const [finishing, setFinishing] = useState(false)
 
   const setAnswer = (id, val) => update({ assessmentAnswers: { ...(data.assessmentAnswers || {}), [id]: val } })
+  const selectAllYes = () => {
+    const allYes = Object.fromEntries(questions.map((q) => [q.id, 'Yes']))
+    update({ assessmentAnswers: { ...(data.assessmentAnswers || {}), ...allYes } })
+  }
   const ans = data.assessmentAnswers || {}
 
   const answeredCount = questions.filter((q) => ans[q.id]).length
@@ -38,20 +52,25 @@ export default function AssessmentTab({ data, update, onComplete, userRole, isPr
 
       {subTab === 'Questions' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '13px', fontWeight: 600, color: T.textMuted }}>
               {answeredCount} of {questions.length} questions answered <span style={{ color: T.danger }}>*</span> required
             </div>
-            {allAnswered && (
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '99px', padding: '3px 12px' }}>
-                ✓ All answered
-              </span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Btn variant="secondary" size="sm" onClick={selectAllYes}>
+                Select all Yes
+              </Btn>
+              {allAnswered && (
+                <span style={statusPillStyle(T, 'success')}>
+                  ✓ All answered
+                </span>
+              )}
+            </div>
           </div>
           <div style={{ border: `1px solid ${T.border}`, borderRadius: '10px', overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+                <tr style={{ background: T.surfaceMuted, borderBottom: `2px solid ${T.border}` }}>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', letterSpacing: '0.05em', width: '40px' }}>#</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Questions</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', letterSpacing: '0.05em', width: '140px' }}>
@@ -67,11 +86,11 @@ export default function AssessmentTab({ data, update, onComplete, userRole, isPr
                       key={q.id}
                       style={{
                         borderBottom: `1px solid ${T.borderSubtle}`,
-                        background: i % 2 === 0 ? '#FAFAFA' : '#fff',
+                        background: T.card,
                       }}
                     >
                       <td style={{ padding: '12px 14px', fontSize: '12px', fontWeight: 700, color: T.textSubtle, verticalAlign: 'top' }}>{q.id}</td>
-                      <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: 500, color: T.textSecondary, lineHeight: 1.5, verticalAlign: 'top' }}>{q.question}</td>
+                      <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: 500, color: T.textPrimary, lineHeight: 1.5, verticalAlign: 'top' }}>{q.question}</td>
                       <td style={{ padding: '12px 14px', verticalAlign: 'top', width: '140px' }}>
                         <Select
                           value={a || ''}
@@ -103,23 +122,23 @@ export default function AssessmentTab({ data, update, onComplete, userRole, isPr
               { key: 'iibNonDisclosure', label: 'Non-Disclosure Detected', opts: ['Yes', 'No', 'NA'] },
             ].map((f) => (
               <div key={f.key}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>{f.label}</label>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: T.textSecondary, marginBottom: '5px' }}>{f.label}</label>
                 {f.opts ? (
                   <select value={data[f.key] || ''} onChange={(e) => update({ [f.key]: e.target.value })}
-                    style={{ width: '100%', height: '38px', padding: '0 10px', border: '1.5px solid #E2E8F0', borderRadius: '7px', background: '#fff', fontSize: '13px', fontFamily: 'Inter,sans-serif', outline: 'none' }}>
+                    style={fieldInputStyle(T, { width: '100%', height: '38px', padding: '0 10px', border: `1.5px solid ${T.border}`, borderRadius: '7px', outline: 'none' })}>
                     <option value="">-- Select --</option>
                     {f.opts.map((o) => <option key={o}>{o}</option>)}
                   </select>
                 ) : (
                   <input type={f.type || 'text'} value={data[f.key] || ''} onChange={(e) => update({ [f.key]: e.target.value })}
-                    style={{ width: '100%', height: '38px', padding: '0 10px', border: '1.5px solid #E2E8F0', borderRadius: '7px', background: '#F8FAFC', fontSize: '13px', fontFamily: 'Inter,sans-serif', outline: 'none', boxSizing: 'border-box' }} />
+                    style={fieldInputStyle(T, { width: '100%', height: '38px', padding: '0 10px', border: `1.5px solid ${T.border}`, borderRadius: '7px', outline: 'none', boxSizing: 'border-box' })} />
                 )}
               </div>
             ))}
             <div style={{ gridColumn: '1/-1' }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>IIB Remarks</label>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: T.textSecondary, marginBottom: '5px' }}>IIB Remarks</label>
               <textarea value={data.iibRemarks || ''} onChange={(e) => update({ iibRemarks: e.target.value })} rows={3} placeholder="Enter IIB enquiry findings..."
-                style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #E2E8F0', borderRadius: '7px', background: '#F8FAFC', fontSize: '13px', fontFamily: 'Inter,sans-serif', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                style={fieldInputStyle(T, { width: '100%', padding: '8px 10px', border: `1.5px solid ${T.border}`, borderRadius: '7px', outline: 'none', resize: 'vertical', boxSizing: 'border-box', height: 'auto' })} />
             </div>
           </div>
         </div>
@@ -227,27 +246,17 @@ export default function AssessmentTab({ data, update, onComplete, userRole, isPr
 
       <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
         {!assessmentComplete && (
-          <div style={{
-            marginRight: 'auto',
-            flex: '1 1 280px',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: '#92400E',
-            background: '#FFFBEB',
-            border: '1px solid #FDE68A',
-            borderRadius: '8px',
-            padding: '10px 14px',
-          }}>
-            <div style={{ fontWeight: 800, marginBottom: '6px' }}>
+          <div style={{ ...alertBannerStyle(T, 'warn'), marginRight: 'auto', flex: '1 1 280px', fontSize: '12px', fontWeight: 600, borderRadius: '8px', padding: '12px 16px', lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 800, marginBottom: '6px', color: T.pending.text ?? T.pending.color }}>
               Still required to complete assessment:
             </div>
-            <ul style={{ margin: 0, paddingLeft: '18px', lineHeight: 1.6 }}>
+            <ul style={{ margin: 0, paddingLeft: '18px', color: T.pending.color }}>
               {validation.missing.map((item) => (
                 <li key={item}>
                   <button
                     type="button"
                     onClick={() => goToMissing([item])}
-                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#B45309', fontWeight: 600, fontFamily: 'Inter,sans-serif', textAlign: 'left', textDecoration: 'underline' }}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: T.pending.color, fontWeight: 600, fontFamily: 'Inter,sans-serif', textAlign: 'left', textDecoration: 'underline' }}
                   >
                     {item}
                   </button>
@@ -275,8 +284,7 @@ export default function AssessmentTab({ data, update, onComplete, userRole, isPr
                 sysReason: res.reason,
                 sysRiskScore: res.riskScore,
                 sysProcessedOn: res.processedOn,
-                systemDetails: res,
-              })
+                systemDetails: res })
               const title = res.estimated ? 'System decision (estimated)' : 'System decision'
               toast('success', title, `${res.recommendation} — ${res.reason}`)
             } catch (e) {

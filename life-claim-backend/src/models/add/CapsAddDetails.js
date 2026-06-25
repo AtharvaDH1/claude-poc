@@ -36,7 +36,7 @@ const CapsAddDetails = sequelize.define('CapsAddDetails', {
         allowNull: true,
     },
     initiation_remarks : {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(500),
         allowNull : true,
     },
     created_by :{

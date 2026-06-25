@@ -14,30 +14,22 @@ import {
 import assessorFetchService from '../../services/assessorFetchService'
 import { unwrapWorkspace } from '../../services/claimDetailService'
 import { formatCalcAmountSummary, hasCalcAmountData } from '../../util/workspaceDisplay'
+import { useTheme } from '../../context/ThemeContext'
+import { alertBannerStyle, fieldInputStyle } from '../../ui/pageTokens'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-  success: '#059669',
-  successBg: '#ECFDF5',
-}
 
 function InfoBanner({ children, tone = 'info' }) {
-  const styles =
-    tone === 'warn'
-      ? { color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A' }
-      : { color: '#1E40AF', background: '#EFF6FF', border: '1px solid #BFDBFE' }
+  const { tokens: T } = useTheme()
+  const banner = alertBannerStyle(T, tone === 'warn' ? 'warn' : 'info')
   return (
-    <div style={{ fontSize: '12px', lineHeight: 1.55, padding: '12px 14px', borderRadius: '10px', marginBottom: '14px', ...styles }}>
+    <div style={{ fontSize: '12px', lineHeight: 1.55, padding: '12px 14px', borderRadius: '10px', marginBottom: '14px', ...banner }}>
       {children}
     </div>
   )
 }
 
 function SectionLabel({ children }) {
+  const { tokens: T } = useTheme()
   return (
     <div style={{ fontSize: '11px', fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
       {children}
@@ -46,12 +38,13 @@ function SectionLabel({ children }) {
 }
 
 function TxnSummaryCards({ summary, claimId }) {
+  const { tokens: T } = useTheme()
   const rows = formatCalcAmountSummary(summary || {}, claimId)
   if (!rows.length) return null
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '4px' }}>
       {rows.map((row) => (
-        <div key={row.label} style={{ padding: '12px', background: '#F8FAFC', borderRadius: '10px', border: `1px solid ${T.border}` }}>
+        <div key={row.label} style={{ padding: '12px', background: T.surfaceMuted, borderRadius: '10px', border: `1px solid ${T.border}` }}>
           <div style={{ fontSize: '10px', fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{row.label}</div>
           <div style={{ fontSize: '14px', fontWeight: 800, marginTop: '6px', color: T.textPrimary }}>{row.value}</div>
         </div>
@@ -61,6 +54,7 @@ function TxnSummaryCards({ summary, claimId }) {
 }
 
 function StatusPill({ status }) {
+  const { tokens: T } = useTheme()
   const ok = String(status).toLowerCase() === 'success'
   return (
     <span
@@ -70,8 +64,8 @@ function StatusPill({ status }) {
         borderRadius: '99px',
         fontSize: '11px',
         fontWeight: 700,
-        background: ok ? T.successBg : '#F1F5F9',
-        color: ok ? T.success : T.textMuted,
+        background: ok ? T.approved.bg : T.surfaceMuted,
+        color: ok ? T.approved.text : T.textMuted,
       }}
     >
       {status}
@@ -80,26 +74,26 @@ function StatusPill({ status }) {
 }
 
 function ActionSelect({ value, onChange, disabled }) {
+  const { tokens: T } = useTheme()
   return (
     <select
       value={value || ''}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      style={{
+      style={fieldInputStyle(T, {
         width: '100%',
         minWidth: '128px',
         height: '36px',
         padding: '0 10px',
         borderRadius: '8px',
         border: `1.5px solid ${value ? T.primary : T.border}`,
-        background: disabled ? '#F8FAFC' : '#fff',
+        background: disabled ? T.inputBgReadonly : T.inputBg,
         fontSize: '12px',
         fontWeight: 600,
         color: value ? T.textPrimary : T.textMuted,
-        fontFamily: 'Inter,sans-serif',
         cursor: disabled ? 'default' : 'pointer',
-        boxShadow: value ? '0 0 0 3px rgba(29,78,216,0.12)' : 'none',
-      }}
+        boxShadow: value ? `0 0 0 3px ${T.primaryRing}` : 'none',
+      })}
     >
       <option value="">--Select--</option>
       {TXN_ACTION_OPTIONS.map((opt) => (
@@ -110,12 +104,13 @@ function ActionSelect({ value, onChange, disabled }) {
 }
 
 function TxnTable({ rows, editable, onActionChange }) {
+  const { tokens: T } = useTheme()
   if (!rows?.length) return null
   return (
     <div style={{ overflowX: 'auto', border: `1px solid ${T.border}`, borderRadius: '10px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
         <thead>
-          <tr style={{ background: '#F8FAFC' }}>
+          <tr style={{ background: T.surfaceMuted }}>
             {['Date', 'Code', 'Amount', 'Status', 'Description', 'Action'].map((h) => (
               <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: T.textMuted, fontSize: '10px', textTransform: 'uppercase' }}>
                 {h}
@@ -128,9 +123,9 @@ function TxnTable({ rows, editable, onActionChange }) {
             const r = mapTxnDisplayRow(raw)
             return (
               <tr key={raw.txnid || `${r.date}-${r.code}-${i}`} style={{ borderTop: `1px solid ${T.border}` }}>
-                <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{r.date}</td>
-                <td style={{ padding: '10px 12px', fontWeight: 600 }}>{r.code}</td>
-                <td style={{ padding: '10px 12px', fontWeight: 700 }}>{r.amount === '—' ? r.amount : `₹${Number(r.amount).toLocaleString('en-IN')}`}</td>
+                <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: T.textPrimary }}>{r.date}</td>
+                <td style={{ padding: '10px 12px', fontWeight: 600, color: T.textPrimary }}>{r.code}</td>
+                <td style={{ padding: '10px 12px', fontWeight: 700, color: T.textPrimary }}>{r.amount === '—' ? r.amount : `₹${Number(r.amount).toLocaleString('en-IN')}`}</td>
                 <td style={{ padding: '10px 12px' }}>{r.status === '—' ? '—' : <StatusPill status={r.status} />}</td>
                 <td style={{ padding: '10px 12px', color: T.textMuted, maxWidth: '180px' }}>{r.description}</td>
                 <td style={{ padding: '8px 10px', minWidth: '140px' }}>
@@ -153,8 +148,9 @@ function TxnTable({ rows, editable, onActionChange }) {
 }
 
 function EmptyState({ title, detail }) {
+  const { tokens: T } = useTheme()
   return (
-    <div style={{ textAlign: 'center', padding: '28px 16px', background: '#F8FAFC', borderRadius: '12px', border: `1px dashed ${T.border}` }}>
+    <div style={{ textAlign: 'center', padding: '28px 16px', background: T.surfaceMuted, borderRadius: '12px', border: `1px dashed ${T.border}` }}>
       <div style={{ fontSize: '14px', fontWeight: 700, color: T.textPrimary, marginBottom: '6px' }}>{title}</div>
       <div style={{ fontSize: '12px', color: T.textMuted, lineHeight: 1.6, maxWidth: '420px', margin: '0 auto' }}>{detail}</div>
     </div>
@@ -162,6 +158,7 @@ function EmptyState({ title, detail }) {
 }
 
 export default function TransactionDetailsModal({ open, onClose, policyId, txnDate, claimId, calcAmt }) {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [txnRows, setTxnRows] = useState([])
@@ -194,8 +191,8 @@ export default function TransactionDetailsModal({ open, onClose, policyId, txnDa
         }
 
         const [data, db] = await Promise.all([
-          getTransactionDetailsLA(policyId, date).catch(() => null),
-          getTransactionApiDBDetails(policyId, date).catch(() => null),
+          getTransactionDetailsLA(policyId, date, claimId).catch(() => null),
+          getTransactionApiDBDetails(policyId, date, claimId).catch(() => null),
         ])
         if (cancelled) return
 
@@ -250,8 +247,8 @@ export default function TransactionDetailsModal({ open, onClose, policyId, txnDa
       return
     }
     try {
-      await saveTransactionDetailsLA(policyId, txnDate, { remarks, rows: rowsToSave })
-      const db = await getTransactionApiDBDetails(policyId, txnDate).catch(() => null)
+      await saveTransactionDetailsLA(policyId, txnDate, { remarks, rows: rowsToSave, claimNumber: claimId })
+      const db = await getTransactionApiDBDetails(policyId, txnDate, claimId).catch(() => null)
       const dbList = db?.rows ?? (Array.isArray(db) ? db : [])
       if (dbList.length) {
         setDbRows(dbList)
@@ -371,17 +368,17 @@ export default function TransactionDetailsModal({ open, onClose, policyId, txnDa
               onChange={(e) => setRemarks(e.target.value)}
               rows={2}
               placeholder="Optional notes about transactions or payable review…"
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${T.border}`, fontFamily: 'Inter,sans-serif', fontSize: '13px', boxSizing: 'border-box', resize: 'vertical' }}
+              style={fieldInputStyle(T, { width: '100%', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box', resize: 'vertical' })}
             />
           </div>
         </div>
 
-        <div style={{ padding: '14px 24px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: '#FAFAFA' }}>
+        <div style={{ padding: '14px 24px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: T.surfaceMuted }}>
           <span style={{ fontSize: '11px', color: T.textMuted }}>
             Save stores row actions and remarks
           </span>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+            <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.card, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
               Close
             </button>
             <button

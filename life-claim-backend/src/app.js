@@ -10,6 +10,7 @@ const fs = require('fs');
 const session = require('express-session');
 const { getKeycloak, protect, sessionConfig } = require('./middleware/keycloak');
 const { requireApiAuth } = require('./middleware/requireApiAuth');
+const { injectBearerFromSession } = require('./util/authCookies');
 const router = require('./routes/commonRoutes');
 const sequelize = require('./config/sequelize');
  
@@ -62,9 +63,11 @@ const dashboardActivityRoutes = require('./routes/dashboardActivityRoutes');
 const transactionDetailsRoutes = require('./routes/txnDetailsRoutes');
 const { closeAllStaleSessions } = require('./services/auditLogService');
 const { apiLimiter } = require('./middleware/rateLimiters');
+const { httpMethodFilter } = require('./middleware/httpMethodFilter');
 
 const app = express();
 app.disable('x-powered-by');
+app.use(httpMethodFilter);
 if (process.env.TRUST_PROXY === 'true') {
   app.set('trust proxy', 1);
 }
@@ -276,6 +279,9 @@ app.use('/api', apiLimiter);
 
 // Session must be registered before Keycloak middleware
 app.use(session(sessionConfig));
+
+// Mirror httpOnly cookie / server session token into Authorization for Keycloak.
+app.use(injectBearerFromSession);
 
 // Routes that don't need Keycloak protection
 app.use('/api/auth', authRoutes);

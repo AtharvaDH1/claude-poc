@@ -29,10 +29,11 @@ const ruleTwoService = async (claimant) => {
     console.log('Services >> FraudPreventionService.js >> ruleTwoService Methed called ');
     const ruleTwoResponse = await wrapper.fetchWithToken(`/fraudprevention/claimant_Bankdetails_Check`,
         {
-            method: 'GET',
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
+            body: JSON.stringify({ claimant: claimant || null }),
         });
     if (!ruleTwoResponse.ok) {
         const errorText = await ruleTwoResponse.text();
@@ -164,7 +165,7 @@ export const updateAccessorFeedback = async (feedback, claimNumber) => {
     console.log('FraudPrevetionModal.jsx >> FraudPrevetionModal >> updateAccessorFeedback >> feedback: >>', feedback, '\n claimNumber: >>', claimNumber);
     try {
         const response = await wrapper.fetchWithToken(`/fraudprevention/update_eagle_rule_details`, {
-            method: 'PUT',
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },

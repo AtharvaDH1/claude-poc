@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { useToast } from '../components/Toast'
 import AppLayout from '../layouts/AppLayout'
 import { Search, UserPlus, Upload, Layers, CheckSquare } from 'lucide-react'
@@ -7,14 +8,8 @@ import CaseAssignmentTab from '../components/add/tabs/CaseAssignmentTab'
 import DataEntryUploaderTab from '../components/add/tabs/DataEntryUploaderTab'
 import AssessmentPoolTab from '../components/add/tabs/AssessmentPoolTab'
 import ApproverPoolTab from '../components/add/tabs/ApproverPoolTab'
+import { useTheme } from '../context/ThemeContext'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#FFFFFF',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-}
 
 const TABS = [
   { id: 'case-search', label: 'Case Search', icon: Search },
@@ -25,6 +20,7 @@ const TABS = [
 ]
 
 function TabNav({ active, setActive }) {
+  const { tokens: T } = useTheme()
   return (
     <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, background: T.card, overflowX: 'auto' }}>
       {TABS.map((tab) => (
@@ -57,10 +53,27 @@ function TabNav({ active, setActive }) {
   )
 }
 
+const TAB_IDS = new Set(TABS.map((t) => t.id))
+
+function resolveTab(location, searchParams) {
+  const fromQuery = searchParams.get('tab')
+  const fromState = location.state?.addTab
+  const pick = fromQuery || fromState
+  return TAB_IDS.has(pick) ? pick : 'case-search'
+}
+
 /** Advance Intelligence — CAPS workflow (Assessor & Verifier). Separate from life-claim /registration-fetch. */
 export default function AddScreen() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
-  const [activeTab, setActiveTab] = useState('case-search')
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(() => resolveTab(location, searchParams))
+  const poolSubTab = location.state?.poolSubTab
+
+  useEffect(() => {
+    setActiveTab(resolveTab(location, searchParams))
+  }, [location.pathname, location.state?.addTab, searchParams])
 
   return (
     <AppLayout>
@@ -79,7 +92,7 @@ export default function AddScreen() {
           {activeTab === 'case-search' && <CaseSearchTab toast={toast} />}
           {activeTab === 'assignment' && <CaseAssignmentTab toast={toast} />}
           {activeTab === 'uploader' && <DataEntryUploaderTab toast={toast} />}
-          {activeTab === 'assess-pool' && <AssessmentPoolTab toast={toast} />}
+          {activeTab === 'assess-pool' && <AssessmentPoolTab toast={toast} initialSubTab={poolSubTab} />}
           {activeTab === 'approver-pool' && <ApproverPoolTab toast={toast} />}
         </div>
       </div>

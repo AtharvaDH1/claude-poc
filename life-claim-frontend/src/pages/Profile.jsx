@@ -7,10 +7,11 @@ import { useAuth } from '../context/AuthContext'
 import { resolveDisplayRole } from '../util/superuserRole'
 
 import { User, Mail, Phone, Key, Save } from 'lucide-react'
+import { useTheme } from '../context/ThemeContext'
+import { roleBadgeTokens } from '../ui/pageTokens'
 
 
 
-const T = { primary:'#1D4ED8', card:'#fff', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
 
 
 
@@ -18,13 +19,13 @@ const PROFILE_EDIT_ENABLED = false
 
 
 
-const inp = (focused, readOnly = false) => ({
+const inp = (T, focused, readOnly = false) => ({
 
   width:'100%', height:'42px', padding:'0 12px',
 
   border:`1.5px solid ${readOnly ? T.border : focused ? T.primary : T.border}`,
 
-  borderRadius:'8px', background: readOnly ? '#F8FAFC' : focused ? '#fff' : '#F8FAFC',
+  borderRadius:'8px', background: readOnly ? T.inputBgReadonly : focused ? T.inputBgFocus : T.inputBg,
 
   fontSize:'13px', fontWeight:500, color: readOnly ? T.textMuted : T.textPrimary,
 
@@ -40,7 +41,7 @@ const inp = (focused, readOnly = false) => ({
 
 
 
-const disabledBtn = (bg = T.primary) => ({
+const disabledBtn = (T, bg) => ({
 
   display:'flex', alignItems:'center', gap:'7px', padding:'9px 22px', borderRadius:'8px', border:'none',
 
@@ -53,9 +54,8 @@ const disabledBtn = (bg = T.primary) => ({
 
 
 function Field({ label, children, icon: Icon }) {
-
+  const { tokens: T } = useTheme()
   return (
-
     <div>
 
       <label style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', fontWeight:600, color:T.textSecondary, marginBottom:'6px' }}>
@@ -77,6 +77,7 @@ function Field({ label, children, icon: Icon }) {
 
 
 export default function Profile() {
+  const { tokens: T } = useTheme()
 
   const { user } = useAuth()
 
@@ -104,19 +105,7 @@ export default function Profile() {
 
 
 
-  const ROLE_COLORS = {
-
-    'Pre Assessor':{ bg:'#EFF6FF', color:T.primary, border:'#BFDBFE' },
-
-    'Assessor':    { bg:'#F5F3FF', color:'#7C3AED', border:'#DDD6FE' },
-
-    'Verifier':    { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' },
-
-    'Super User':  { bg:'#F1F5F9', color:'#334155', border:'#E2E8F0' },
-
-  }
-
-  const rc = ROLE_COLORS[displayRole] || { bg:'#F8FAFC', color:T.textMuted, border:T.border }
+  const rc = roleBadgeTokens(T, displayRole)
 
 
 
@@ -213,37 +202,37 @@ export default function Profile() {
 
                 <Field label="First Name" icon={User}>
 
-                  <input value={profileForm.firstName} readOnly style={inp(focus.fn, true)}/>
+                  <input value={profileForm.firstName} readOnly style={inp(T, focus.fn, true)}/>
 
                 </Field>
 
                 <Field label="Last Name">
 
-                  <input value={profileForm.lastName} readOnly style={inp(focus.ln, true)}/>
+                  <input value={profileForm.lastName} readOnly style={inp(T,focus.ln, true)}/>
 
                 </Field>
 
                 <Field label="Email Address" icon={Mail}>
 
-                  <input type="email" value={profileForm.email} readOnly style={inp(focus.em, true)}/>
+                  <input type="email" value={profileForm.email} readOnly style={inp(T,focus.em, true)}/>
 
                 </Field>
 
                 <Field label="Phone Number" icon={Phone}>
 
-                  <input value={profileForm.phone || '—'} readOnly style={inp(focus.ph, true)}/>
+                  <input value={profileForm.phone || '—'} readOnly style={inp(T,focus.ph, true)}/>
 
                 </Field>
 
                 <Field label="Username">
 
-                  <input value={user?.username || ''} readOnly style={inp(false, true)}/>
+                  <input value={user?.username || ''} readOnly style={inp(T,false, true)}/>
 
                 </Field>
 
                 <Field label="Role">
 
-                  <input value={displayRole} readOnly style={inp(false, true)}/>
+                  <input value={displayRole} readOnly style={inp(T,false, true)}/>
 
                 </Field>
 
@@ -251,7 +240,7 @@ export default function Profile() {
 
               <div style={{ padding:'14px 20px', borderTop:`1px solid ${T.borderSubtle}`, display:'flex', justifyContent:'flex-end' }}>
 
-                <button type="button" disabled style={disabledBtn(T.primary)} title="Profile edits are managed by your administrator">
+                <button type="button" disabled style={disabledBtn(T,T.primary)} title="Profile edits are managed by your administrator">
 
                   <Save size={14}/> Save Profile
 
@@ -287,19 +276,19 @@ export default function Profile() {
 
                 <Field label="Current Password">
 
-                  <input type="password" value="••••••••" readOnly style={inp(false, true)}/>
+                  <input type="password" value="••••••••" readOnly style={inp(T,false, true)}/>
 
                 </Field>
 
                 <Field label="New Password">
 
-                  <input type="password" value="" readOnly placeholder="••••••••" style={inp(false, true)}/>
+                  <input type="password" value="" readOnly placeholder="••••••••" style={inp(T,false, true)}/>
 
                 </Field>
 
                 <Field label="Confirm New Password">
 
-                  <input type="password" value="" readOnly placeholder="••••••••" style={inp(false, true)}/>
+                  <input type="password" value="" readOnly placeholder="••••••••" style={inp(T,false, true)}/>
 
                 </Field>
 
@@ -307,7 +296,7 @@ export default function Profile() {
 
               <div style={{ padding:'14px 20px', borderTop:`1px solid ${T.borderSubtle}`, display:'flex', justifyContent:'flex-end' }}>
 
-                <button type="button" disabled style={disabledBtn('#CBD5E1')} title="Password changes are managed by your administrator">
+                <button type="button" disabled style={disabledBtn(T,'#CBD5E1')} title="Password changes are managed by your administrator">
 
                   <Key size={14}/> Change Password
 

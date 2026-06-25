@@ -21,7 +21,9 @@ const isPublicApiRoute = (req) =>
 const hasBearerOrCookie = (req) => {
   const header = req.headers.authorization || '';
   const bearer = header.replace(/^Bearer\s+/i, '').trim();
-  return Boolean(bearer || (req.cookies && req.cookies.token));
+  return Boolean(
+    bearer || (req.cookies && req.cookies.token) || (req.session && req.session.accessToken)
+  );
 };
 
 /**

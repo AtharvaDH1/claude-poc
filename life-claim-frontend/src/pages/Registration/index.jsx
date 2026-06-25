@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 // Registration — v2 with full demographics, requirements, assessment, decision
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import AppLayout from '../../layouts/AppLayout'
@@ -12,6 +12,9 @@ import { isPreAssessorRole } from '../../util/preAssessor'
 import { primaryOperationalRole } from '../../util/workflowRole'
 import { useToast } from '../../components/Toast'
 import { withRegistrationNotificationDefaults } from '../../config/registrationNotificationDefaults'
+import { buildPolicyRegistrationPrefill, countPrefillFields } from '../../util/prefillRegistrationFromPolicy'
+import { useTheme } from '../../context/ThemeContext'
+import { alertBannerStyle, tonePanelStyle, solidToneColor } from '../../ui/pageTokens'
 
 const TABS = [
   { id:'demographics', label:'Demographics',  step:1, desc:'Policy, claimant & fraud details' },
@@ -20,12 +23,9 @@ const TABS = [
   { id:'decision',     label:'Decision',      step:4, desc:'System & accessor decision' },
 ]
 
-const T = {
-  primary:'#1D4ED8', card:'#FFFFFF', border:'#E2E8F0',
-  borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textMuted:'#64748B',
-}
 
 export default function Registration() {
+  const { tokens: T } = useTheme()
   const navigate    = useNavigate()
   const location    = useLocation()
   const { claimId } = useParams()
@@ -49,19 +49,38 @@ export default function Registration() {
   }))
   const [policy, setPolicy] = useState(prefillPolicy || null)
 
+  useEffect(() => {
+    if (!wizardStarted || !policy) return
+    setPolicyData((prev) => {
+      const prefill = buildPolicyRegistrationPrefill(policy, prev)
+      if (!Object.keys(prefill).length) return prev
+      return { ...prev, ...prefill }
+    })
+  }, [wizardStarted, policy?.policyId])
+
   const startWizard = ({ policy: p, policyData: pd }) => {
     setPolicy(p)
     const today = new Date().toISOString().split('T')[0]
-    setPolicyData((prev) => withRegistrationNotificationDefaults({
-      ...prev,
+    const prefill = buildPolicyRegistrationPrefill(p, pd || {})
+    const merged = withRegistrationNotificationDefaults({
       ...pd,
+      ...prefill,
       initiationDate: today,
       initialPolicyStatus: p?.premiumStatus || pd?.initialPolicyStatus,
-      createdBy: prev.createdBy || sessionStorage.getItem('loggedUser') || user?.username || '',
+      createdBy: pd?.createdBy || sessionStorage.getItem('loggedUser') || user?.username || '',
       _demographicsComplete: false,
       _requirementsComplete: false,
       _assessmentComplete: false,
+    })
+    setPolicyData((prev) => withRegistrationNotificationDefaults({
+      ...prev,
+      ...merged,
+      createdBy: prev.createdBy || merged.createdBy,
     }))
+    const n = countPrefillFields(prefill)
+    if (n > 0) {
+      toast('info', 'Life Asia data applied', `${n} contract and eagle field(s) prefilled from policy.`)
+    }
     setWizardStarted(true)
     setCompletedTabs(new Set())
     setActiveTab('demographics')
@@ -97,12 +116,12 @@ export default function Registration() {
           </div>
           <div style={{ display:'flex', gap:'8px' }}>
             {(policy?.policyId || prefillPolicy) && (
-              <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:'8px', padding:'8px 14px', fontSize:'12px', fontWeight:700, color:T.primary }}>
+              <div style={{ ...alertBannerStyle(T, 'info'), borderRadius:'8px', padding:'8px 14px', fontSize:'12px', fontWeight:700 }}>
                 📋 {(policy || prefillPolicy).policyId || policyData.policyId} — {(policy || prefillPolicy).productName || policyData.productName || 'Policy'}
               </div>
             )}
             {policyData.policyId && !policy && !prefillPolicy && (
-              <div style={{ background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:'8px', padding:'8px 14px', fontSize:'12px', fontWeight:700, color:'#059669' }}>
+              <div style={{ ...alertBannerStyle(T, 'success'), borderRadius:'8px', padding:'8px 14px', fontSize:'12px', fontWeight:700 }}>
                 📋 {policyData.policyId}
               </div>
             )}
@@ -133,18 +152,18 @@ export default function Registration() {
                   }}
                   style={{
                     flex:1, padding:'16px 12px', border:'none', cursor: locked?'not-allowed':'pointer',
-                    borderBottom: active ? '3px solid #1D4ED8' : '3px solid transparent',
-                    background: active ? '#EFF6FF' : 'transparent',
+                    borderBottom: active ? `3px solid ${T.primary}` : '3px solid transparent',
+                    background: active ? (T.isDark ? T.inputBg : T.sectionOpenBg) : 'transparent',
                     fontFamily:'Inter,sans-serif', transition:'all 0.15s', marginBottom:'-1px',
                     opacity: locked ? 0.45 : 1,
                   }}>
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
-                    <div style={{ width:'22px', height:'22px', borderRadius:'50%', background: done?'#059669': active?T.primary:'#E2E8F0', color:'#fff', fontSize:'10px', fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'background 0.15s' }}>
+                    <div style={{ width:'22px', height:'22px', borderRadius:'50%', background: done ? solidToneColor(T, 'success') : active ? T.primary : T.stepInactive, color:'#fff', fontSize:'10px', fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'background 0.15s' }}>
                       {done ? '✓' : tab.step}
                     </div>
                     <div style={{ textAlign:'left' }}>
-                      <div style={{ fontSize:'13px', fontWeight:700, color: active?T.primary: done?'#059669':T.textPrimary }}>{tab.label}</div>
-                      <div style={{ fontSize:'10px', color:'#94A3B8', marginTop:'1px' }}>{tab.desc}</div>
+                      <div style={{ fontSize:'13px', fontWeight:700, color: active ? T.primary : done ? T.success : T.textPrimary }}>{tab.label}</div>
+                      <div style={{ fontSize:'10px', color: T.textSubtle, marginTop:'1px' }}>{tab.desc}</div>
                     </div>
                   </div>
                 </button>
@@ -197,10 +216,10 @@ export default function Registration() {
         {/* Progress bar */}
         <div style={{ marginTop:'12px', display:'flex', gap:'4px' }}>
           {TABS.map(tab => (
-            <div key={tab.id} style={{ flex:1, height:'4px', borderRadius:'99px', background: isDone(tab.id)?'#059669': activeTab===tab.id?T.primary:'#E2E8F0', transition:'background 0.3s' }}/>
+            <div key={tab.id} style={{ flex:1, height:'4px', borderRadius:'99px', background: isDone(tab.id)?solidToneColor(T,'success'): activeTab===tab.id?T.primary:T.stepInactive, transition:'background 0.3s' }}/>
           ))}
         </div>
-        <div style={{ marginTop:'6px', textAlign:'right', fontSize:'11px', color:'#94A3B8', fontWeight:600 }}>
+        <div style={{ marginTop:'6px', textAlign:'right', fontSize:'11px', color: T.textSubtle, fontWeight:600 }}>
           {completedTabs.size} of {TABS.length} sections complete
         </div>
         </>

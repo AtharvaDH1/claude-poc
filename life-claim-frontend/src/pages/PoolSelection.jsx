@@ -8,13 +8,11 @@ import { workflowStatusFromRow, workflowRoleFromRow } from '../util/claimSearchM
 import ClaimHoverPreview from '../components/claim/ClaimHoverPreview'
 import { Layers, UserPlus, ChevronDown, Search, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { filterClaimRows, sortClaimRows, uniqueFieldValues } from '../util/claimTableFilters'
+import { useTheme } from '../context/ThemeContext'
+import { alertBannerStyle, selectFieldStyle } from '../ui/pageTokens'
+import { PremiumGrid, PremiumGridScroll, SortableTh, GridStatusBadge } from '../ui/PremiumDataGrid'
+import { statusToGridTone } from '../util/statusBadgeTone'
 
-const T = {
-  primary: '#1D4ED8', primaryHover: '#1E40AF',
-  card: '#FFFFFF', border: '#E2E8F0', borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A', textSecondary: '#334155',
-  textMuted: '#64748B', textSubtle: '#94A3B8',
-}
 
 const POOL_TABLE_COLUMNS = [
   { label: 'Claim Number', key: 'claimId' },
@@ -38,6 +36,7 @@ function mapPoolRow(c) {
 }
 
 export default function PoolSelection() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const { user } = useAuth()
   const roleKey = Array.isArray(user?.roles) ? user.roles.join('|') : String(user?.role ?? '')
@@ -158,9 +157,9 @@ export default function PoolSelection() {
               Pick unassigned claims from the {poolType} pool, then assign to yourself and work them in My Task.
             </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', background: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <Layers size={15} style={{ color: '#D97706' }} />
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#92400E' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', ...alertBannerStyle(T, 'warn') }}>
+            <Layers size={15} style={{ color: T.warning }} />
+            <span style={{ fontSize: '13px', fontWeight: 700, color: T.pending.text ?? T.pending.color }}>
               {displayPool.length === pool.length ? `${pool.length} unassigned` : `${displayPool.length} shown · ${pool.length} unassigned`}
             </span>
           </div>
@@ -172,19 +171,19 @@ export default function PoolSelection() {
             <button
               type="button"
               onClick={() => setPoolOpen((p) => !p)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px', height: '40px', borderRadius: '8px', border: `1.5px solid ${T.border}`, background: '#F8FAFC', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px', height: '40px', borderRadius: '8px', border: `1.5px solid ${T.border}`, background: T.inputBg, fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
             >
               {poolType}
               <ChevronDown size={14} />
             </button>
             {poolOpen && (
-              <div style={{ position: 'absolute', top: '44px', left: 0, background: '#fff', border: `1px solid ${T.border}`, borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 20, minWidth: '140px' }}>
+              <div style={{ position: 'absolute', top: '44px', left: 0, background: T.card, border: `1px solid ${T.border}`, borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 20, minWidth: '140px' }}>
                 {poolRoles.map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => { setPoolType(r); setPoolOpen(false) }}
-                    style={{ display: 'block', width: '100%', padding: '10px 14px', border: 'none', background: poolType === r ? '#EFF6FF' : 'transparent', textAlign: 'left', fontSize: '13px', fontWeight: 700, cursor: 'pointer', color: poolType === r ? T.primary : T.textSecondary, fontFamily: 'Inter,sans-serif' }}
+                    style={{ display: 'block', width: '100%', padding: '10px 14px', border: 'none', background: poolType === r ? T.sectionOpenBg : 'transparent', textAlign: 'left', fontSize: '13px', fontWeight: 700, cursor: 'pointer', color: poolType === r ? T.primary : T.textSecondary, fontFamily: 'Inter,sans-serif' }}
                   >
                     {r}
                   </button>
@@ -231,7 +230,7 @@ export default function PoolSelection() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, fontFamily: 'Inter,sans-serif', color: T.textSecondary, minWidth: '180px' }}
+              style={selectFieldStyle(T, { height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, minWidth: '180px' })}
             >
               {statusOptions.map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -253,7 +252,7 @@ export default function PoolSelection() {
               <button
                 type="button"
                 onClick={() => loadPool(poolType)}
-                style={{ marginTop: '16px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+                style={{ marginTop: '16px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.inputBg, fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
               >
                 Refresh pool
               </button>
@@ -265,57 +264,54 @@ export default function PoolSelection() {
               <button
                 type="button"
                 onClick={() => { setSearchQ(''); setSearchApplied(''); setStatusFilter('All Statuses') }}
-                style={{ marginTop: '16px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+                style={{ marginTop: '16px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.inputBg, fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
               >
                 Clear filters
               </button>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
-                    <th style={{ padding: '10px 12px', width: '40px' }}>
-                      <input
-                        type="checkbox"
-                        checked={displayPool.length > 0 && displayPool.every((p) => selected.has(p.claimId))}
-                        onChange={toggleAll}
-                      />
-                    </th>
-                    {POOL_TABLE_COLUMNS.map(({ label, key }) => (
-                      <th
-                        key={key}
-                        onClick={() => handleSort(key)}
-                        style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>{label}<SortIcon col={key} /></span>
+            <PremiumGrid>
+              <PremiumGridScroll>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px', padding: '11px 12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={displayPool.length > 0 && displayPool.every((p) => selected.has(p.claimId))}
+                          onChange={toggleAll}
+                        />
                       </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayPool.map((item) => (
-                    <tr key={item.claimId} style={{ borderBottom: `1px solid ${T.borderSubtle}` }}>
-                      <td style={{ padding: '12px' }}>
-                        <input type="checkbox" checked={selected.has(item.claimId)} onChange={() => toggleSelect(item.claimId)} />
-                      </td>
-                      <td
-                        style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 700, color: T.primary, fontFamily: 'monospace', cursor: 'default' }}
-                        onMouseEnter={() => setHoverClaim(item)}
-                        onMouseLeave={() => setHoverClaim(null)}
-                      >
-                        {item.claimId}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: '12px', fontFamily: 'monospace', color: T.textMuted }}>{item.policyId}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 600, color: T.textSecondary }}>{item.status}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{item.role}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{item.createdOn}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{item.createdBy}</td>
+                      {POOL_TABLE_COLUMNS.map(({ label, key }) => (
+                        <SortableTh key={key} active={sortCol === key} onClick={() => handleSort(key)} sortIcon={<SortIcon col={key} />}>
+                          {label}
+                        </SortableTh>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {displayPool.map((item) => (
+                      <tr key={item.claimId}>
+                        <td style={{ padding: '12px' }}>
+                          <input type="checkbox" checked={selected.has(item.claimId)} onChange={() => toggleSelect(item.claimId)} />
+                        </td>
+                        <td
+                          onMouseEnter={() => setHoverClaim(item)}
+                          onMouseLeave={() => setHoverClaim(null)}
+                        >
+                          <div className="premium-grid__cell-primary">{item.claimId}</div>
+                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '12px', color: T.textMuted }}>{item.policyId}</td>
+                        <td><GridStatusBadge tone={statusToGridTone(item.status)}>{item.status}</GridStatusBadge></td>
+                        <td style={{ fontSize: '12px', fontWeight: 600 }}>{item.role}</td>
+                        <td style={{ fontSize: '12px', color: T.textMuted }}>{item.createdOn}</td>
+                        <td style={{ fontSize: '12px', color: T.textMuted }}>{item.createdBy}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </PremiumGridScroll>
+            </PremiumGrid>
           )}
         </div>
 

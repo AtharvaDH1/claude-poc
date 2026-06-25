@@ -1,4 +1,4 @@
-import { WS } from './workspaceUi'
+import { useWorkspaceTokens } from './workspaceUi'
 
 const TABLE_DEFS = [
   {
@@ -75,6 +75,7 @@ const TABLE_DEFS = [
 ]
 
 function EagleTable({ columns, rows, canEdit, onCellChange, onDeleteRow, empty = 'No rows.' }) {
+  const WS = useWorkspaceTokens()
   if (!rows?.length) {
     return <div style={{ fontSize: '13px', color: WS.textSubtle, padding: '12px' }}>{empty}</div>
   }
@@ -101,7 +102,7 @@ function EagleTable({ columns, rows, canEdit, onCellChange, onDeleteRow, empty =
     <div style={{ overflowX: 'auto', border: `1px solid ${WS.border}`, borderRadius: '8px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
-          <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${WS.border}` }}>
+          <tr style={{ background: WS.surfaceSubtle, borderBottom: `2px solid ${WS.border}` }}>
             {columns.map((c) => (
               <th key={c.key} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: WS.textSubtle, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                 {c.label}
@@ -133,7 +134,7 @@ function EagleTable({ columns, rows, canEdit, onCellChange, onDeleteRow, empty =
                     type="button"
                     onClick={() => onDeleteRow(rowIndex)}
                     title="Remove row"
-                    style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${WS.border}`, background: '#fff', fontSize: '11px', cursor: 'pointer', color: '#DC2626', fontWeight: 700 }}
+                    style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${WS.border}`, background: WS.card, fontSize: '11px', cursor: 'pointer', color: '#DC2626', fontWeight: 700 }}
                   >
                     ×
                   </button>
@@ -148,6 +149,7 @@ function EagleTable({ columns, rows, canEdit, onCellChange, onDeleteRow, empty =
 }
 
 export default function EagleScreenSection({ demogs, canEdit, onPatch, onOpenFraud }) {
+  const WS = useWorkspaceTokens()
   const eagle = demogs?.eagle || {}
 
   const patchTable = (policyKey, rows) => {
@@ -192,7 +194,7 @@ export default function EagleScreenSection({ demogs, canEdit, onPatch, onOpenFra
               <button
                 type="button"
                 onClick={() => addRow(def.policyKey, def.emptyRow)}
-                style={{ padding: '4px 12px', borderRadius: '6px', border: `1px solid ${WS.border}`, background: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+                style={{ padding: '4px 12px', borderRadius: '6px', border: `1px solid ${WS.border}`, background: WS.card, fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
               >
                 + Add row
               </button>
@@ -211,7 +213,7 @@ export default function EagleScreenSection({ demogs, canEdit, onPatch, onOpenFra
         <div style={{ fontSize: '11px', fontWeight: 700, color: WS.textSubtle, marginBottom: '6px' }}>Eagle screen (bank / agent)</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '12px' }}>
           {[['Bank', eagle.bank_name || eagle.bankName], ['Account', eagle.acc_no || eagle.accountNo || eagle.accNo], ['Agent', eagle.agent_code || eagle.agentCode]].map(([k, v]) => (
-            <div key={k} style={{ padding: '8px', background: '#F8FAFC', borderRadius: '6px' }}>
+            <div key={k} style={{ padding: '8px', background: WS.surfaceMuted, borderRadius: '6px' }}>
               <div style={{ color: WS.textSubtle, fontWeight: 700, fontSize: '10px' }}>{k}</div>
               <div style={{ fontWeight: 600, marginTop: '2px' }}>{v || '—'}</div>
             </div>

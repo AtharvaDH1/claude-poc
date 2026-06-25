@@ -6,6 +6,7 @@ const {
   validateAssignClaimsBody,
   validateChangeStatusBody,
 } = require('../middleware/requestValidation');
+const { authorizeClaimBodyAccess, authorizeAssignClaimsBodyAccess } = require('../middleware/claimAccessMiddleware');
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ router.post(
   '/assignClaim',
   protect(hasAnyRole(['Pre Assessor', 'Assessor', 'Verifier'])),
   validateAssignClaimsBody,
+  authorizeAssignClaimsBodyAccess,
   claimsController.assignClaims
 );
 
@@ -25,7 +27,8 @@ router.post(
   '/changeStatus',
   protect('realm:Pre Assessor'),
   validateChangeStatusBody,
-  claimsController.changeStatus
+  authorizeClaimBodyAccess,
+  claimsController.changeStatus,
 );
 
 module.exports = router;

@@ -14,31 +14,34 @@ import { isCaptchaOptional } from '../config/appEnv'
 import { COMPANY } from '../config/companyBrand'
 import BrandLogo from '../components/BrandLogo'
 import { isRetiredAdminUsername } from '../util/superuserRole'
+import { useTheme } from '../context/ThemeContext'
+import { solidToneColor } from '../ui/pageTokens'
 
 const CAPTCHA_UNAVAILABLE = '__CAPTCHA_UNAVAILABLE__'
 
 const CAPTCHA_LOAD_FALLBACK = isCaptchaOptional()
 
 const FEATURES = [
-  { icon: '🔐', text: 'End-to-end encrypted claim data with full audit trail' },
+  { icon: '🔐', text: 'Seamless Claim Workflow : Registration → Assessment → Verification' },
   { icon: '⚡', text: 'Role-based pipeline: Pre-Assessor → Assessor → Verifier' },
   { icon: '📊', text: 'Real-time dashboards and claim analytics' },
   { icon: '🛡️', text: 'Auto-lockout after failed attempts with session monitoring' },
 ]
 
 function FloatingInput({ label, type='text', value, onChange, onKeyDown, onKeyUp, autoFocus, inputRef, rightSlot, error }) {
+  const { tokens: T } = useTheme()
   const [focused, setFocused] = useState(false)
   const lifted = focused || value.length > 0
   return (
     <div style={{ position:'relative', marginBottom: error ? '6px' : '0' }}>
       <div style={{
         position:'relative', borderRadius:'10px', overflow:'hidden',
-        border:`1.5px solid ${error ? '#FCA5A5' : focused ? '#1D4ED8' : '#E2E8F0'}`,
-        background: error ? '#FFF5F5' : focused ? '#fff' : '#F8FAFC',
+        border:`1.5px solid ${error ? T.rejected.border : focused ? T.primary : T.border}`,
+        background: error ? T.inputBgError : focused ? T.inputBgFocus : T.inputBg,
         boxShadow: error
           ? '0 0 0 3px rgba(239,68,68,0.1)'
           : focused
-          ? '0 0 0 3px rgba(29,78,216,0.12), 0 1px 4px rgba(0,0,0,0.04)'
+          ? `0 0 0 3px ${T.primaryLight}, 0 1px 4px rgba(0,0,0,0.04)`
           : '0 1px 2px rgba(0,0,0,0.04)',
         transition:'all 0.2s ease',
       }}>
@@ -48,7 +51,7 @@ function FloatingInput({ label, type='text', value, onChange, onKeyDown, onKeyUp
           transform: lifted ? 'translateY(0) scale(0.8)' : 'translateY(-50%)',
           transformOrigin:'left',
           fontSize:'14px', fontWeight:600,
-          color: error ? '#EF4444' : focused ? '#1D4ED8' : '#94A3B8',
+          color: error ? T.danger : focused ? T.primary : T.textSubtle,
           pointerEvents:'none', transition:'all 0.18s ease', letterSpacing:'-0.01em',
         }}>
           {label}
@@ -63,18 +66,19 @@ function FloatingInput({ label, type='text', value, onChange, onKeyDown, onKeyUp
             width:'100%', height:'56px', padding:'20px 14px 8px',
             paddingRight: rightSlot ? '48px' : '14px',
             background:'transparent', border:'none', outline:'none',
-            fontSize:'15px', fontWeight:600, color:'#0F172A',
+            fontSize:'15px', fontWeight:600, color: T.textPrimary,
             fontFamily:'Inter,sans-serif', letterSpacing:'-0.01em',
           }}
         />
         {rightSlot && <div style={{ position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)' }}>{rightSlot}</div>}
       </div>
-      {error && <div style={{ fontSize:'12px', fontWeight:600, color:'#EF4444', marginTop:'5px', paddingLeft:'2px' }}>{error}</div>}
+      {error && <div style={{ fontSize:'12px', fontWeight:600, color: T.danger, marginTop:'5px', paddingLeft:'2px' }}>{error}</div>}
     </div>
   )
 }
 
 export default function Login() {
+  const { tokens: T } = useTheme()
   const { login } = useAuth()
   const navigate  = useNavigate()
   const passRef   = useRef(null)
@@ -94,12 +98,6 @@ export default function Login() {
   const [sessionNotice, setSessionNotice] = useState('')
   const [offline, setOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false)
   useEffect(() => {
-    if (!sessionStorage.getItem('token')) {
-      const staleReason = sessionStorage.getItem('auth_logout_reason')
-      if (staleReason === 'session') {
-        sessionStorage.removeItem('auth_logout_reason')
-      }
-    }
     const reason = sessionStorage.getItem('auth_logout_reason')
     if (reason) {
       const msg = logoutReasonMessage(reason)
@@ -264,65 +262,65 @@ export default function Login() {
 
       {/* RIGHT FORM PANEL */}
       <div style={{
-        flex:1, background:'#fff', display:'flex', flexDirection:'column',
+        flex:1, background: T.pageBg, display:'flex', flexDirection:'column',
         alignItems:'center', justifyContent:'center', padding:'40px 24px',
         position:'relative', overflow:'hidden',
         transform: mounted ? 'translateX(0)' : 'translateX(30px)',
         opacity: mounted ? 1 : 0,
         transition:'transform 0.7s cubic-bezier(0.22,1,0.36,1), opacity 0.7s ease',
       }}>
-        <div style={{ position:'absolute', top:'-60px', right:'-60px', width:'300px', height:'300px', borderRadius:'50%', background:'radial-gradient(circle, #EFF6FF 0%, transparent 70%)', pointerEvents:'none' }} />
-        <div style={{ position:'absolute', bottom:'-40px', left:'-40px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle, #F0F9FF 0%, transparent 70%)', pointerEvents:'none' }} />
+        <div style={{ position:'absolute', top:'-60px', right:'-60px', width:'300px', height:'300px', borderRadius:'50%', background:`radial-gradient(circle, ${T.primaryLight} 0%, transparent 70%)`, pointerEvents:'none' }} />
+        <div style={{ position:'absolute', bottom:'-40px', left:'-40px', width:'200px', height:'200px', borderRadius:'50%', background:`radial-gradient(circle, ${T.metricBlueBg} 0%, transparent 70%)`, pointerEvents:'none' }} />
 
         <div style={{ width:'100%', maxWidth:'400px', position:'relative', zIndex:1 }}>
 
           {/* Mobile logo */}
           <div className="lg:hidden" style={{ marginBottom:'36px' }}>
             <BrandLogo variant="mobile" />
-            <div style={{ fontSize:'11px', fontWeight:600, color:'#64748B', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'8px' }}>
+            <div style={{ fontSize:'11px', fontWeight:600, color: T.textMuted, letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'8px' }}>
               {COMPANY.product}
             </div>
           </div>
 
           <div style={{ marginBottom:'28px', animation:'fadeUp 0.5s 0.25s ease both', opacity:0, animationFillMode:'both' }}>
-            <h2 style={{ fontSize:'26px', fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', marginBottom:'6px' }}>Welcome back</h2>
-            <p style={{ fontSize:'14px', color:'#64748B', fontWeight:500 }}>Sign in to continue to the claims platform.</p>
+            <h2 style={{ fontSize:'26px', fontWeight:800, color: T.textPrimary, letterSpacing:'-0.02em', marginBottom:'6px' }}>Welcome back</h2>
+            <p style={{ fontSize:'14px', color: T.textMuted, fontWeight:500 }}>Sign in to continue to the claims platform.</p>
           </div>
 
           {sessionNotice && (
-            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background: T.info.bg, border:`1px solid ${T.info.border}`, borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
               <span style={{ fontSize:'15px', flexShrink:0 }}>ℹ️</span>
-              <div style={{ fontSize:'12px', fontWeight:600, color:'#1E40AF', lineHeight:1.5 }}>{sessionNotice}</div>
+              <div style={{ fontSize:'12px', fontWeight:600, color: T.info.color, lineHeight:1.5 }}>{sessionNotice}</div>
             </div>
           )}
 
           {offline && (
-            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background: T.pending.bg, border:`1px solid ${T.pending.border}`, borderRadius:'10px', padding:'12px 14px', marginBottom:'20px' }}>
               <span style={{ fontSize:'15px', flexShrink:0 }}>📡</span>
-              <div style={{ fontSize:'12px', fontWeight:600, color:'#92400E' }}>You appear to be offline.</div>
+              <div style={{ fontSize:'12px', fontWeight:600, color: T.pending.text }}>You appear to be offline.</div>
             </div>
           )}
 
           {/* Error */}
           {errors.general && (
-            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px', animation: shake ? 'shake 0.5s ease' : 'fadeIn 0.2s ease' }}>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'10px', background: T.rejected.bg, border:`1px solid ${T.rejected.border}`, borderRadius:'10px', padding:'12px 14px', marginBottom:'20px', animation: shake ? 'shake 0.5s ease' : 'fadeIn 0.2s ease' }}>
               <span style={{ fontSize:'15px', flexShrink:0, marginTop:'1px' }}>⚠️</span>
               <div>
-                <div style={{ fontSize:'13px', fontWeight:700, color:'#B91C1C' }}>Authentication failed</div>
-                <div style={{ fontSize:'12px', color:'#991B1B', marginTop:'2px', fontWeight:500 }}>{errors.general}</div>
+                <div style={{ fontSize:'13px', fontWeight:700, color: T.rejected.color }}>Authentication failed</div>
+                <div style={{ fontSize:'12px', color: T.rejected.text, marginTop:'2px', fontWeight:500 }}>{errors.general}</div>
               </div>
             </div>
           )}
 
           {/* Success */}
           {success && (
-            <div style={{ display:'flex', alignItems:'center', gap:'10px', background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px', animation:'fadeIn 0.2s ease' }}>
-              <div style={{ width:'28px', height:'28px', borderRadius:'50%', background:'#059669', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', background: T.approved.bg, border:`1px solid ${T.approved.border}`, borderRadius:'10px', padding:'12px 14px', marginBottom:'20px', animation:'fadeIn 0.2s ease' }}>
+              <div style={{ width:'28px', height:'28px', borderRadius:'50%', background: solidToneColor(T, 'success'), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
               <div>
-                <div style={{ fontSize:'13px', fontWeight:700, color:'#065F46' }}>Login successful!</div>
-                <div style={{ fontSize:'12px', color:'#047857', marginTop:'1px' }}>Redirecting to your dashboard...</div>
+                <div style={{ fontSize:'13px', fontWeight:700, color: T.approved.text }}>Login successful!</div>
+                <div style={{ fontSize:'12px', color: T.approved.color, marginTop:'1px' }}>Redirecting to your dashboard...</div>
               </div>
             </div>
           )}
@@ -350,7 +348,7 @@ export default function Login() {
                   }
                 />
                 {capsLock && (
-                  <div style={{ display:'inline-flex', alignItems:'center', gap:'6px', marginTop:'8px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:'7px', padding:'4px 10px', fontSize:'12px', fontWeight:600, color:'#92400E' }}>
+                  <div style={{ display:'inline-flex', alignItems:'center', gap:'6px', marginTop:'8px', background: T.pending.bg, border:`1px solid ${T.pending.border}`, borderRadius:'7px', padding:'4px 10px', fontSize:'12px', fontWeight:600, color: T.pending.text }}>
                     🔒 Caps Lock is on
                   </div>
                 )}
@@ -381,10 +379,10 @@ export default function Login() {
                 }}
               />
               {errors.captcha && (
-                <div style={{ fontSize:'12px', fontWeight:600, color:'#EF4444', marginTop:'6px' }}>{errors.captcha}</div>
+                <div style={{ fontSize:'12px', fontWeight:600, color: T.danger, marginTop:'6px' }}>{errors.captcha}</div>
               )}
               {captchaUnavailable && CAPTCHA_LOAD_FALLBACK && (
-                <div style={{ fontSize:'11px', color:'#64748B', marginTop:'6px' }}>
+                <div style={{ fontSize:'11px', color: T.textMuted, marginTop:'6px' }}>
                   reCAPTCHA unavailable on this network — you can still sign in (POC/SIT bypass).
                 </div>
               )}
@@ -394,14 +392,14 @@ export default function Login() {
               style={{
                 width:'100%', height:'46px', borderRadius:'8px', border:'none',
                 cursor: loading || success ? 'not-allowed' : 'pointer',
-                background: success ? '#059669' : loading ? '#3B82F6' : '#1D4ED8',
+                background: success ? solidToneColor(T, 'success') : loading ? T.primary : T.primary,
                 color:'#fff', fontSize:'14px', fontWeight:700, letterSpacing:'-0.01em',
                 fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px',
                 transition:'all 0.2s ease', boxShadow:'0 4px 12px rgba(29,78,216,0.35)',
                 position:'relative', overflow:'hidden',
               }}
-              onMouseEnter={e => { if(!loading && !success) { e.currentTarget.style.background='#1E40AF'; e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(29,78,216,0.4)' } }}
-              onMouseLeave={e => { e.currentTarget.style.background = success ? '#059669' : '#1D4ED8'; e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='0 4px 12px rgba(29,78,216,0.35)' }}
+              onMouseEnter={e => { if(!loading && !success) { e.currentTarget.style.background=T.primaryHover; e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(29,78,216,0.4)' } }}
+              onMouseLeave={e => { e.currentTarget.style.background = success ? solidToneColor(T, 'success') : T.primary; e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='0 4px 12px rgba(29,78,216,0.35)' }}
             >
               {loading ? (<><svg style={{ width:'16px', height:'16px', animation:'spin 0.8s linear infinite' }} fill="none" viewBox="0 0 24 24"><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Authenticating...</>)
               : success ? '✓ Signed in successfully'

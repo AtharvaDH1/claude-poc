@@ -2,11 +2,14 @@ import wrapper from "../util/ApiWrapper";
 import { hasCalcAmountData } from "../util/workspaceDisplay";
 
 // Fetch transaction details for Life Assured
-export const getTransactionDetailsLA = async (policyId, txnDate) => {
+export const getTransactionDetailsLA = async (policyId, txnDate, claimNumber = '') => {
+  const body = { policyId, txnDate };
+  const claim = String(claimNumber || '').trim();
+  if (claim) body.claimNumber = claim;
   const response = await wrapper.fetchWithToken("/txn/txnDetails", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ policyId, txnDate }),
+    body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => null);
   return data;
@@ -181,20 +184,23 @@ export function filterTxnDbRows(rows, txnDate) {
 }
 
 // Save / persist transaction details (including remarks & actions)
-export const saveTransactionDetailsLA = async (policyId, txnDate, { remarks = '', rows = [] } = {}) => {
+export const saveTransactionDetailsLA = async (policyId, txnDate, { remarks = '', rows = [], claimNumber = '' } = {}) => {
   const prepared = prepareTxnRowsForSave(rows, policyId, txnDate, remarks)
   if (!prepared.length) {
     throw new Error('No transaction rows to save')
   }
+  const body = {
+    policyId,
+    policyNumber: policyId,
+    txnDate,
+    transactionDetails: prepared,
+  }
+  const claim = String(claimNumber || '').trim()
+  if (claim) body.claimNumber = claim
   const response = await wrapper.fetchWithToken('/txn/txnSave', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      policyId,
-      policyNumber: policyId,
-      txnDate,
-      transactionDetails: prepared,
-    }),
+    body: JSON.stringify(body),
   })
   const data = await response.json().catch(() => null)
   if (!response.ok) {
@@ -203,11 +209,14 @@ export const saveTransactionDetailsLA = async (policyId, txnDate, { remarks = ''
   return data
 }
 
-export const getTransactionApiDBDetails = async (policyId, txnDate) => {
+export const getTransactionApiDBDetails = async (policyId, txnDate, claimNumber = '') => {
+  const body = { policyId, policyNumber: policyId, txnDate };
+  const claim = String(claimNumber || '').trim();
+  if (claim) body.claimNumber = claim;
   const response = await wrapper.fetchWithToken('/txn/transactionApiDBDetails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ policyId, policyNumber: policyId, txnDate }),
+    body: JSON.stringify(body),
   })
   return response.json().catch(() => null)
 }

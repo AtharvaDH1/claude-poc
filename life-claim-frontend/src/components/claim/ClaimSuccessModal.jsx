@@ -1,9 +1,4 @@
-const T = {
-  primary: '#1D4ED8',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-}
+import { useTheme } from '../../context/ThemeContext'
 
 /** Centered success dialog — same pattern as registration claim submit. */
 export default function ClaimSuccessModal({
@@ -16,6 +11,7 @@ export default function ClaimSuccessModal({
   secondaryLabel,
   onSecondary,
 }) {
+  const { tokens: T } = useTheme()
   if (!open) return null
 
   return (
@@ -23,105 +19,100 @@ export default function ClaimSuccessModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.5)',
+        background: T.overlay,
         zIndex: 400,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backdropFilter: 'blur(4px)',
+        padding: '24px',
       }}
     >
       <div
         style={{
-          background: '#fff',
-          borderRadius: '20px',
-          width: 'min(460px, 94vw)',
-          padding: '40px',
+          background: T.card,
+          borderRadius: '16px',
+          padding: '32px 28px',
+          maxWidth: '420px',
+          width: '100%',
           textAlign: 'center',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.25)',
+          border: `1px solid ${T.border}`,
+          boxShadow: T.dropdownShadow,
         }}
       >
         <div
           style={{
-            width: '64px',
-            height: '64px',
+            width: '56px',
+            height: '56px',
             borderRadius: '50%',
-            background: 'linear-gradient(135deg,#059669,#047857)',
+            background: T.approved.bg,
+            border: `2px solid ${T.approved.border}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 20px',
-            boxShadow: '0 8px 24px rgba(5,150,105,0.4)',
+            margin: '0 auto 16px',
+            fontSize: '24px',
           }}
         >
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <path d="M5 14L11 20L23 8" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          ✓
         </div>
-        <div style={{ fontSize: '22px', fontWeight: 900, color: T.textPrimary, letterSpacing: '-0.02em', marginBottom: '8px' }}>
-          {title}
-        </div>
-        <div style={{ fontSize: '14px', color: T.textMuted, marginBottom: '20px', lineHeight: 1.55 }}>
-          {message}
-        </div>
+        <h2 style={{ fontSize: '18px', fontWeight: 800, color: T.textPrimary, marginBottom: '8px' }}>{title}</h2>
+        <p style={{ fontSize: '14px', color: T.textMuted, lineHeight: 1.5, marginBottom: claimNo ? '12px' : '24px' }}>{message}</p>
         {claimNo && (
           <div
             style={{
-              padding: '16px 20px',
-              background: '#ECFDF5',
-              borderRadius: '12px',
-              border: '1px solid #A7F3D0',
+              fontFamily: 'monospace',
+              fontSize: '15px',
+              fontWeight: 700,
+              color: T.primary,
+              background: T.primaryLight,
+              border: `1px solid ${T.primaryBorder}`,
+              borderRadius: '8px',
+              padding: '10px 16px',
               marginBottom: '24px',
             }}
           >
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
-              Claim Number
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: 900, color: '#065F46', fontFamily: 'monospace' }}>
-              {claimNo}
-            </div>
+            {claimNo}
           </div>
         )}
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
           {secondaryLabel && onSecondary && (
             <button
               type="button"
               onClick={onSecondary}
               style={{
-                flex: 1,
-                padding: '11px',
-                borderRadius: '10px',
+                padding: '10px 20px',
+                borderRadius: '8px',
                 border: `1px solid ${T.border}`,
-                background: '#F8FAFC',
-                fontSize: '13px',
+                background: T.surfaceMuted,
+                color: T.textSecondary,
                 fontWeight: 700,
+                fontSize: '13px',
                 cursor: 'pointer',
-                color: T.textMuted,
                 fontFamily: 'Inter,sans-serif',
               }}
             >
               {secondaryLabel}
             </button>
           )}
-          <button
-            type="button"
-            onClick={onPrimary}
-            style={{
-              flex: 1,
-              padding: '11px',
-              borderRadius: '10px',
-              border: 'none',
-              background: T.primary,
-              color: '#fff',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontFamily: 'Inter,sans-serif',
-              boxShadow: '0 4px 12px rgba(29,78,216,0.3)',
-            }}
-          >
-            {primaryLabel}
-          </button>
+          {primaryLabel && onPrimary && (
+            <button
+              type="button"
+              onClick={onPrimary}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: 'none',
+                background: T.primary,
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+                fontFamily: 'Inter,sans-serif',
+              }}
+            >
+              {primaryLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

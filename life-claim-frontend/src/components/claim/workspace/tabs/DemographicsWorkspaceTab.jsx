@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Accordion, ROField, EditableField, SimpleTable, WS } from '../workspaceUi'
+import { formatProductName } from '../../../../util/formatProductName'
+import { Accordion, ROField, EditableField, SimpleTable } from '../workspaceUi'
 import EagleScreenSection from '../EagleScreenSection'
 
 export default function DemographicsWorkspaceTab({ claim, demogs, canEdit, onPatch, onOpenFraud }) {
@@ -142,13 +143,13 @@ export default function DemographicsWorkspaceTab({ claim, demogs, canEdit, onPat
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
           {canEdit ? (
             <>
-              <EditableField label="Product" value={contact.productName || claim?.productName} onChange={(v) => patchContact('productName', v)} />
+              <EditableField label="Product" value={formatProductName(contact.productName || claim?.productName)} onChange={(v) => patchContact('productName', v)} />
               <EditableField label="Sum assured" value={contact.sumAssured || claim?.sumAssured} onChange={(v) => patchContact('sumAssured', v)} />
               <EditableField label="Advisor" value={contact.advisorCode || claim?.advisorCode} onChange={(v) => patchContact('advisorCode', v)} />
             </>
           ) : (
             <>
-              <ROField label="Product" value={contact.productName || claim?.productName} />
+              <ROField label="Product" value={formatProductName(contact.productName || claim?.productName)} />
               <ROField label="Sum assured" value={contact.sumAssured || claim?.sumAssured} />
               <ROField label="Advisor" value={contact.advisorCode || claim?.advisorCode} />
             </>

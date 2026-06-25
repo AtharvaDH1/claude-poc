@@ -7,6 +7,7 @@ Both apps read **`.env` in their own folder** (already committed locally for thi
 | Purpose | Frontend (`life-claim-frontend/.env`) | Backend (`life-claim-backend/.env`) |
 |--------|----------------------------------------|----------------------------------------|
 | API / proxy | `VITE_PROXY_TARGET=https://192.168.60.62:3010` | `PORT=3010`, `USE_HTTPS=true` |
+| Drools rules | — | `RULES_ENGINE_URL=http://localhost:8095`, `RULES_ENGINE_ENABLED=true` |
 | Idle logout | `VITE_IDLE_TIMEOUT_MINUTES=5` | `SESSION_IDLE_TIMEOUT_MINUTES=5` |
 | reCAPTCHA | `VITE_RECAPTCHA_SITE_KEY=…La0QUjc…` (site) | `RECAPTCHA_SECRET_KEY=…RyWFweBE` (secret) |
 | Keycloak | `VITE_KEYCLOAK_URL=http://localhost:8081` | `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID` |
@@ -38,6 +39,11 @@ npm start
 # Terminal 2 — frontend
 cd life-claim-frontend
 npm run dev
+
+# Terminal 3 — Drools rules engine (ADD exclusion rules)
+cd life-claim-rules
+start-rules.bat
+# Or: java -jar target\life-claim-rules-0.0.1-SNAPSHOT.jar
 ```
 
 Open: http://localhost:5174

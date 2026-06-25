@@ -3,15 +3,8 @@ import AppLayout from '../layouts/AppLayout'
 import { useToast } from '../components/Toast'
 import { getMails, getMailsCount, getMailById, getAttachments, patchAttachments } from '../services/mailService'
 import { Mail, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react'
+import { useTheme } from '../context/ThemeContext'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-  textSubtle: '#94A3B8',
-}
 
 function field(row, key, fallback = '—') {
   if (!row || !key) return fallback
@@ -20,6 +13,7 @@ function field(row, key, fallback = '—') {
 }
 
 export default function InwardMail() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [page, setPage] = useState(1)
   const [mails, setMails] = useState([])
@@ -85,7 +79,7 @@ export default function InwardMail() {
   const totalPages = Math.max(1, Math.ceil(total / 10))
 
   return (
-    <AppLayout pageTitle="Inward Mail" pageSubtitle="Legacy inbox — /api/mail">
+    <AppLayout pageTitle="Inward Mail" pageSubtitle="Legacy inbox">
       <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) minmax(320px, 1.2fr)', gap: '16px', minHeight: '520px' }}>
           <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -115,7 +109,7 @@ export default function InwardMail() {
                         padding: '12px 16px',
                         border: 'none',
                         borderBottom: `1px solid ${T.border}`,
-                        background: active ? '#EFF6FF' : 'transparent',
+                        background: active ? T.primaryLight : 'transparent',
                         cursor: 'pointer',
                         fontFamily: 'Inter,sans-serif',
                       }}
@@ -133,11 +127,11 @@ export default function InwardMail() {
               )}
             </div>
             <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#F8FAFC', cursor: page <= 1 ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600 }}>
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${T.border}`, background: T.inputBg, cursor: page <= 1 ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600 }}>
                 <ChevronLeft size={14} /> Prev
               </button>
               <span style={{ fontSize: '12px', color: T.textMuted }}>Page {page} / {totalPages}</span>
-              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#F8FAFC', cursor: page >= totalPages ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600 }}>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${T.border}`, background: T.inputBg, cursor: page >= totalPages ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600 }}>
                 Next <ChevronRight size={14} />
               </button>
             </div>
@@ -176,7 +170,7 @@ export default function InwardMail() {
                     {attachments.map((a) => {
                       const fileId = a.file_id ?? a.FILE_ID ?? a.id
                       return (
-                        <div key={fileId} style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC' }}>
+                        <div key={fileId} style={{ padding: '10px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.inputBg }}>
                           <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>{field(a, 'file_name') || field(a, 'filename') || `File ${fileId}`}</div>
                           <input
                             defaultValue={field(a, 'document_type', '')}

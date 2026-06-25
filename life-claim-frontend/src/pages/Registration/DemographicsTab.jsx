@@ -1,6 +1,6 @@
 // DemographicsTab v2 — null-safe
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Field, Input, Select, Textarea, SectionHeader, Grid, Btn, SubTabNav, InfoCard, T } from './shared'
+import { Field, Input, Select, Textarea, SectionHeader, Grid, Btn, SubTabNav, InfoCard, useRegTokens } from './shared'
 import { fetchPolicyDetails as fetchPolicyAPI, fetchAgentRepudiation } from '../../services/policyService'
 import { getPortfolioService } from '../../services/statesService'
 import { getCountries } from '../../services/masterService'
@@ -14,38 +14,38 @@ import {
   validateDemographicsComplete,
   validateRowFields,
   validateClaimantDraft,
-  showValidationToast,
-} from '../../util/registrationValidation'
+  showValidationToast } from '../../util/registrationValidation'
 import { validateIntimationDates, todayIsoDate } from '../../util/intimationDateValidation'
 import {
   buildTrapScoreApiPayload,
   buildLocalTrapScoreFallback,
   computePolicyAge,
   syncDemographicsSections,
-  asArray,
-} from '../../util/buildRegistrationPayload'
+  asArray } from '../../util/buildRegistrationPayload'
 import { filterCauseEvents } from '../../util/normalizeCauseEvent'
 import {
   getPolicyClients,
   buildPayeeDetailsArray,
   clientToPayeeRow,
-  findSelectedPayee,
-} from '../../util/policyClients'
+  findSelectedPayee } from '../../util/policyClients'
+import { tonePanelStyle, toneLabelStyle, toneValueStyle, statusPillStyle, alertBannerStyle } from '../../ui/pageTokens'
+import { buildPolicyRegistrationPrefill, countPrefillFields } from '../../util/prefillRegistrationFromPolicy'
 
 /* ── Cause of Death Modal ── */
 function CauseModal({ causes, loading, loadError, onSelect, onClose, onRetry }) {
+  const T = useRegTokens()
   const [q, setQ] = useState('')
   const filtered = filterCauseEvents(causes, q)
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)' }}>
-      <div style={{ background:'#fff', borderRadius:'16px', width:'560px', maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 64px rgba(0,0,0,0.2)' }}>
+      <div style={{ background:T.card, borderRadius:'16px', width:'560px', maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 64px rgba(0,0,0,0.2)' }}>
         <div style={{ padding:'16px 20px', borderBottom:`1px solid ${T.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <span style={{ fontWeight:800, fontSize:'15px', color:T.textPrimary }}>Select Cause of Death / Event</span>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px', color:T.textMuted }}>×</button>
         </div>
         <div style={{ padding:'12px 16px', borderBottom:`1px solid ${T.border}` }}>
           <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search cause..." autoFocus
-            style={{ width:'100%', height:'36px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'7px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box' }}
+            style={{ width:'100%', height:'36px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'7px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box', background:T.inputBg, color:T.textPrimary }}
             onFocus={e=>e.target.style.borderColor=T.primary} onBlur={e=>e.target.style.borderColor=T.border}/>
         </div>
         <div style={{ flex:1, overflowY:'auto', minHeight:'200px' }}>
@@ -62,7 +62,7 @@ function CauseModal({ causes, loading, loadError, onSelect, onClose, onRetry }) 
             </div>
           ) : (
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
-              <thead style={{ position:'sticky', top:0, background:'#FAFAFA' }}>
+              <thead style={{ position:'sticky', top:0, background:T.surfaceMuted }}>
                 <tr style={{ borderBottom:`2px solid ${T.border}` }}>
                   {['Code','Description','Category','Sub Type'].map(h=>(
                     <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em' }}>{h}</th>
@@ -72,7 +72,7 @@ function CauseModal({ causes, loading, loadError, onSelect, onClose, onRetry }) 
               <tbody>
                 {filtered.map((c, i)=>(
                   <tr key={`${c.causeCode || 'cause'}-${i}`} onClick={()=>onSelect(c)} style={{ borderBottom:`1px solid ${T.borderSubtle}`, cursor:'pointer', transition:'background 0.1s' }}
-                    onMouseEnter={e=>e.currentTarget.style.background='#EFF6FF'} onMouseLeave={e=>e.currentTarget.style.background=''}>
+                    onMouseEnter={e=>e.currentTarget.style.background=T.hoverBg} onMouseLeave={e=>e.currentTarget.style.background=''}>
                     <td style={{ padding:'10px 14px', fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{c.causeCode}</td>
                     <td style={{ padding:'10px 14px', fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{c.causeDescription}</td>
                     <td style={{ padding:'10px 14px', fontSize:'12px', color:T.textMuted }}>{c.causeCategory || '—'}</td>
@@ -90,6 +90,7 @@ function CauseModal({ causes, loading, loadError, onSelect, onClose, onRetry }) 
 
 /* ── Dynamic table for Eagle Screen ── */
 function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
+  const T = useRegTokens()
   const [selectedIndex, setSelectedIndex] = useState(null)
 
   useEffect(() => {
@@ -129,7 +130,7 @@ function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
         </div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding:'20px', textAlign:'center', background:'#FAFAFA', borderRadius:'8px', border:`1px dashed ${T.border}`, fontSize:'13px', color:T.textSubtle }}>
+        <div style={{ padding:'20px', textAlign:'center', background:T.surfaceMuted, borderRadius:'8px', border:`1px dashed ${T.border}`, fontSize:'13px', color:T.textSubtle }}>
           No records added. Click &ldquo;+ Add Row&rdquo; to begin.
         </div>
       ) : (
@@ -140,7 +141,7 @@ function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
           <div style={{ overflowX:'auto', borderRadius:'8px', border:`1px solid ${T.border}` }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:'600px' }}>
               <thead>
-                <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                <tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
                   {columns.map(c=><th key={c.key} style={{ padding:'8px 12px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{c.label}</th>)}
                   <th style={{ padding:'8px 12px', width:'56px', textAlign:'center', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase' }}>Delete</th>
                 </tr>
@@ -154,10 +155,9 @@ function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
                       borderBottom:`1px solid ${T.borderSubtle}`,
                       transition:'background 0.1s',
                       cursor:'pointer',
-                      background: selectedIndex === i ? '#EFF6FF' : 'transparent',
-                      outline: selectedIndex === i ? '2px solid #1D4ED8' : 'none',
-                      outlineOffset: '-2px',
-                    }}
+                      background: selectedIndex === i ? T.sectionOpenBg : 'transparent',
+                      outline: selectedIndex === i ? `2px solid ${T.primary}` : 'none',
+                      outlineOffset: '-2px' }}
                   >
                     {columns.map(c=><td key={c.key} style={{ padding:'8px 12px', fontSize:'12px', color:T.textSecondary }}>{row[c.key]||'—'}</td>)}
                     <td style={{ padding:'8px 12px', textAlign:'center' }}>
@@ -183,11 +183,12 @@ function DynamicTable({ title, columns, rows, onAdd, onDelete }) {
 
 /* ── Add Row Modal ── */
 function AddRowModal({ title, fields, onSave, onClose, onInvalid }) {
+  const T = useRegTokens()
   const [form, setForm] = useState({})
   const set = (k,v) => setForm(p=>({...p,[k]:v}))
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)' }}>
-      <div style={{ background:'#fff', borderRadius:'14px', width:'520px', maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 48px rgba(0,0,0,0.2)' }}>
+      <div style={{ background:T.card, borderRadius:'14px', width:'520px', maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 48px rgba(0,0,0,0.2)' }}>
         <div style={{ padding:'14px 20px', borderBottom:`1px solid ${T.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <span style={{ fontWeight:800, fontSize:'14px', color:T.textPrimary }}>Add — {title}</span>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'20px', color:T.textMuted }}>×</button>
@@ -223,6 +224,7 @@ function AddRowModal({ title, fields, onSave, onClose, onInvalid }) {
    DEMOGRAPHICS TAB
 ════════════════════════════════════ */
 export default function DemographicsTab({ data, update, policy, setPolicy, onComplete }) {
+  const T = useRegTokens()
   const toast = useToast()
   const fromRegisterGate = Boolean(policy?.registerForm)
   const secNum = (base) => (fromRegisterGate ? base - 1 : base)
@@ -257,8 +259,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
   const intimationDateCheck = useMemo(
     () => validateIntimationDates(data, {
       policy,
-      laDob: data.laDob || policyClients[0]?.dob,
-    }),
+      laDob: data.laDob || policyClients[0]?.dob }),
     [data, policy, policyClients]
   )
   const dateFieldErrors = intimationDateCheck.fieldErrors
@@ -295,7 +296,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       const list = await getCauseEvents()
       setCauses(list)
       if (!list.length) {
-        setCauseLoadError('Cause master list is empty. Check GET /api/cause-event and claims_poc.cause_of_claim.')
+        setCauseLoadError('Cause of claim list is not available. Please contact your administrator.')
       }
       return list
     } catch (e) {
@@ -345,6 +346,12 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
   }
 
   /* Policy fetch */
+  const applyPolicyPrefill = (p, existing = data) => {
+    const patch = buildPolicyRegistrationPrefill(p, existing)
+    if (Object.keys(patch).length) update(patch)
+    return patch
+  }
+
   const handlePolicySearch = async () => {
     if (!data.policyId) { toast('warning','Missing','Please enter a policy number.'); return }
     setLoadingPolicy(true)
@@ -355,7 +362,31 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       try {
         portfolioType = await getPortfolioService(p.productCode, p.productName, p.sumAssured) || portfolioType
       } catch { /* keep policy value */ }
-      update({ policyId:p.policyId, productCode:p.productCode, productName:p.productName, sumAssured:p.sumAssured, portfolioType, issueDate:p.issueDate, riskCommencementDate:p.riskCommencementDate, paidToDate:p.paidToDate, premiumStatus:p.premiumStatus, premiumFrequency:p.premiumFrequency, term:p.term, premPaidYrs:p.premPaidYrs, totalPremiumPaid:p.totalPremiumPaid, currentSA:p.currentSA, cashValue:p.cashValue, maturityValue:p.maturityValue, advisorCode:p.advisorCode, advisorStatus:p.advisorStatus, uwDecision:p.uwDecision })
+      const basePatch = {
+        policyId: p.policyId,
+        productCode: p.productCode,
+        productName: p.productName,
+        sumAssured: p.sumAssured,
+        portfolioType,
+        issueDate: p.issueDate,
+        riskCommencementDate: p.riskCommencementDate,
+        paidToDate: p.paidToDate,
+        premiumStatus: p.premiumStatus,
+        premiumFrequency: p.premiumFrequency,
+        term: p.term,
+        premPaidYrs: p.premPaidYrs,
+        totalPremiumPaid: p.totalPremiumPaid,
+        currentSA: p.currentSA,
+        originalSA: p.originalSA,
+        cashValue: p.cashValue,
+        maturityValue: p.maturityValue,
+        advisorCode: p.advisorCode,
+        advisorStatus: p.advisorStatus,
+        uwDecision: p.uwDecision,
+        uwDecisionDate: p.uwDecisionDate,
+      }
+      const prefill = buildPolicyRegistrationPrefill(p, { ...data, ...basePatch })
+      update({ ...basePatch, ...prefill })
       if (p.advisorCode) {
         fetchAgentRepudiation(p.advisorCode).then((ar) => {
           if (ar) setPolicy((prev) => ({ ...prev, agentRepudiation: asArray(ar?.data || ar) }))
@@ -363,7 +394,8 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       }
       markDone('register', { silent: true })
       setOpen('intimation')
-      toast('success', 'Policy Loaded', `${p.policyId} — ${p.productName} loaded.`)
+      const n = countPrefillFields(prefill)
+      toast('success', 'Policy Loaded', `${p.policyId} — ${p.productName} loaded.${n ? ` ${n} contract/eagle field(s) prefilled.` : ''}`)
     } catch(e) { toast('error','Not Found', e.message) }
     finally { setLoadingPolicy(false) }
   }
@@ -379,8 +411,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
     update({
       causeEventDate: data.dateOfDeathEvent,
       policyStatusOnEvent: policyStatusOnEvent(),
-      policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent(),
-    })
+      policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent() })
     setShowCauseModal(true)
     if (!causes.length) await loadCauses()
   }
@@ -406,13 +437,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       payeeMobileNo: client.mobileNo,
       payeeTelNo: client.telNo,
       payeeEmailId: client.emailId,
-      payeeRiskIndicator: client.riskIndicator,
-    }
+      payeeRiskIndicator: client.riskIndicator }
     const merged = { ...data, ...patch }
     update({
       ...patch,
       selectedPayee: clientToPayeeRow(client, merged),
       payeeDetails: buildPayeeDetailsArray(policyClients, client.clientId, merged),
+      ...(merged.eagleClaimantMobile ? {} : { eagleClaimantMobile: client.mobileNo || merged.eagleClaimantMobile }),
     })
   }
 
@@ -426,8 +457,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
     update({
       ...partial,
       selectedPayee: clientToPayeeRow(client, next),
-      payeeDetails: buildPayeeDetailsArray(policyClients, next.selectedPayeeId, next),
-    })
+      payeeDetails: buildPayeeDetailsArray(policyClients, next.selectedPayeeId, next) })
   }
 
   const reloadPolicyClients = async () => {
@@ -465,8 +495,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       claimRegistrationType: c.claimRegistrationType,
       causeEventDate: data.dateOfDeathEvent || data.causeEventDate,
       policyStatusOnEvent: policyStatusOnEvent(),
-      policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent(),
-    })
+      policyStatusOnDod: data.policyStatusOnDod || policyStatusOnEvent() })
     setShowCauseModal(false)
     setShowCauseWarning(false)
     toast('success', 'Cause selected', c.causeDescription || c.causeCode)
@@ -484,8 +513,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
         trapRemarks: res.trapRemarks,
         trapDate: res.trapDate,
         laAgeAtDeath: trapPayload.ageAtDeath,
-        firPmReceived: trapPayload.firPmReceived,
-      })
+        firPmReceived: trapPayload.firPmReceived })
       markDone('trap', { silent: true })
       const title = res.estimated ? 'Trap Score (estimated)' : 'Trap Score Generated'
       toast('success', title, `Score: ${res.trapScore} — Risk: ${res.trapRisk}`)
@@ -497,8 +525,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
         trapRemarks: fallback.trapRemarks,
         trapDate: fallback.trapDate,
         laAgeAtDeath: trapPayload.ageAtDeath,
-        firPmReceived: trapPayload.firPmReceived,
-      })
+        firPmReceived: trapPayload.firPmReceived })
       markDone('trap', { silent: true })
       toast(
         'warning',
@@ -620,9 +647,9 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             </Field>
           </Grid>
           {policyLoaded && (
-            <div style={{ marginTop:'16px', padding:'14px 16px', background:'#ECFDF5', borderRadius:'10px', border:'1px solid #A7F3D0', display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'12px' }}>
+            <div style={{ ...tonePanelStyle(T, 'success', { marginTop:'16px', display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'12px' }) }}>
               {[['Product',policy.productName],['Sum Assured',`₹${(policy.sumAssured/1e5).toFixed(1)}L`],['Issue Date',policy.issueDate],['Status',policy.premiumStatus]].map(([k,v])=>(
-                <div key={k}><div style={{ fontSize:'10px', color:'#047857', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>{k}</div><div style={{ fontSize:'13px', fontWeight:800, color:'#065F46', marginTop:'2px' }}>{v}</div></div>
+                <div key={k}><div style={toneLabelStyle(T, 'success')}>{k}</div><div style={toneValueStyle(T, 'success', { fontWeight:800, marginTop:'2px' })}>{v}</div></div>
               ))}
             </div>
           )}
@@ -635,7 +662,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {/* 2. Intimation Details */}
       {sec('intimation',secTitle(2,'Intimation Details'),'Dates, source and death certificate information',
         <div>
-          <div style={{ marginBottom:'16px', padding:'12px 14px', background:'#F8FAFC', borderRadius:'10px', border:`1px solid ${T.border}`, display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:'10px' }}>
+          <div style={{ marginBottom:'16px', padding:'12px 14px', background:T.surfaceMuted, borderRadius:'10px', border:`1px solid ${T.border}`, display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:'10px' }}>
             {[['Claim type', data.claimType], ['Intimation type', data.informationType], ['Portfolio', data.portfolioType], ['Policy status', data.initialPolicyStatus || policy?.premiumStatus]].map(([k,v])=>(
               <div key={k}><div style={{ fontSize:'10px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase' }}>{k}</div><div style={{ fontSize:'13px', fontWeight:700, color:T.textPrimary }}>{v||'—'}</div></div>
             ))}
@@ -659,8 +686,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                   const dateOfDeathEvent = e.target.value
                   update({
                     dateOfDeathEvent,
-                    policyStatusOnDod: data.policyStatusOnDod || policy?.premiumStatus || 'IF',
-                  })
+                    policyStatusOnDod: data.policyStatusOnDod || policy?.premiumStatus || 'IF' })
                 }}
               />
             </Field>
@@ -720,7 +746,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
             <Btn variant='secondary' onClick={openCauseModal}>🔍 Search & Select Cause</Btn>
           </div>
           {data.causeCode || data.causeOfClaim ? (
-            <div style={{ padding:'14px', background:'#EFF6FF', borderRadius:'10px', border:'1px solid #BFDBFE', marginBottom:'16px' }}>
+            <div style={{ padding:'14px', background:T.sectionOpenBg, borderRadius:'10px', border:`1px solid ${T.primaryBorder}`, marginBottom:'16px' }}>
               <div style={{ fontSize:'12px', fontWeight:700, color:'#1E40AF', marginBottom:'8px' }}>Selected Cause</div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'10px' }}>
                 {[
@@ -778,13 +804,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                   <strong>Step 1 — Select payee:</strong> Click the radio button (●) in the first column of the table below to choose who will receive the claim payment. {policyClients.length} policy client{policyClients.length === 1 ? '' : 's'} found.
                 </InfoCard>
               ) : (
-                <div style={{ marginBottom:'14px', padding:'10px 14px', background:'#ECFDF5', borderRadius:'8px', border:'1px solid #A7F3D0', fontSize:'13px', fontWeight:600, color:'#065F46' }}>
+                <div style={{ ...alertBannerStyle(T, 'success'), marginBottom:'14px', padding:'10px 14px', borderRadius:'8px', fontSize:'13px', fontWeight:600 }}>
                   Payee selected — complete relation, status, and contact details below, then click Save & Continue.
                 </div>
               )}
               <div style={{ border:`1px solid ${T.border}`, borderRadius:'10px', overflow:'hidden', marginBottom:'16px', marginTop:'14px' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                  <thead><tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                  <thead><tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
                     <th style={{ padding:'9px 14px', width:'52px', textAlign:'center', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.04em' }}>Select</th>
                     {['Client ID','Name','DOB','Gender','Role','Relation','Mobile'].map(h=>(
                       <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.04em', whiteSpace:'nowrap' }}>{h}</th>
@@ -805,10 +831,9 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                           style={{
                             borderBottom:`1px solid ${T.borderSubtle}`,
                             cursor:'pointer',
-                            background: selected ? '#EFF6FF' : '',
+                            background: selected ? T.sectionOpenBg : '',
                             outline: selected ? '2px solid #1D4ED8' : 'none',
-                            outlineOffset: '-2px',
-                          }}
+                            outlineOffset: '-2px' }}
                           onClick={() => applyPayeeSelection(c)}
                         >
                           <td style={{ padding:'9px 14px', textAlign:'center' }}>
@@ -819,15 +844,14 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                                 width:'20px',
                                 height:'20px',
                                 borderRadius:'50%',
-                                border:`2px solid ${selected ? '#1D4ED8' : '#94A3B8'}`,
-                                background: selected ? '#1D4ED8' : '#fff',
-                                boxShadow: selected ? '0 0 0 3px rgba(29,78,216,0.25)' : 'none',
+                                border:`2px solid ${selected ? T.primary : T.textSubtle}`,
+                                background: selected ? T.primary : T.card,
+                                boxShadow: selected ? `0 0 0 3px ${T.primaryLight}` : 'none',
                                 alignItems:'center',
                                 justifyContent:'center',
-                                transition:'all 0.15s ease',
-                              }}
+                                transition:'all 0.15s ease' }}
                             >
-                              {selected && <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:'#fff' }} />}
+                              {selected && <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:T.card }} />}
                             </span>
                             <input type='radio' readOnly checked={selected} tabIndex={-1} aria-label={`Select payee ${[c.name, c.lastName].filter(Boolean).join(' ') || c.clientId}`} style={{ position:'absolute', opacity:0, width:0, height:0, pointerEvents:'none' }}/>
                           </td>
@@ -845,7 +869,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                 </table>
               </div>
               {data.selectedPayeeId && (
-                <div style={{ padding:'14px', background:'#EFF6FF', borderRadius:'10px', border:'1px solid #BFDBFE' }}>
+                <div style={{ padding:'14px', background:T.sectionOpenBg, borderRadius:'10px', border:`1px solid ${T.primaryBorder}` }}>
                   <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, marginBottom:'4px' }}>Edit Payee Details</div>
                   <div style={{ fontSize:'11px', color:T.textMuted, marginBottom:'12px' }}>
                     Name, DOB, and country can be corrected here (overrides Life Asia for this claim).
@@ -942,6 +966,22 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {/* 7. Contract Details */}
       {sec('contract',secTitle(7,'Contract Details'),'Policy contract and financial information',
         <div>
+          {policy && (
+            <div style={{ marginBottom: '14px' }}>
+              <InfoCard type="info">
+                Contract fields are prefilled from Life Asia when available. Read-only values come from the policy record; you can edit Application No, loan, and excess premium if needed.
+              </InfoCard>
+              <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+                <Btn variant="secondary" size="sm" onClick={() => {
+                  const patch = applyPolicyPrefill(policy)
+                  const n = countPrefillFields(patch)
+                  toast(n ? 'success' : 'info', n ? 'Refilled' : 'No changes', n ? `${n} empty field(s) filled from Life Asia.` : 'All available Life Asia fields are already filled.')
+                }}>
+                  ↻ Refill from Life Asia
+                </Btn>
+              </div>
+            </div>
+          )}
           <Grid cols={3}>
             <Field label="Application No"><Input value={data.appNo} onChange={e=>update({appNo:e.target.value})}/></Field>
             <Field label="Product Name"><Input value={data.productName||policy?.productName} readOnly={true}/></Field>
@@ -976,7 +1016,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
               <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'10px' }}>Rider Details</div>
               <div style={{ border:`1px solid ${T.border}`, borderRadius:'8px', overflow:'hidden' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                  <thead><tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                  <thead><tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
                     {['Rider Code','Sum Assured','RCD','Term','Status','Cessation Date'].map(h=>(
                       <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
                     ))}
@@ -988,7 +1028,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                         <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textSecondary }}>₹{(r.riderSA/1e5).toFixed(1)}L</td>
                         <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{r.riderRCD}</td>
                         <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{r.riderTerm} yrs</td>
-                        <td style={{ padding:'9px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'2px 8px', borderRadius:'99px', background:'#ECFDF5', color:'#059669' }}>{r.riderStatus}</span></td>
+                        <td style={{ padding:'9px 14px' }}><span style={statusPillStyle(T, 'success')}>{r.riderStatus}</span></td>
                         <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{r.riderCessationDate}</td>
                       </tr>
                     ))}
@@ -1006,6 +1046,13 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {/* 8. Eagle Screen */}
       {sec('eagle',secTitle(8,'Eagle Screen / Fraud Details'),'Hospital, doctor, proof and witness information',
         <div>
+          {policy && (
+            <div style={{ marginBottom: '14px' }}>
+              <InfoCard type="info">
+                Mobile numbers, bank (ECS), and occupation are prefilled from Life Asia client and payee data. Hospital and doctor tables are entered manually during investigation.
+              </InfoCard>
+            </div>
+          )}
           <Grid cols={3}>
             <Field label="LA Mobile No"><Input value={data.eagleLaMobile} onChange={e=>update({eagleLaMobile:e.target.value})} maxLength={10}/></Field>
             <Field label="Claimant Mobile No"><Input value={data.eagleClaimantMobile} onChange={e=>update({eagleClaimantMobile:e.target.value})} maxLength={10}/></Field>
@@ -1035,23 +1082,23 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
       {sec('trap',secTitle(9,'Trap Score Details'),'Automated fraud risk scoring — required before Requirements',
         <div>
           {data.trapScore ? (
-            <div style={{ marginBottom:'20px', padding:'16px', borderRadius:'10px', background:'#F0FDF4', border:'1px solid #A7F3D0' }}>
+            <div style={{ ...tonePanelStyle(T, 'success', { marginBottom:'20px' }) }}>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px', marginBottom:'12px' }}>
                 {[['Trap Score',data.trapScore],['Risk Level',data.trapRisk],['Generated On',data.trapDate]].map(([k,v])=>(
-                  <div key={k}><div style={{ fontSize:'10px', fontWeight:700, color:'#047857', textTransform:'uppercase' }}>{k}</div><div style={{ fontSize:'16px', fontWeight:900, color:'#065F46', marginTop:'2px' }}>{v}</div></div>
+                  <div key={k}><div style={toneLabelStyle(T, 'success')}>{k}</div><div style={toneValueStyle(T, 'success', { fontSize:'16px', fontWeight:900, marginTop:'2px' })}>{v}</div></div>
                 ))}
               </div>
-              {data.trapRemarks && <div style={{ fontSize:'12px', color:'#065F46', fontWeight:500 }}>Remarks: {data.trapRemarks}</div>}
+              {data.trapRemarks && <div style={{ fontSize:'12px', color: T.isDark ? T.textSecondary : (T.approved.text ?? T.approved.color), fontWeight:500, lineHeight:1.5 }}>Remarks: {data.trapRemarks}</div>}
             </div>
           ) : (
-            <div style={{ marginBottom:'20px', padding:'18px 20px', borderRadius:'12px', background:'linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%)', border:'2px solid #F59E0B', boxShadow:'0 4px 14px rgba(245,158,11,0.15)' }}>
+            <div style={{ ...alertBannerStyle(T, 'warn'), marginBottom:'20px', padding:'18px 20px', borderRadius:'12px', borderWidth:'2px' }}>
               <div style={{ display:'flex', alignItems:'flex-start', gap:'12px', marginBottom:'14px' }}>
                 <span style={{ fontSize:'28px', lineHeight:1 }}>🎯</span>
                 <div>
-                  <div style={{ fontSize:'15px', fontWeight:800, color:'#92400E', marginBottom:'4px' }}>
+                  <div style={{ fontSize:'15px', fontWeight:800, color: T.pending.text ?? T.pending.color, marginBottom:'4px' }}>
                     Trap score required
                   </div>
-                  <div style={{ fontSize:'13px', color:'#B45309', lineHeight:1.5 }}>
+                  <div style={{ fontSize:'13px', color: T.pending.color, lineHeight:1.5, opacity:0.9 }}>
                     Click below to calculate trap score from your claim data. Missing fields are filled automatically so you can proceed to Requirements.
                   </div>
                 </div>
@@ -1090,7 +1137,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
           ) : (
             <div style={{ border:`1px solid ${T.border}`, borderRadius:'8px', overflow:'hidden' }}>
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead><tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                <thead><tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
                   {['Case No','Reason','Date','Decision','Remarks'].map(h=>(
                     <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
                   ))}
@@ -1101,7 +1148,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
                       <td style={{ padding:'9px 14px', fontSize:'12px', fontWeight:700, color:T.primary }}>{r.caseNo}</td>
                       <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textSecondary }}>{r.reason}</td>
                       <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{r.date}</td>
-                      <td style={{ padding:'9px 14px' }}><span style={{ fontSize:'11px', fontWeight:700, padding:'2px 8px', borderRadius:'99px', background:'#FEF2F2', color:'#DC2626' }}>{r.decision}</span></td>
+                      <td style={{ padding:'9px 14px' }}><span style={statusPillStyle(T, 'danger')}>{r.decision}</span></td>
                       <td style={{ padding:'9px 14px', fontSize:'12px', color:T.textMuted }}>{r.remarks}</td>
                     </tr>
                   ))}
@@ -1119,8 +1166,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
               markDone('agent')
               update({
                 ...syncDemographicsSections(data, policy),
-                _demographicsComplete: true,
-              })
+                _demographicsComplete: true })
               onComplete()
             }}>✓ Next: Requirements →</Btn>
           </div>
@@ -1150,6 +1196,7 @@ export default function DemographicsTab({ data, update, policy, setPolicy, onCom
 
 /* ── Claimant Section (inline) ── */
 function ClaimantSection({ data, update, policy, states = [], toast }) {
+  const T = useRegTokens()
   const [sameAsPayee, setSameAsPayee] = useState(false)
   const [form, setForm] = useState({})
   const set = (k,v) => setForm(p=>({...p,[k]:v}))
@@ -1174,8 +1221,7 @@ function ClaimantSection({ data, update, policy, states = [], toast }) {
         mobileNo: data.payeeMobileNo || payee.mobileNo,
         emailId: data.payeeEmailId || payee.emailId,
         panNo: data.payeePanNo || payee.panNo,
-        idNumber: data.payeeIdNumber || payee.idNumber,
-      })
+        idNumber: data.payeeIdNumber || payee.idNumber })
     } else setForm({})
   }
 
@@ -1185,16 +1231,18 @@ function ClaimantSection({ data, update, policy, states = [], toast }) {
       showValidationToast(toast, missing, 'Add claimant')
       return
     }
-    update({ claimants:[...(data.claimants||[]), {...form}] })
+    const nextClaimants = [...(data.claimants||[]), {...form}]
+    const eaglePatch = !data.eagleClaimantMobile && form.mobileNo ? { eagleClaimantMobile: form.mobileNo } : {}
+    update({ claimants: nextClaimants, ...eaglePatch })
     setForm({}); setSameAsPayee(false)
     toast?.('success', 'Claimant added', `${form.name} added to the claimant list.`)
   }
 
   return (
     <div>
-      <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'16px', padding:'10px 14px', background:'#F0F9FF', borderRadius:'8px', border:'1px solid #BAE6FD' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'16px', padding:'10px 14px', ...alertBannerStyle(T, 'info'), borderRadius:'8px' }}>
         <input type="checkbox" id="samePayee" checked={sameAsPayee} onChange={e=>handleSameAsPayee(e.target.checked)} style={{ cursor:'pointer' }}/>
-        <label htmlFor="samePayee" style={{ fontSize:'13px', fontWeight:600, color:'#0C4A6E', cursor:'pointer' }}>Same as Payee Details</label>
+        <label htmlFor="samePayee" style={{ fontSize:'13px', fontWeight:600, color: T.info.text ?? T.info.color, cursor:'pointer' }}>Same as Payee Details</label>
       </div>
       <Grid cols={3}>
         <Field label="Name" required><Input value={form.name} onChange={e=>set('name',e.target.value)} readOnly={sameAsPayee}/></Field>
@@ -1222,7 +1270,7 @@ function ClaimantSection({ data, update, policy, states = [], toast }) {
       {(data.claimants||[]).length > 0 && (
         <div style={{ marginTop:'12px', border:`1px solid ${T.border}`, borderRadius:'8px', overflow:'hidden' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead><tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+            <thead><tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
               {['Name','Role','Relation','Mobile','PAN'].map(h=>(
                 <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase' }}>{h}</th>
               ))}

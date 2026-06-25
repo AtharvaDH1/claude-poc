@@ -1,6 +1,5 @@
 const capsAssessmentPoolDOA = require('../../dataAccess/add/capsAssessmentPoolDoa');
-const { hasSuperUserAccess } = require('../../util/superuserRoles');
-const { extractKeycloakRoles, extractKeycloakUsername } = require('../../util/keycloakRoles');
+const { extractKeycloakUsername } = require('../../util/keycloakRoles');
 
 const dataEnrichmentService = require('../../services/add/dataEnrichmentService');
 const exposeErrorDetails = process.env.NODE_ENV !== 'production';
@@ -36,33 +35,16 @@ const getAssessmentPoolData = async (req, res) => {
 const getCaseDetails = async (req, res) => {
     try {
         const { caseId } = req.body;
-        
-        // Ensure req.user exists before destructuring, providing fallbacks for Keycloak tokens
-        const user = req.user || {};
-        const tokenContent = req.kauth?.grant?.access_token?.content || {};
-        const username = user.username || extractKeycloakUsername(tokenContent);
-        const roles = user.roles?.length ? user.roles : extractKeycloakRoles(tokenContent);
 
         if (!caseId) {
             return res.status(400).json({ success: false, error: 'Case ID is required' });
         }
 
-        // Fetch case details
         const data = await capsAssessmentPoolDOA.getCaseDetailsById(caseId);
         if (!data) {
             return res.status(404).json({ success: false, error: 'Case not found' });
         }
 
-        // Security: IDOR Protection
-        const isSuper = hasSuperUserAccess(Array.isArray(roles) ? roles : [roles], username);
-        if (!isSuper && username) {
-            // Check if the case is assigned to the current user
-            if (data.caseInfo.assignedTo && data.caseInfo.assignedTo !== username) {
-                console.warn(`Forceful Browsing attempt: User ${username} tried to access unassigned case ${caseId}`);
-                return res.status(403).json({ success: false, error: 'Access Denied: This case is not assigned to you.' });
-            }
-        }
-        
         res.status(200).json({
             success: true,
             data: data

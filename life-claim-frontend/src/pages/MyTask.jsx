@@ -9,25 +9,18 @@ import { getWorkflowPoolRoles } from '../util/workflowRoles'
 import { workflowStatusFromRow, workflowRoleFromRow } from '../util/claimSearchMap'
 import { filterClaimRows, sortClaimRows, uniqueFieldValues, CLAIM_TABLE_COLUMNS } from '../util/claimTableFilters'
 import ClaimHoverPreview from '../components/claim/ClaimHoverPreview'
+import HelpLink from '../components/HelpLink'
+import { openClaimWorkspace } from '../util/navigation'
+import { useTheme } from '../context/ThemeContext'
+import {
+  PremiumGrid, PremiumGridToolbar, PremiumGridScroll, PremiumGridFooter,
+  SortableTh, GridStatusBadge, GridIconBtn,
+} from '../ui/PremiumDataGrid'
+import { statusToGridTone } from '../util/statusBadgeTone'
+import { selectFieldStyle } from '../ui/pageTokens'
 
-const T = {
-  primary: '#1D4ED8', primaryHover: '#1E40AF',
-  card: '#FFFFFF', border: '#E2E8F0', borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A', textSecondary: '#334155',
-  textMuted: '#64748B', textSubtle: '#94A3B8',
-}
 
 const PAGE_SIZE = 10
-
-function statusBadgeStyle(status) {
-  const s = String(status || '').toLowerCase()
-  if (s.includes('pending assessor')) return { bg: '#FFFBEB', border: '#FDE68A', color: '#92400E' }
-  if (s.includes('pending verifier')) return { bg: '#EFF6FF', border: '#BFDBFE', color: '#1E40AF' }
-  if (s.includes('payout completed') || s.includes('approved')) return { bg: '#ECFDF5', border: '#A7F3D0', color: '#065F46' }
-  if (s.includes('reject') || s.includes('repudi')) return { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B' }
-  if (s.includes('pending')) return { bg: '#FFFBEB', border: '#FDE68A', color: '#92400E' }
-  return { bg: '#F8FAFC', border: T.border, color: T.textMuted }
-}
 
 function mapTaskRow(c) {
   const status = workflowStatusFromRow(c)
@@ -45,6 +38,7 @@ function mapTaskRow(c) {
 }
 
 export default function MyTask() {
+  const { tokens: T } = useTheme()
   const navigate = useNavigate()
   const toast = useToast()
   const { user } = useAuth()
@@ -119,9 +113,7 @@ export default function MyTask() {
   }, [page, totalPages])
 
   const handleOpen = (task) => {
-    navigate(`/registration-fetch/${encodeURIComponent(task.claimId)}`, {
-      state: { from: 'myTask' },
-    })
+    openClaimWorkspace(navigate, task.claimId, { from: 'myTask' })
   }
 
   const roleOptions = ['All Roles', ...workflowRoles]
@@ -137,7 +129,7 @@ export default function MyTask() {
         </div>
 
         <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '16px 20px', marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ flex: 1, minWidth: '220px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '40px', borderRadius: '8px', border: `1.5px solid ${T.border}`, background: '#F8FAFC' }}>
+          <div style={{ flex: 1, minWidth: '220px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '40px', borderRadius: '8px', border: `1.5px solid ${T.border}`, background: T.inputBg }}>
             <Search size={14} style={{ color: T.textSubtle }} />
             <input
               value={searchQ}
@@ -158,7 +150,7 @@ export default function MyTask() {
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(0) }}
-            style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, fontFamily: 'Inter,sans-serif', color: T.textSecondary, minWidth: '180px' }}
+            style={selectFieldStyle(T, { height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, minWidth: '180px' })}
           >
             {statusOptions.map((s) => (
               <option key={s} value={s}>{s}</option>
@@ -167,7 +159,7 @@ export default function MyTask() {
           <select
             value={roleFilter}
             onChange={(e) => { setRoleFilter(e.target.value); setPage(0) }}
-            style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600, fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
+            style={selectFieldStyle(T, { height: '40px', padding: '0 12px', borderRadius: '8px', border: `1.5px solid ${T.border}`, fontSize: '13px', fontWeight: 600 })}
           >
             {roleOptions.map((r) => (
               <option key={r} value={r}>{r}</option>
@@ -175,89 +167,78 @@ export default function MyTask() {
           </select>
         </div>
 
-        <div style={{ background: T.card, borderRadius: '12px', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '14px' }}>Your claims</div>
-              <div style={{ fontSize: '12px', color: T.textMuted }}>{filtered.length} shown · POST claimByUsername</div>
-            </div>
-            {!singleResultMode && filtered.length > PAGE_SIZE && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button type="button" disabled={safePage <= 0} onClick={() => setPage((p) => p - 1)} style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#fff', cursor: safePage <= 0 ? 'not-allowed' : 'pointer' }}>
-                  <ChevronLeft size={16} />
-                </button>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: T.textMuted }}>Page {safePage + 1} / {totalPages}</span>
-                <button type="button" disabled={safePage >= totalPages - 1} onClick={() => setPage((p) => p + 1)} style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#fff', cursor: safePage >= totalPages - 1 ? 'not-allowed' : 'pointer' }}>
-                  <ChevronRight size={16} />
-                </button>
+        <PremiumGrid>
+          <PremiumGridToolbar>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '14px' }}>Your claims</div>
+                <div style={{ fontSize: '12px', color: T.textMuted }}>{filtered.length} claim{filtered.length === 1 ? '' : 's'} shown</div>
               </div>
-            )}
-          </div>
+              {!singleResultMode && filtered.length > PAGE_SIZE && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button type="button" disabled={safePage <= 0} onClick={() => setPage((p) => p - 1)} className="premium-grid__icon-btn" style={{ width: 'auto', padding: '0 8px' }}>
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: T.textMuted }}>Page {safePage + 1} / {totalPages}</span>
+                  <button type="button" disabled={safePage >= totalPages - 1} onClick={() => setPage((p) => p + 1)} className="premium-grid__icon-btn" style={{ width: 'auto', padding: '0 8px' }}>
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </PremiumGridToolbar>
 
           {loading ? (
             <div style={{ padding: '48px', textAlign: 'center', color: T.textMuted }}>Loading tasks…</div>
           ) : pageRows.length === 0 ? (
             <div style={{ padding: '48px', textAlign: 'center' }}>
-              <CheckSquare size={32} style={{ color: '#059669', margin: '0 auto 12px' }} />
+              <CheckSquare size={32} style={{ color: T.success, margin: '0 auto 12px' }} />
               <div style={{ fontWeight: 700, color: T.textPrimary }}>No tasks match</div>
               <div style={{ fontSize: '13px', color: T.textMuted, marginTop: '6px' }}>Assign claims from Pool Selection to see them here.</div>
+              <HelpLink questionId="tp-mytask">How does My Tasks work?</HelpLink>
+              <HelpLink questionId="tp-pool" style={{ marginLeft: '8px' }}>About Pool Selection</HelpLink>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <PremiumGridScroll>
+              <table>
                 <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+                  <tr>
                     {CLAIM_TABLE_COLUMNS.map(({ label, key }) => (
-                      <th
-                        key={key}
-                        onClick={() => handleSort(key)}
-                        style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>{label}<SortIcon col={key} /></span>
-                      </th>
+                      <SortableTh key={key} active={sortCol === key} onClick={() => handleSort(key)} sortIcon={<SortIcon col={key} />}>
+                        {label}
+                      </SortableTh>
                     ))}
-                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase' }}>Action</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((task) => {
-                    const sc = statusBadgeStyle(task.status)
-                    return (
-                      <tr key={task.claimId} style={{ borderBottom: `1px solid ${T.borderSubtle}` }}>
-                        <td
-                          style={{ padding: '12px 16px', fontSize: '13px', fontWeight: 700, color: T.primary, fontFamily: 'monospace' }}
-                          onMouseEnter={() => setHoverClaim(task)}
-                          onMouseLeave={() => setHoverClaim(null)}
-                        >
-                          {task.claimId}
-                        </td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', fontFamily: 'monospace', color: T.textMuted }}>{task.policyId}</td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{task.createdOn}</td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', color: T.textMuted }}>{task.createdBy}</td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '99px', background: sc.bg, border: `1px solid ${sc.border}`, color: sc.color }}>
-                            {task.status}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 600, color: T.textSecondary }}>{task.role}</td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpen(task)}
-                            title="Open in work mode"
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '7px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
-                          >
-                            <Eye size={14} /> Open
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {pageRows.map((task) => (
+                    <tr key={task.claimId}>
+                      <td
+                        onMouseEnter={() => setHoverClaim(task)}
+                        onMouseLeave={() => setHoverClaim(null)}
+                      >
+                        <div className="premium-grid__cell-primary">{task.claimId}</div>
+                      </td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '12px', color: T.textMuted }}>{task.policyId}</td>
+                      <td style={{ fontSize: '12px', color: T.textMuted }}>{task.createdOn}</td>
+                      <td style={{ fontSize: '12px', color: T.textMuted }}>{task.createdBy}</td>
+                      <td>
+                        <GridStatusBadge tone={statusToGridTone(task.status)}>{task.status}</GridStatusBadge>
+                      </td>
+                      <td style={{ fontSize: '12px', fontWeight: 600 }}>{task.role}</td>
+                      <td>
+                        <GridIconBtn title="Open in work mode" onClick={() => handleOpen(task)}>
+                          <Eye size={14} />
+                        </GridIconBtn>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
-            </div>
+            </PremiumGridScroll>
           )}
-        </div>
+        </PremiumGrid>
 
         <ClaimHoverPreview claim={hoverClaim} x={mouse.x} y={mouse.y} />
       </div>

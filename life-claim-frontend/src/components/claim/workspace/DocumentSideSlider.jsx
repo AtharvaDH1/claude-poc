@@ -3,7 +3,8 @@ import { useToast } from '../../Toast'
 import documentService, { FORBIDDEN_DOC_MSG } from '../../../services/documentService'
 import fileUploadService from '../../../services/FileUploadService'
 import { openDocumentPreview, openPreviewLoadingTab } from '../../../services/documentPreviewService'
-import { WS } from './workspaceUi'
+import { useTheme } from '../../../context/ThemeContext'
+import { useWorkspaceTokens } from './workspaceUi'
 import { validateUploadFile, UPLOAD_ACCEPT } from '../../../util/validateUploadFile'
 
 function mapDocType(row) {
@@ -37,6 +38,7 @@ function groupUploaded(uploaded, masterTypes) {
 }
 
 function UploadModal({ open, onClose, docTypes, claimId, onUploaded }) {
+  const WS = useWorkspaceTokens()
   const toast = useToast()
   const inputRef = useRef(null)
   const [selectedType, setSelectedType] = useState('')
@@ -116,7 +118,7 @@ function UploadModal({ open, onClose, docTypes, claimId, onUploaded }) {
       onClick={onClose}
     >
       <div
-        style={{ background: '#fff', borderRadius: '14px', width: 'min(480px, 100%)', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}
+        style={{ background: WS.card, borderRadius: '14px', width: 'min(480px, 100%)', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ padding: '18px 22px', borderBottom: `1px solid ${WS.border}` }}>
@@ -130,7 +132,7 @@ function UploadModal({ open, onClose, docTypes, claimId, onUploaded }) {
               <div style={{ fontSize: '12px', color: WS.textMuted }}>No types in DocumentList master.</div>
             ) : (
               docTypes.map(({ type, id }) => (
-                <label key={id || type} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', cursor: 'pointer', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${selectedType === type ? WS.primary : WS.border}`, background: selectedType === type ? '#EFF6FF' : '#FAFAFA' }}>
+                <label key={id || type} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', cursor: 'pointer', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${selectedType === type ? WS.primary : WS.border}`, background: selectedType === type ? WS.primaryLight : WS.surfaceSubtle }}>
                   <input type="radio" name="docType" checked={selectedType === type} onChange={() => setSelectedType(type)} />
                   <span style={{ fontWeight: 600, color: WS.textSecondary }}>{type}</span>
                 </label>
@@ -141,7 +143,7 @@ function UploadModal({ open, onClose, docTypes, claimId, onUploaded }) {
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `2px dashed ${WS.border}`, background: '#FAFAFA', fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: WS.textMuted }}
+            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `2px dashed ${WS.border}`, background: WS.surfaceSubtle, fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: WS.textMuted }}
           >
             {file ? file.name : 'Browse…'}
           </button>
@@ -149,7 +151,7 @@ function UploadModal({ open, onClose, docTypes, claimId, onUploaded }) {
           <p style={{ fontSize: '11px', color: WS.textSubtle, marginTop: '8px' }}>PDF, images, Office, CSV, ZIP · max 10 MB</p>
         </div>
         <div style={{ padding: '14px 22px', borderTop: `1px solid ${WS.border}`, display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#F8FAFC', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: WS.hoverBg, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
             Cancel
           </button>
           <button
@@ -167,6 +169,8 @@ function UploadModal({ open, onClose, docTypes, claimId, onUploaded }) {
 }
 
 export default function DocumentSideSlider({ open, onClose, claimId, readOnly }) {
+  const WS = useWorkspaceTokens()
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [docTypes, setDocTypes] = useState([])
   const [uploaded, setUploaded] = useState([])
@@ -250,7 +254,7 @@ export default function DocumentSideSlider({ open, onClose, claimId, readOnly })
         <div
           style={{
             width: 'min(460px, 100vw)',
-            background: '#fff',
+            background: WS.card,
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
@@ -282,14 +286,14 @@ export default function DocumentSideSlider({ open, onClose, claimId, readOnly })
               type="button"
               onClick={refreshDocuments}
               disabled={loading || forbidden}
-              style={{ padding: '9px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#F8FAFC', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+              style={{ padding: '9px 14px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: WS.hoverBg, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
             >
               Refresh
             </button>
           </div>
 
           {readOnly && (
-            <div style={{ margin: '12px 20px 0', padding: '10px 14px', background: '#EFF6FF', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#1E40AF' }}>
+            <div style={{ margin: '12px 20px 0', padding: '10px 14px', background: T.info.bg, borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: T.info.color }}>
               Browse mode — upload disabled. Open from My Task to add documents.
             </div>
           )}
@@ -319,7 +323,7 @@ export default function DocumentSideSlider({ open, onClose, claimId, readOnly })
                         alignItems: 'center',
                         padding: '12px 14px',
                         border: 'none',
-                        background: '#FAFAFA',
+                        background: WS.surfaceSubtle,
                         cursor: 'pointer',
                         fontFamily: 'Inter,sans-serif',
                         fontWeight: 700,

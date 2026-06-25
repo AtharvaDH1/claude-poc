@@ -46,9 +46,8 @@ function openBlobInNewTab(blobUrl, existingWin = null) {
 export async function openDocumentPreview(nodeId, { previewWin = null } = {}) {
   if (!nodeId) throw new Error('Missing document node id')
 
-  const token = sessionStorage.getItem('token')
   const res = await fetch(`${baseUrl}/document/preview/${encodeURIComponent(nodeId)}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')

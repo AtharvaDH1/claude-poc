@@ -1,14 +1,14 @@
-import { API_URL } from "../util/config";
 import wrapper from "../util/ApiWrapper";
 import { normalizePolicyResponse } from "../util/normalizePolicyResponse";
 
 const policyService = {
     getPolicyDetails : async (policyID) => {
-        const response = await wrapper.fetchWithToken(`/policy/${policyID}`, {
-          method: 'GET',
+        const response = await wrapper.fetchWithToken(`/policy/details`, {
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
+          body: JSON.stringify({ policyID: String(policyID || '').trim() }),
         });
     
         const data = await response.json();

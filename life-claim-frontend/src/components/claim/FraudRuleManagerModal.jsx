@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useToast } from '../Toast'
+import { useTheme } from '../../context/ThemeContext'
+import { alertBannerStyle, fieldInputStyle } from '../../ui/pageTokens'
 import {
   fraudPreventionService,
   ruleTwoService,
@@ -10,18 +12,10 @@ import {
   updateAccessorFeedback,
 } from '../../services/fraudPreventionService'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-  textSubtle: '#94A3B8',
-}
 
 const DECISIONS = ['positive', 'negative', 'suspicious']
 
-const overlay = {
+const overlayStyle = {
   position: 'fixed',
   inset: 0,
   background: 'rgba(0,0,0,0.45)',
@@ -30,17 +24,6 @@ const overlay = {
   alignItems: 'center',
   justifyContent: 'center',
   backdropFilter: 'blur(3px)',
-}
-
-const panel = {
-  background: T.card,
-  borderRadius: '16px',
-  width: 'min(760px, 94vw)',
-  maxHeight: '88vh',
-  overflow: 'hidden',
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
 }
 
 function normalizeHits(data) {
@@ -127,23 +110,24 @@ function buildUpdatePayload(claimNumber, visibleKeys, ruleState) {
 }
 
 function HitTable({ rows }) {
+  const { tokens: T } = useTheme()
   if (!rows?.length) return null
   const keys = Object.keys(rows[0] || {}).slice(0, 5)
   return (
     <div style={{ marginTop: '8px', overflowX: 'auto', maxHeight: '120px', border: `1px solid ${T.border}`, borderRadius: '8px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
         <thead>
-          <tr style={{ background: '#FAFAFA' }}>
+          <tr style={{ background: T.surfaceMuted }}>
             {keys.map((k) => (
-              <th key={k} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: T.textSubtle }}>{k}</th>
+              <th key={k} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: T.textMuted }}>{k}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.slice(0, 8).map((row, i) => (
-            <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+            <tr key={i} style={{ borderTop: `1px solid ${T.border}`, background: T.card }}>
               {keys.map((k) => (
-                <td key={k} style={{ padding: '6px 8px', color: T.textMuted }}>{String(row[k] ?? '—')}</td>
+                <td key={k} style={{ padding: '6px 8px', color: T.textSecondary }}>{String(row[k] ?? '—')}</td>
               ))}
             </tr>
           ))}
@@ -155,20 +139,22 @@ function HitTable({ rows }) {
 }
 
 function RulePanel({ title, subtitle, children, visible, decision, remark, onDecision, onRemark, disabled }) {
+  const { tokens: T } = useTheme()
+  const panel = alertBannerStyle(T, 'danger')
   if (!visible) return null
   return (
-    <div style={{ marginBottom: '14px', padding: '14px', borderRadius: '10px', border: '1px solid #FECACA', background: '#FEF2F2' }}>
-      <div style={{ fontWeight: 800, fontSize: '13px', color: '#991B1B' }}>{title}</div>
+    <div style={{ marginBottom: '14px', padding: '14px', borderRadius: '10px', ...panel }}>
+      <div style={{ fontWeight: 800, fontSize: '13px', color: T.rejected.text }}>{title}</div>
       {subtitle && <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '4px', marginBottom: '8px' }}>{subtitle}</div>}
       {children}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px' }}>
         <div>
-          <label style={{ fontSize: '10px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase' }}>Decision</label>
+          <label style={{ fontSize: '10px', fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Decision</label>
           <select
             value={decision}
             onChange={(e) => onDecision(e.target.value)}
             disabled={disabled}
-            style={{ width: '100%', height: '36px', marginTop: '4px', borderRadius: '7px', border: `1px solid ${T.border}`, fontSize: '12px' }}
+            style={fieldInputStyle(T, { width: '100%', height: '36px', marginTop: '4px', borderRadius: '7px', fontSize: '12px' })}
           >
             <option value="">— Select —</option>
             {DECISIONS.map((d) => (
@@ -177,14 +163,14 @@ function RulePanel({ title, subtitle, children, visible, decision, remark, onDec
           </select>
         </div>
         <div style={{ gridColumn: '1/-1' }}>
-          <label style={{ fontSize: '10px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase' }}>Remarks</label>
+          <label style={{ fontSize: '10px', fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Remarks</label>
           <textarea
             value={remark}
             onChange={(e) => onRemark(e.target.value)}
             disabled={disabled}
             rows={2}
             placeholder="Assessor remarks for this rule"
-            style={{ width: '100%', marginTop: '4px', padding: '8px', borderRadius: '7px', border: `1px solid ${T.border}`, fontSize: '12px', fontFamily: 'Inter,sans-serif', boxSizing: 'border-box' }}
+            style={fieldInputStyle(T, { width: '100%', marginTop: '4px', padding: '8px', borderRadius: '7px', fontSize: '12px', boxSizing: 'border-box' })}
           />
         </div>
       </div>
@@ -203,6 +189,7 @@ export default function FraudRuleManagerModal({
   username,
   enableAssessor = false,
 }) {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -313,9 +300,20 @@ export default function FraudRuleManagerModal({
     }
   }
 
+  const panelStyle = {
+    background: T.card,
+    borderRadius: '16px',
+    width: 'min(760px, 94vw)',
+    maxHeight: '88vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
+  }
+
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={panel} onClick={(e) => e.stopPropagation()}>
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '18px 22px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: '16px' }}>Fraud Prevention — Rule Manager</div>
@@ -328,7 +326,7 @@ export default function FraudRuleManagerModal({
 
         <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1 }}>
           {!enableAssessor && (
-            <div style={{ marginBottom: '12px', padding: '10px 14px', background: '#EFF6FF', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#1E40AF' }}>
+            <div style={{ marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, ...alertBannerStyle(T, 'info') }}>
               Browse mode — review only. Save/update disabled.
             </div>
           )}
@@ -392,7 +390,7 @@ export default function FraudRuleManagerModal({
         </div>
 
         <div style={{ padding: '14px 22px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.surfaceMuted, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
             Close
           </button>
           {visibleKeys.length > 0 && (

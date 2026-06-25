@@ -1,4 +1,5 @@
 const { refreshAssessorPoolCase, batchUpsertAssessorPoolCases, updateAssessorPoolStatus } = require('../../dataAccess/add/capsAssessorPoolCasesDao');
+const { assertPoolAction } = require('../../util/capsAddCaseGuards');
 const { checkForExclusionRule } = require('../../services/add/exclusionRulesService');
 const exposeErrorDetails = process.env.NODE_ENV !== 'production';
 const internalError = (res, error) =>
@@ -95,6 +96,7 @@ const closeCasesAsExclusionController = async (req, res, next) => {
             });
         }
 
+        await assertPoolAction(caseIds, 'close_exclusion');
         const result = await updateAssessorPoolStatus(caseIds, 'CASE CLOSED');
 
         res.status(200).json({
@@ -122,6 +124,7 @@ const moveCasesToBeReferredController = async (req, res, next) => {
             });
         }
 
+        await assertPoolAction(caseIds, 'move_referred');
         const result = await updateAssessorPoolStatus(caseIds, 'MOVED TO BE REFFERED', 'N');
 
         res.status(200).json({

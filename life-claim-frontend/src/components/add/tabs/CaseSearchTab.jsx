@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Eye, X } from 'lucide-react'
 import { searchCaseTableData } from '../../../services/add/searchCaseData'
-import { T } from '../AddUi'
-import { CASE_SEARCH_ATTRIBUTES, extractCaseRows, mapCaseRow, openCasePath } from '../addCaseMappers'
+import { useAddUiTokens } from '../AddUi'
+import { CASE_SEARCH_ATTRIBUTES, extractCaseRows, mapCaseRow } from '../addCaseMappers'
+import { openAddCaseWorkspace } from '../../../util/navigation'
+import { fieldInputStyle } from '../../../ui/pageTokens'
 
 const TABLE_HEADERS = ['Case ID', 'Policy', 'KRN', 'Source', 'Referral', 'Status', 'IRIS', 'Exclusion', 'Assigned', '']
 
 export default function CaseSearchTab({ toast }) {
+  const T = useAddUiTokens()
   const navigate = useNavigate()
   const [attribute, setAttribute] = useState('policy_number')
   const [value, setValue] = useState('')
@@ -60,9 +63,7 @@ export default function CaseSearchTab({ toast }) {
   }
 
   const goCase = (c) => {
-    const path = openCasePath(c.caseId)
-    if (!path) return
-    navigate(path, { state: { case: c } })
+    openAddCaseWorkspace(navigate, c.caseId, { case: c, fromTab: 'case-search' })
   }
 
   return (
@@ -76,19 +77,19 @@ export default function CaseSearchTab({ toast }) {
           <select
             value={attribute}
             onChange={(e) => setAttribute(e.target.value)}
-            style={{ height: '42px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${T.border}`, fontFamily: 'Inter,sans-serif', fontSize: '13px' }}
+            style={fieldInputStyle(T, { height: '42px', padding: '0 12px', borderRadius: '8px', fontSize: '13px' })}
           >
             {CASE_SEARCH_ATTRIBUTES.map((a) => (
               <option key={a.id} value={a.id}>{a.label}</option>
             ))}
           </select>
-          <div style={{ flex: 1, minWidth: '200px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px', height: '42px', borderRadius: '8px', background: '#F8FAFC', border: `1.5px solid ${T.border}` }}>
+          <div style={{ flex: 1, minWidth: '200px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px', height: '42px', borderRadius: '8px', background: T.inputBg, border: `1.5px solid ${T.border}` }}>
             <Search size={15} style={{ color: T.textSubtle }} />
             <input
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="Search value…"
-              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: '13px', fontFamily: 'Inter,sans-serif' }}
+              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: '13px', fontFamily: 'Inter,sans-serif', color: T.textPrimary }}
             />
             {value && (
               <button type="button" onClick={() => setValue('')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex' }}>
@@ -99,7 +100,7 @@ export default function CaseSearchTab({ toast }) {
           <button type="submit" disabled={loading} style={{ padding: '0 20px', height: '42px', borderRadius: '8px', border: 'none', background: T.primary, color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
             {loading ? 'Searching…' : 'Search'}
           </button>
-          <button type="button" onClick={clearSearch} style={{ padding: '0 16px', height: '42px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#fff', fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textMuted }}>
+          <button type="button" onClick={clearSearch} style={{ padding: '0 16px', height: '42px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.card, fontWeight: 600, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textMuted }}>
             Clear
           </button>
         </div>
@@ -120,12 +121,13 @@ export default function CaseSearchTab({ toast }) {
       ) : results.length === 0 ? (
         <div style={{ padding: '40px', textAlign: 'center', color: T.textMuted }}>No data found</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', border: `1px solid ${T.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+        <div className="premium-grid">
+          <div className="premium-grid__scroll">
+          <table>
             <thead>
-              <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+              <tr>
                 {TABLE_HEADERS.map((h) => (
-                  <th key={h || 'action'} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h || 'action'} style={{ whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -135,7 +137,7 @@ export default function CaseSearchTab({ toast }) {
                   key={c.caseId}
                   onDoubleClick={() => goCase(c)}
                   style={{ borderBottom: `1px solid ${T.borderSubtle}`, cursor: 'pointer' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#F8FAFC' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = T.hoverBg }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
                 >
                   <td style={{ padding: '11px 14px', fontFamily: 'monospace', fontWeight: 700, color: T.primary, fontSize: '12px' }}>{c.caseId}</td>
@@ -148,7 +150,7 @@ export default function CaseSearchTab({ toast }) {
                   <td style={{ padding: '11px 14px', fontSize: '12px', color: T.textMuted }}>{c.exclusionType}</td>
                   <td style={{ padding: '11px 14px', fontSize: '12px' }}>{c.assignedTo}</td>
                   <td style={{ padding: '11px 14px' }}>
-                    <button type="button" onClick={() => goCase(c)} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '6px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+                    <button type="button" onClick={() => goCase(c)} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '6px', border: `1px solid ${T.border}`, background: T.inputBg, fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
                       <Eye size={11} /> View
                     </button>
                   </td>
@@ -156,6 +158,7 @@ export default function CaseSearchTab({ toast }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

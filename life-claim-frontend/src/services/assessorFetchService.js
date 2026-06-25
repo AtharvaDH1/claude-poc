@@ -1,38 +1,28 @@
 import wrapper from "../util/ApiWrapper";
 
-const fetchAssessorData = async (path) => {
+const fetchAssessorData = async (segment, claimNo) => {
   try {
-    const response = await wrapper.fetchWithToken(path, {
-      method: "GET",
+    const response = await wrapper.fetchWithToken(`/assessor-fetch/${segment}`, {
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({ claimNo: String(claimNo || "").trim() }),
     });
     const data = await response.json().catch(() => null);
     return data;
   } catch (error) {
-    console.error(`assessorFetchService error for ${path}:`, error);
+    console.error(`assessorFetchService error for ${segment}:`, error);
     return null;
   }
 };
 
 const assessorFetchService = {
-  demogsFetch: async (claimNo) => {
-    return fetchAssessorData(`/assessor-fetch/demogs/${claimNo}`);
-  },
-  requireFetch: async (claimNo) => {
-    return fetchAssessorData(`/assessor-fetch/require/${claimNo}`);
-  },
-  assessmentFetch: async (claimNo) => {
-    return fetchAssessorData(`/assessor-fetch/assess/${claimNo}`);
-  },
-  decisionFetch: async (claimNo) => {
-    return fetchAssessorData(`/assessor-fetch/decision/${claimNo}`);
-  },
-  calculateAmountFetch: async (claimNo) => {
-    return fetchAssessorData(`/assessor-fetch/calcAmt/${claimNo}`);
-  },
-
+  demogsFetch: async (claimNo) => fetchAssessorData("demogs", claimNo),
+  requireFetch: async (claimNo) => fetchAssessorData("require", claimNo),
+  assessmentFetch: async (claimNo) => fetchAssessorData("assess", claimNo),
+  decisionFetch: async (claimNo) => fetchAssessorData("decision", claimNo),
+  calculateAmountFetch: async (claimNo) => fetchAssessorData("calcAmt", claimNo),
 };
 
 export default assessorFetchService;

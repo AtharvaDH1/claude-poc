@@ -4,8 +4,9 @@ import { useToast } from '../components/Toast'
 import { getDashboardData } from '../services/dashboardService'
 import { Download, FileText, BarChart3, TrendingUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
+import { useTheme } from '../context/ThemeContext'
+import { metricCardTokens } from '../ui/pageTokens'
 
-const T = { primary:'#1D4ED8', card:'#fff', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
 
 const MONTHLY_DATA = [
   { month:'Jan', registered:42, approved:31, rejected:8,  pending:3 },
@@ -56,6 +57,7 @@ const REPORT_TYPES = [
 ]
 
 export default function AdminReports() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [metrics, setMetrics] = useState({ total:248, pending:87, approved:124, rejected:37 })
   const [generating, setGenerating] = useState(null)
@@ -73,6 +75,8 @@ export default function AdminReports() {
   }
 
   const approval = metrics.total > 0 ? Math.round((metrics.approved / metrics.total) * 100) : 0
+  const pdfHover = metricCardTokens(T, 'info')
+  const xlsHover = metricCardTokens(T, 'success')
 
   return (
     <AppLayout>
@@ -169,24 +173,24 @@ export default function AdminReports() {
             <div style={{ padding:'12px' }}>
               {REPORT_TYPES.map(r=>(
                 <div key={r.id} style={{ display:'flex', alignItems:'center', gap:'14px', padding:'12px 10px', borderRadius:'10px', marginBottom:'4px', transition:'background 0.1s', cursor:'default' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='#F8FAFC'}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.hoverBg}
                   onMouseLeave={e=>e.currentTarget.style.background=''}>
-                  <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'#F1F5F9', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'18px', flexShrink:0 }}>{r.icon}</div>
+                  <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:T.surfaceMuted, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'18px', flexShrink:0 }}>{r.icon}</div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:'13px', fontWeight:700, color:T.textPrimary }}>{r.label}</div>
                     <div style={{ fontSize:'11px', color:T.textMuted, marginTop:'2px' }}>{r.desc}</div>
                   </div>
                   <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
                     <button onClick={()=>handleDownload(r.id+'-pdf', r.label+' (PDF)')} disabled={!!generating}
-                      style={{ display:'flex', alignItems:'center', gap:'5px', padding:'7px 14px', borderRadius:'7px', border:`1px solid ${T.border}`, background:'#F8FAFC', color:T.textSecondary, fontSize:'12px', fontWeight:700, cursor:generating?'wait':'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
-                      onMouseEnter={e=>{ if(!generating){ e.currentTarget.style.background='#EFF6FF'; e.currentTarget.style.color=T.primary }}}
-                      onMouseLeave={e=>{ e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textSecondary }}>
+                      style={{ display:'flex', alignItems:'center', gap:'5px', padding:'7px 14px', borderRadius:'7px', border:`1px solid ${T.border}`, background: T.inputBg, color:T.textSecondary, fontSize:'12px', fontWeight:700, cursor:generating?'wait':'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
+                      onMouseEnter={e=>{ if(!generating){ e.currentTarget.style.background=pdfHover.bg; e.currentTarget.style.color=pdfHover.color }}}
+                      onMouseLeave={e=>{ e.currentTarget.style.background=T.inputBg; e.currentTarget.style.color=T.textSecondary }}>
                       {generating===r.id+'-pdf' ? '⏳' : <><FileText size={11}/> PDF</>}
                     </button>
                     <button onClick={()=>handleDownload(r.id+'-xls', r.label+' (Excel)')} disabled={!!generating}
-                      style={{ display:'flex', alignItems:'center', gap:'5px', padding:'7px 14px', borderRadius:'7px', border:`1px solid ${T.border}`, background:'#F8FAFC', color:T.textSecondary, fontSize:'12px', fontWeight:700, cursor:generating?'wait':'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
-                      onMouseEnter={e=>{ if(!generating){ e.currentTarget.style.background='#ECFDF5'; e.currentTarget.style.color='#059669' }}}
-                      onMouseLeave={e=>{ e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textSecondary }}>
+                      style={{ display:'flex', alignItems:'center', gap:'5px', padding:'7px 14px', borderRadius:'7px', border:`1px solid ${T.border}`, background: T.inputBg, color:T.textSecondary, fontSize:'12px', fontWeight:700, cursor:generating?'wait':'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}
+                      onMouseEnter={e=>{ if(!generating){ e.currentTarget.style.background=xlsHover.bg; e.currentTarget.style.color=xlsHover.color }}}
+                      onMouseLeave={e=>{ e.currentTarget.style.background=T.inputBg; e.currentTarget.style.color=T.textSecondary }}>
                       {generating===r.id+'-xls' ? '⏳' : <><Download size={11}/> Excel</>}
                     </button>
                   </div>

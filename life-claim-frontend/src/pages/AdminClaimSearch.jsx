@@ -3,6 +3,9 @@ import AppLayout from '../layouts/AppLayout'
 import { useToast } from '../components/Toast'
 import adminService from '../services/adminService'
 import { getUsers } from '../services/userService'
+import { useTheme } from '../context/ThemeContext'
+import { selectFieldStyle, outlineButtonStyle } from '../ui/pageTokens'
+import { PremiumGrid, PremiumGridScroll, PremiumGridFooter } from '../ui/PremiumDataGrid'
 import {
   isPreAssessorRoleName,
   isAssessorRoleName,
@@ -10,13 +13,6 @@ import {
   normRole,
 } from '../util/workflowRole'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-}
 
 const UNASSIGNED_VALUE = '__UNASSIGNED__'
 const PAGE_SIZE = 10
@@ -59,6 +55,7 @@ function RoleSection({
   onAssign,
   onUnassign,
 }) {
+  const { tokens: T } = useTheme()
   const totalPages = Math.max(1, Math.ceil(claims.length / PAGE_SIZE))
   const pageClaims = claims.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
   const options = usersByRole[role] || []
@@ -77,86 +74,98 @@ function RoleSection({
           No claims in this pool.
         </div>
       ) : (
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: '10px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#FAFAFA' }}>
-                {['Claim', 'Policy', 'Status', 'Assigned', 'Assign to', ''].map((h) => (
-                  <th key={h || 'action'} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pageClaims.map((c) => {
-                const cn = c.claimNumber || c.CLAIM_NUMBER
-                const currentAssignee = c.assignedTo || c.ASSIGNED_TO || ''
-                const selectValue = draftAssignee[cn] ?? currentAssignee
-                const wantsUnassign = selectValue === UNASSIGNED_VALUE || selectValue === ''
-                const isBusy = assigning === cn
+        <PremiumGrid>
+          <PremiumGridScroll>
+            <table>
+              <thead>
+                <tr>
+                  {['Claim', 'Policy', 'Status', 'Assigned', 'Assign to', ''].map((h) => (
+                    <th key={h || 'action'}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pageClaims.map((c) => {
+                  const cn = c.claimNumber || c.CLAIM_NUMBER
+                  const currentAssignee = c.assignedTo || c.ASSIGNED_TO || ''
+                  const selectValue = draftAssignee[cn] ?? currentAssignee
+                  const wantsUnassign = selectValue === UNASSIGNED_VALUE || selectValue === ''
+                  const isBusy = assigning === cn
 
-                return (
-                  <tr key={cn} style={{ borderTop: '1px solid #F1F5F9' }}>
-                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: '12px', color: T.primary }}>{cn}</td>
-                    <td style={{ padding: '10px 14px', fontSize: '12px' }}>{c.policyNumber || c.POLICY_NUMBER || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: '12px' }}>{c.status || c.STATUS}</td>
-                    <td style={{ padding: '10px 14px', fontSize: '12px' }}>{currentAssignee || '—'}</td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <select
-                        value={selectValue}
-                        onChange={(e) => setDraftAssignee((p) => ({ ...p, [cn]: e.target.value }))}
-                        style={{ height: '34px', minWidth: '150px', borderRadius: '6px', border: `1px solid ${T.border}`, fontSize: '12px', fontFamily: 'Inter,sans-serif' }}
-                      >
-                        <option value={UNASSIGNED_VALUE}>— Unassigned —</option>
-                        {options.map((u) => (
-                          <option key={u} value={u}>{u}</option>
-                        ))}
-                        {currentAssignee && !options.includes(currentAssignee) && (
-                          <option value={currentAssignee}>{currentAssignee}</option>
+                  return (
+                    <tr key={cn}>
+                      <td><div className="premium-grid__cell-primary">{cn}</div></td>
+                      <td style={{ fontSize: '12px' }}>{c.policyNumber || c.POLICY_NUMBER || '—'}</td>
+                      <td style={{ fontSize: '12px' }}>{c.status || c.STATUS}</td>
+                      <td style={{ fontSize: '12px' }}>{currentAssignee || '—'}</td>
+                      <td>
+                        <select
+                          value={selectValue}
+                          onChange={(e) => setDraftAssignee((p) => ({ ...p, [cn]: e.target.value }))}
+                          style={selectFieldStyle(T, { height: '34px', minWidth: '150px', borderRadius: '6px', fontSize: '12px' })}
+                        >
+                          <option value={UNASSIGNED_VALUE}>— Unassigned —</option>
+                          {options.map((u) => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                          {currentAssignee && !options.includes(currentAssignee) && (
+                            <option value={currentAssignee}>{currentAssignee}</option>
+                          )}
+                        </select>
+                      </td>
+                      <td>
+                        {wantsUnassign && currentAssignee ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onUnassign(c, role)}
+                            style={outlineButtonStyle(T, {
+                              padding: '6px 14px',
+                              borderRadius: '6px',
+                              border: `1px solid ${T.rejected.border}`,
+                              color: T.dangerSolid,
+                              fontWeight: 700,
+                              fontSize: '12px',
+                              opacity: isBusy ? 0.6 : 1,
+                              background: T.isDark ? T.surfaceMuted : T.rejected.bg,
+                            })}
+                          >
+                            {isBusy ? '…' : 'Unassign'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isBusy || wantsUnassign || !selectValue}
+                            onClick={() => onAssign(c, role)}
+                            style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: T.primary, color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', opacity: isBusy || wantsUnassign || !selectValue ? 0.6 : 1 }}
+                          >
+                            {isBusy ? '…' : currentAssignee ? 'Reassign' : 'Assign'}
+                          </button>
                         )}
-                      </select>
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      {wantsUnassign && currentAssignee ? (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => onUnassign(c, role)}
-                          style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontWeight: 700, fontSize: '12px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', opacity: isBusy ? 0.6 : 1 }}
-                        >
-                          {isBusy ? '…' : 'Unassign'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={isBusy || wantsUnassign || !selectValue}
-                          onClick={() => onAssign(c, role)}
-                          style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: T.primary, color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', opacity: isBusy || wantsUnassign || !selectValue ? 0.6 : 1 }}
-                        >
-                          {isBusy ? '…' : currentAssignee ? 'Reassign' : 'Assign'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </PremiumGridScroll>
           {totalPages > 1 && (
-            <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${T.border}` }}>
-              <span style={{ fontSize: '12px', color: T.textMuted }}>Page {page + 1} of {totalPages}</span>
+            <PremiumGridFooter>
+              <span>Page {page + 1} of {totalPages}</span>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" disabled={page === 0} onClick={() => onPageChange(page - 1)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${T.border}`, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Prev</button>
-                <button type="button" disabled={page + 1 >= totalPages} onClick={() => onPageChange(page + 1)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${T.border}`, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Next</button>
+                <button type="button" disabled={page === 0} onClick={() => onPageChange(page - 1)} className="premium-grid__pill">Prev</button>
+                <button type="button" disabled={page + 1 >= totalPages} onClick={() => onPageChange(page + 1)} className="premium-grid__pill">Next</button>
               </div>
-            </div>
+            </PremiumGridFooter>
           )}
-        </div>
+        </PremiumGrid>
       )}
     </div>
   )
 }
 
 export default function AdminClaimSearch() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [claims, setClaims] = useState([])
   const [loading, setLoading] = useState(true)

@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useAddUiTokens } from '../../components/add/AddUi'
 import { Upload, CheckSquare } from 'lucide-react'
 import { readExcelFileData, CaseAssignmentService, downloadAssignmentTemplate } from '../../services/add/caseAssignmentService'
-import { T, PrimaryBtn } from './AddUi'
+import { PrimaryBtn } from './AddUi'
 
-export default function ExcelAssignmentTab({ toast, embedded = false, onComplete }) {
+export default function ExcelAssignmentTab({ toast, onComplete, embedded = false }) {
+  const T = useAddUiTokens()
   const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -39,14 +41,13 @@ export default function ExcelAssignmentTab({ toast, embedded = false, onComplete
         onDrop={(e) => { e.preventDefault(); setDragging(false); setFile(e.dataTransfer.files[0]) }}
         onClick={() => document.getElementById('assign-file-input')?.click()}
         style={{
-          border: `2px dashed ${dragging ? T.primary : '#CBD5E1'}`,
+          border: `2px dashed ${dragging ? T.primary : T.border}`,
           borderRadius: '14px',
           padding: '40px 24px',
           textAlign: 'center',
-          background: dragging ? '#EFF6FF' : '#FAFAFA',
+          background: dragging ? T.primaryLight : T.surfaceMuted,
           cursor: 'pointer',
-          marginBottom: '16px',
-        }}
+          marginBottom: '16px' }}
       >
         <div style={{ fontSize: '32px', marginBottom: '8px' }}>📋</div>
         <div style={{ fontWeight: 700, fontSize: '14px', color: T.textPrimary }}>{file ? file.name : 'Drop Excel file or click to browse'}</div>
@@ -61,17 +62,17 @@ export default function ExcelAssignmentTab({ toast, embedded = false, onComplete
         <button
           type="button"
           onClick={() => downloadAssignmentTemplate()}
-          style={{ height: '40px', padding: '0 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
+          style={{ height: '40px', padding: '0 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.card, fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', color: T.textSecondary }}
         >
           Download template
         </button>
       </div>
 
       {result && (
-        <div style={{ marginTop: '16px', padding: '14px', borderRadius: '10px', background: '#ECFDF5', border: '1px solid #A7F3D0' }}>
-          <div style={{ fontWeight: 700, color: '#065F46', fontSize: '13px', marginBottom: '8px' }}>{result.message || 'Success'}</div>
+        <div style={{ marginTop: '16px', padding: '14px', borderRadius: '10px', background: T.approved.bg, border: `1px solid ${T.approved.border}` }}>
+          <div style={{ fontWeight: 700, color: T.approved.text, fontSize: '13px', marginBottom: '8px' }}>{result.message || 'Success'}</div>
           {result.data?.failed?.length > 0 && (
-            <div style={{ fontSize: '12px', color: '#991B1B' }}>
+            <div style={{ fontSize: '12px', color: T.rejected.text }}>
               Failed: {result.data.failed.map((f) => `${f.policyId} (${f.reason})`).join('; ')}
             </div>
           )}

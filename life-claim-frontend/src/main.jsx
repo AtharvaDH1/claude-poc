@@ -4,9 +4,11 @@ import './index.css'
 
 try {
   const saved = localStorage.getItem('life-claims-theme')
-  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark')
+  const theme = saved === 'dark' ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.style.colorScheme = theme
 } catch {
-  /* ignore */
+  document.documentElement.setAttribute('data-theme', 'light')
 }
 
 import App from './App.jsx'

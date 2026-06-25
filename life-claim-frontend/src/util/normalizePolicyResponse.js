@@ -1,5 +1,7 @@
 /** Normalize Life Asia policySearch payloads for v2 registration UI. */
 
+import { formatProductName } from './formatProductName';
+
 const formatDate = (value) => {
   if (!value) return null;
   try {
@@ -61,6 +63,10 @@ const mapClient = (client) => {
     emailId: client.Email || client.EmailId || client.emailId || null,
     riskIndicator: client.RiskIndicator || client.riskIndicator || null,
     status: client.LifeFlag || client.status || null,
+    occCode: client.OccCode || client.occCode || null,
+    occDesc: client.OccDesc || client.occDesc || client.Occupation || client.occupation || null,
+    education: client.Education || client.education || null,
+    income: client.Income != null ? String(client.Income) : client.income || null,
   };
 };
 
@@ -102,6 +108,14 @@ export function normalizePolicyResponse(apiResponse, policyNo = '') {
     null;
 
   const sumAssured = toNumber(contract.SumAssured ?? contract.sumAssured ?? contract.BaseSA);
+  const ecs =
+    finalElement.ECSDetails ||
+    finalElement.ecsDetails ||
+    finalElement.BankDetails ||
+    finalElement.bankDetails ||
+    {};
+  const ecsRow = Array.isArray(ecs) ? ecs[0] : ecs;
+
   const ridersRaw =
     finalElement.RiderDetails ||
     finalElement.riderDetails ||
@@ -126,7 +140,7 @@ export function normalizePolicyResponse(apiResponse, policyNo = '') {
       policyNo ||
       null,
     productCode: contract.ProductCode || contract.productCode || null,
-    productName: contract.ProductName || contract.productName || null,
+    productName: formatProductName(contract.ProductName || contract.productName || null),
     sumAssured,
     issueDate: formatDate(contract.RCD || contract.IssueDate || contract.issueDate),
     riskCommencementDate: formatDate(contract.RCD || contract.PropRECDDate),
@@ -142,8 +156,37 @@ export function normalizePolicyResponse(apiResponse, policyNo = '') {
     cashValue: toNumber(contract.CashValue ?? contract.cashValue),
     maturityValue: toNumber(contract.MaturityValue ?? contract.maturityValue),
     advisorCode: contract.AdvisorCode || contract.advisorCode || null,
+    advisorName: contract.AdvisorName || contract.advisorName || null,
     advisorStatus: contract.AdvisorStatus || contract.CurrentStatus || null,
     uwDecision: contract.UWDecision || contract.uwDecision || null,
+    uwDecisionDate: formatDate(contract.UWDecisionDate || contract.uwDecisionDate),
+    applicationNo: contract.ApplicationNo || contract.applicationNo || contract.AppNo || null,
+    cdfDate: formatDate(contract.CDFDate || contract.CdfDate || contract.CDF_DATE),
+    outstandingLoan: toNumber(
+      contract.OutstandingLoan ?? contract.OutstandingLoanAmount ?? contract.OTSLoan ?? contract.outstandingLoan,
+    ),
+    excessPremium: toNumber(contract.ExcessPremium ?? contract.excessPremium),
+    assignment: contract.Assignment || contract.assignment || null,
+    salesChannel: contract.SalesChannel || contract.Channel || contract.salesChannel || null,
+    ekitPrinted: contract.EKitPrinted || contract.ekitPrinted || null,
+    agentMobile:
+      contract.AdvisorMobile ||
+      contract.AgentMobile ||
+      contract.advisorMobile ||
+      ecsRow?.MobileNo ||
+      ecsRow?.mobileNo ||
+      null,
+    bankName: contract.BankName || ecsRow?.BankName || ecsRow?.bankName || null,
+    accountNo:
+      contract.AccountNo ||
+      contract.AccountNumber ||
+      contract.accountNo ||
+      ecsRow?.AccountNo ||
+      ecsRow?.accountNo ||
+      null,
+    accountOpenDate: formatDate(
+      contract.AccountOpenDate || contract.accountOpenDate || ecsRow?.AccountOpenDate || ecsRow?.accountOpenDate,
+    ),
     lifeAssuredName,
     laName: lifeAssuredName,
     clients,

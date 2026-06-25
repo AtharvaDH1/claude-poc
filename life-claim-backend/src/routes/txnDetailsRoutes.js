@@ -1,12 +1,14 @@
 const express = require('express');
-const authService = require('../services/authService');
-const authMiddleware = require('../middleware/authMiddleware');
 const txnDetailsController = require('../controllers/txnDetailsController');
+const { protect, hasAnyRole } = require('../middleware/keycloak');
+const { authorizePolicyOrClaimBodyAccess } = require('../middleware/claimAccessMiddleware');
 
 const router = express.Router();
+const operationalRoles = ['Pre Assessor', 'Assessor', 'Verifier'];
+const txnAccess = [protect(hasAnyRole(operationalRoles)), authorizePolicyOrClaimBodyAccess];
 
-router.post('/txnDetails', authMiddleware.authenticate, txnDetailsController.getTxnDetailsController);
-router.post('/transactionApiDBDetails', authMiddleware.authenticate, txnDetailsController.getTransactionApiDetailsController);
-router.post('/txnSave', authMiddleware.authenticate, txnDetailsController.saveTransactionApiDetailsController);
+router.post('/txnDetails', ...txnAccess, txnDetailsController.getTxnDetailsController);
+router.post('/transactionApiDBDetails', ...txnAccess, txnDetailsController.getTransactionApiDetailsController);
+router.post('/txnSave', ...txnAccess, txnDetailsController.saveTransactionApiDetailsController);
 
-module.exports = router; 
+module.exports = router;

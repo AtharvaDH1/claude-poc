@@ -7,31 +7,21 @@ import roleService from '../services/roleService'
 import { useEffect } from 'react'
 import { Users, Plus, Edit3, Trash2, X, Save, Search } from 'lucide-react'
 import { formatSuperUserLabel } from '../util/superuserRole'
+import { useTheme } from '../context/ThemeContext'
+import { roleBadgeTokens, metricCardTokens, fieldInputStyle, outlineButtonStyle } from '../ui/pageTokens'
 
-const T = {
-  primary:'#1D4ED8', primaryHover:'#1E40AF',
-  card:'#FFFFFF', border:'#E2E8F0', borderSubtle:'#F1F5F9',
-  textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8',
-}
-
-const ROLE_COLORS = {
-  'Pre Assessor': { bg:'#EFF6FF', color:'#1D4ED8', border:'#BFDBFE' },
-  'Assessor':     { bg:'#F5F3FF', color:'#7C3AED', border:'#DDD6FE' },
-  'Verifier':     { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' },
-  'Super User':   { bg:'#FFF1F2', color:'#BE123C', border:'#FECDD3' },
-  'Clerk':        { bg:'#FFFBEB', color:'#D97706', border:'#FDE68A' },
-}
 
 const BLANK = { name:'', username:'', email:'', role:'Pre Assessor', status:'Active' }
 
 function Modal({ title, onClose, children }) {
+  const { tokens: T } = useTheme()
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)' }}>
       <div style={{ background:T.card, borderRadius:'16px', width:'480px', boxShadow:'0 24px 64px rgba(0,0,0,0.2)', overflow:'hidden', animation:'fadeUp 0.2s ease' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 20px', borderBottom:`1px solid ${T.border}` }}>
           <span style={{ fontWeight:700, fontSize:'15px', color:T.textPrimary }}>{title}</span>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:T.textMuted, display:'flex', padding:'4px', borderRadius:'6px' }}
-            onMouseEnter={e=>e.currentTarget.style.background='#F8FAFC'} onMouseLeave={e=>e.currentTarget.style.background='none'}>
+            onMouseEnter={e=>e.currentTarget.style.background=T.hoverBg} onMouseLeave={e=>e.currentTarget.style.background='none'}>
             <X size={18}/>
           </button>
         </div>
@@ -43,20 +33,21 @@ function Modal({ title, onClose, children }) {
 }
 
 function UserForm({ data, onChange, onSave, onClose, title, roleOptions = [] }) {
-  const roles = roleOptions.length ? roleOptions : Object.keys(ROLE_COLORS)
+  const { tokens: T } = useTheme()
+  const roles = roleOptions.length ? roleOptions : ['Pre Assessor', 'Assessor', 'Verifier', 'Super User', 'Clerk']
   const inp = (label, key, opts={}) => (
     <div key={key}>
       <label style={{ display:'block', fontSize:'12px', fontWeight:600, color:T.textSecondary, marginBottom:'5px' }}>{label}</label>
       {opts.options ? (
         <select value={data[key]} onChange={e=>onChange(key,e.target.value)}
-          style={{ width:'100%', height:'40px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'8px', background:'#fff', fontSize:'13px', fontWeight:500, color:T.textPrimary, fontFamily:'Inter,sans-serif', outline:'none' }}>
+          style={{ ...fieldInputStyle(T, { width:'100%', height:'40px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'8px', fontSize:'13px', fontWeight:500, outline:'none' }) }}>
           {opts.options.map(o=><option key={o}>{o}</option>)}
         </select>
       ) : (
         <input type={opts.type||'text'} value={data[key]} onChange={e=>onChange(key,e.target.value)} placeholder={opts.placeholder||''}
-          style={{ width:'100%', height:'40px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'8px', background:'#F8FAFC', fontSize:'13px', fontWeight:500, color:T.textPrimary, fontFamily:'Inter,sans-serif', outline:'none', boxSizing:'border-box' }}
-          onFocus={e=>{ e.target.style.borderColor=T.primary; e.target.style.background='#fff' }}
-          onBlur={e=>{ e.target.style.borderColor=T.border; e.target.style.background='#F8FAFC' }}/>
+          style={{ ...fieldInputStyle(T, { width:'100%', height:'40px', padding:'0 12px', border:`1.5px solid ${T.border}`, borderRadius:'8px', fontSize:'13px', fontWeight:500, outline:'none', boxSizing:'border-box' }) }}
+          onFocus={e=>{ e.target.style.borderColor=T.primary; e.target.style.background=T.inputBgFocus }}
+          onBlur={e=>{ e.target.style.borderColor=T.border; e.target.style.background=T.inputBgReadonly }}/>
       )}
     </div>
   )
@@ -71,7 +62,7 @@ function UserForm({ data, onChange, onSave, onClose, title, roleOptions = [] }) 
         {inp('Status','status',{ options:['Active','Inactive'] })}
       </div>
       <div style={{ padding:'16px 20px', borderTop:`1px solid ${T.border}`, display:'flex', justifyContent:'flex-end', gap:'10px' }}>
-        <button onClick={onClose} style={{ padding:'9px 20px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', color:T.textSecondary, fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Cancel</button>
+        <button onClick={onClose} style={{ ...outlineButtonStyle(T, { padding:'9px 20px', borderRadius:'8px', fontSize:'13px', fontWeight:700 }) }}>Cancel</button>
         <button onClick={onSave} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'9px 22px', borderRadius:'8px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)' }}>
           <Save size={14}/> Save User
         </button>
@@ -81,10 +72,11 @@ function UserForm({ data, onChange, onSave, onClose, title, roleOptions = [] }) 
 }
 
 function DeleteConfirm({ user, onConfirm, onCancel }) {
+  const { tokens: T } = useTheme()
   return (
     <Modal title="Delete User" onClose={onCancel}>
       <div style={{ padding:'24px' }}>
-        <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'16px' }}>
+        <div style={{ width:'48px', height:'48px', borderRadius:'12px', background: T.rejected.bg, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'16px' }}>
           <Trash2 size={22} style={{ color:'#DC2626' }}/>
         </div>
         <div style={{ fontWeight:800, fontSize:'15px', color:T.textPrimary, marginBottom:'8px' }}>Delete {user.name}?</div>
@@ -92,7 +84,7 @@ function DeleteConfirm({ user, onConfirm, onCancel }) {
           This will permanently remove <strong>{user.username}</strong> from the system. This cannot be undone.
         </div>
         <div style={{ display:'flex', gap:'10px', justifyContent:'flex-end' }}>
-          <button onClick={onCancel} style={{ padding:'9px 20px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', color:T.textSecondary, fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Cancel</button>
+          <button onClick={onCancel} style={{ ...outlineButtonStyle(T, { padding:'9px 20px', borderRadius:'8px', fontSize:'13px', fontWeight:700 }) }}>Cancel</button>
           <button onClick={onConfirm} style={{ padding:'9px 22px', borderRadius:'8px', border:'none', background:'#DC2626', color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(220,38,38,0.3)' }}
             onMouseEnter={e=>e.currentTarget.style.background='#B91C1C'} onMouseLeave={e=>e.currentTarget.style.background='#DC2626'}>
             Delete User
@@ -104,6 +96,7 @@ function DeleteConfirm({ user, onConfirm, onCancel }) {
 }
 
 export default function UserManagement() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
@@ -210,7 +203,7 @@ export default function UserManagement() {
             <p style={{ fontSize:'13px', color:T.textMuted, fontWeight:500 }}>Manage user accounts, roles, and access permissions.</p>
           </div>
           <div style={{ display:'flex', gap:'8px' }}>
-            <button type="button" onClick={() => setShowAddRole(true)} style={{ padding:'10px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#F8FAFC', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', color:T.textSecondary }}>+ Role</button>
+            <button type="button" onClick={() => setShowAddRole(true)} style={{ ...outlineButtonStyle(T, { padding:'10px 16px', borderRadius:'8px', fontSize:'13px', fontWeight:700, color:T.textSecondary }) }}>+ Role</button>
             <button type="button" onClick={()=>setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 20px', borderRadius:'8px', border:'none', background:T.primary, color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', boxShadow:'0 4px 12px rgba(29,78,216,0.3)' }}>
               <Plus size={15}/> Add User
             </button>
@@ -220,26 +213,28 @@ export default function UserManagement() {
         {/* Summary cards */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'14px', marginBottom:'20px' }}>
           {[
-            { label:'Total Users',    value: users.length,                                    color:'#1D4ED8', bg:'#EFF6FF' },
-            { label:'Active',         value: users.filter(u=>u.status==='Active').length,     color:'#059669', bg:'#ECFDF5' },
-            { label:'Inactive',       value: users.filter(u=>u.status==='Inactive').length,   color:'#D97706', bg:'#FFFBEB' },
-            { label:'Roles Assigned', value: new Set(users.map(u=>u.role)).size,              color:'#7C3AED', bg:'#F5F3FF' },
-          ].map(s=>(
-            <div key={s.label} style={{ background:T.card, borderRadius:'10px', padding:'16px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
-              <div style={{ fontSize:'28px', fontWeight:900, color:s.color }}>{s.value}</div>
+            { label:'Total Users', value: users.length, tone:'info' },
+            { label:'Active', value: users.filter(u=>u.status==='Active').length, tone:'success' },
+            { label:'Inactive', value: users.filter(u=>u.status==='Inactive').length, tone:'warn' },
+            { label:'Roles Assigned', value: new Set(users.map(u=>u.role)).size, tone:'info' },
+          ].map(s=>{
+            const tok = metricCardTokens(T, s.tone)
+            return (
+            <div key={s.label} style={{ background:T.card, borderRadius:'10px', padding:'16px', border:`1px solid ${tok.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)' }}>
+              <div style={{ fontSize:'28px', fontWeight:900, color:tok.color }}>{s.value}</div>
               <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'4px', fontWeight:600 }}>{s.label}</div>
             </div>
-          ))}
+          )})}
         </div>
 
         {/* Filters */}
         <div style={{ background:T.card, borderRadius:'12px', border:`1px solid ${T.border}`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', padding:'16px 20px', marginBottom:'16px', display:'flex', gap:'12px', flexWrap:'wrap', alignItems:'center' }}>
-          <div style={{ flex:1, minWidth:'200px', display:'flex', alignItems:'center', gap:'8px', padding:'0 12px', height:'38px', borderRadius:'8px', background:'#F8FAFC', border:`1.5px solid ${T.border}` }}>
+          <div style={{ flex:1, minWidth:'200px', display:'flex', alignItems:'center', gap:'8px', padding:'0 12px', height:'38px', borderRadius:'8px', background:T.inputBg, border:`1.5px solid ${T.border}` }}>
             <Search size={14} style={{ color:T.textSubtle }}/>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search users..."
               style={{ flex:1, background:'none', border:'none', outline:'none', fontSize:'13px', color:T.textPrimary, fontWeight:500, fontFamily:'Inter,sans-serif' }}/>
           </div>
-          <div style={{ display:'flex', gap:'4px', background:'#F8FAFC', border:`1px solid ${T.border}`, borderRadius:'8px', padding:'3px' }}>
+          <div style={{ display:'flex', gap:'4px', background:T.surfaceMuted, border:`1px solid ${T.border}`, borderRadius:'8px', padding:'3px' }}>
             {allRoles.map(r=>(
               <button key={r} onClick={()=>setRoleFilter(r)}
                 style={{ padding:'5px 10px', borderRadius:'6px', border:'none', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:'Inter,sans-serif', transition:'all 0.15s', background:roleFilter===r?T.primary:'transparent', color:roleFilter===r?'#fff':T.textSubtle, whiteSpace:'nowrap' }}>
@@ -258,7 +253,7 @@ export default function UserManagement() {
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
-                <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                <tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
                   {['Name','Username','Email','Role','Status','Last Login','Claims','Actions'].map(h=>(
                     <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
@@ -267,9 +262,9 @@ export default function UserManagement() {
               <tbody>
                 {filtered.map((u, i) => {
                   const roleLabel = formatSuperUserLabel(u.role) || u.role
-                  const rc = ROLE_COLORS[roleLabel] || ROLE_COLORS[u.role] || { bg:'#F8FAFC', color:T.textMuted, border:T.border }
+                  const rc = roleBadgeTokens(T, roleLabel) || roleBadgeTokens(T, u.role)
                   return (
-                    <tr key={u.id} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background:hovRow===i?'#F8FAFC':'', transition:'background 0.1s' }}
+                    <tr key={u.id} style={{ borderBottom:`1px solid ${T.borderSubtle}`, background:hovRow===i?T.hoverBg:'', transition:'background 0.1s' }}
                       onMouseEnter={()=>setHovRow(i)} onMouseLeave={()=>setHovRow(null)}>
                       <td style={{ padding:'12px 16px' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
@@ -286,7 +281,7 @@ export default function UserManagement() {
                       </td>
                       <td style={{ padding:'12px 16px' }}>
                         <button onClick={()=>toggleStatus(u)}
-                          style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background: u.status==='Active'?'#ECFDF5':'#F8FAFC', color: u.status==='Active'?'#059669':'#94A3B8', border:`1px solid ${u.status==='Active'?'#A7F3D0':'#E2E8F0'}`, cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}>
+                          style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'99px', background: u.status==='Active' ? T.approved.bg : T.surfaceMuted, color: u.status==='Active' ? T.approved.color : T.textSubtle, border:`1px solid ${u.status==='Active' ? T.approved.border : T.border}`, cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}>
                           {u.status}
                         </button>
                       </td>
@@ -294,14 +289,14 @@ export default function UserManagement() {
                       <td style={{ padding:'12px 16px', fontSize:'13px', fontWeight:700, color:T.textSecondary }}>{u.claimsHandled}</td>
                       <td style={{ padding:'12px 16px' }}>
                         <div style={{ display:'flex', gap:'5px', opacity: hovRow===i?1:0, transition:'opacity 0.15s' }}>
-                          <button onClick={()=>setEditUser({...u})} style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:'#F8FAFC', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
-                            onMouseEnter={e=>{ e.currentTarget.style.background='#EFF6FF'; e.currentTarget.style.color=T.primary; e.currentTarget.style.borderColor=T.primary+'60' }}
-                            onMouseLeave={e=>{ e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textMuted; e.currentTarget.style.borderColor=T.border }}>
+                          <button onClick={()=>setEditUser({...u})} style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:T.surfaceMuted, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.background=T.sectionOpenBg; e.currentTarget.style.color=T.primary; e.currentTarget.style.borderColor=T.primaryBorder }}
+                            onMouseLeave={e=>{ e.currentTarget.style.background=T.surfaceMuted; e.currentTarget.style.color=T.textMuted; e.currentTarget.style.borderColor=T.border }}>
                             <Edit3 size={12}/>
                           </button>
-                          <button onClick={()=>setDeleteUser(u)} style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:'#F8FAFC', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
-                            onMouseEnter={e=>{ e.currentTarget.style.background='#FEF2F2'; e.currentTarget.style.color='#DC2626'; e.currentTarget.style.borderColor='#FECACA' }}
-                            onMouseLeave={e=>{ e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textMuted; e.currentTarget.style.borderColor=T.border }}>
+                          <button onClick={()=>setDeleteUser(u)} style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:T.surfaceMuted, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.background=T.rejected.bg; e.currentTarget.style.color=T.danger; e.currentTarget.style.borderColor=T.rejected.border }}
+                            onMouseLeave={e=>{ e.currentTarget.style.background=T.surfaceMuted; e.currentTarget.style.color=T.textMuted; e.currentTarget.style.borderColor=T.border }}>
                             <Trash2 size={12}/>
                           </button>
                         </div>

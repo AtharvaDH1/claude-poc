@@ -84,7 +84,3 @@ export function normalizePolicyNumber(value) {
   return s
 }
 
-export function openCasePath(caseId) {
-  if (!caseId || caseId === '—') return null
-  return `/case/${encodeURIComponent(caseId)}`
-}

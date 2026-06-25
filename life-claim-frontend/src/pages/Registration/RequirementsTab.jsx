@@ -1,18 +1,15 @@
 import React, { useState, useMemo } from 'react'
-import { SubTabNav, Btn, T } from './shared'
+import { SubTabNav, Btn, useRegTokens } from './shared'
 import { useToast } from '../../components/Toast'
 import { validateRequirements, showValidationToast } from '../../util/registrationValidation'
 import { REGISTRATION_REQUIREMENTS } from '../../config/registrationCatalog'
 import { buildRequirementTableRows } from '../../util/buildRegistrationPayload'
+import { statusPillStyle, fieldInputStyle, alertBannerStyle, metricTileStyle, metricCardTokens, toneControlStyle } from '../../ui/pageTokens'
 
 const REQ_DOCS = REGISTRATION_REQUIREMENTS
 
-const docTypeStyle = (docType) =>
-  docType === 'Mandatory'
-    ? { bg: '#FEF2F2', color: '#DC2626', border: '#FECACA' }
-    : { bg: '#FFFBEB', color: '#D97706', border: '#FDE68A' }
-
-export default function RequirementsTab({ data, update, onComplete, userRole }) {
+export default function RequirementsTab({ data, update, userRole, onComplete }) {
+  const T = useRegTokens()
   const toast = useToast()
   const [subTab, setSubTab] = useState('Requirements')
   const showCommTab = userRole && userRole !== 'Pre Assessor'
@@ -57,14 +54,6 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
   const mandatoryReceived = mandatoryDocs.filter((d) => reqStatus[d.id] === 'Received').length
   const requirementsComplete = validateRequirements(data, { allDocs }).valid
 
-  const statusColor = (s) =>
-    ({
-      Received: { bg: '#ECFDF5', color: '#059669', border: '#A7F3D0' },
-      Pending: { bg: '#FFFBEB', color: '#D97706', border: '#FDE68A' },
-      Waived: { bg: '#EFF6FF', color: T.primary, border: '#BFDBFE' },
-      NA: { bg: '#F8FAFC', color: T.textSubtle, border: T.border },
-    })[s] || { bg: '#FFFBEB', color: '#D97706', border: '#FDE68A' }
-
   return (
     <div style={{ padding: '24px' }}>
       <div
@@ -72,44 +61,37 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
           display: 'grid',
           gridTemplateColumns: 'repeat(3,1fr)',
           gap: '12px',
-          marginBottom: '20px',
-        }}
+          marginBottom: '20px' }}
       >
         {[
-          { label: 'Total Requirements', value: allDocs.length, color: T.primary, bg: '#EFF6FF' },
-          { label: 'Received', value: received, color: '#059669', bg: '#ECFDF5' },
+          { label: 'Total Requirements', value: allDocs.length, tone: 'info' },
+          { label: 'Received', value: received, tone: 'success' },
           {
             label: 'Mandatory Received',
             value: `${mandatoryReceived}/${mandatoryDocs.length}`,
-            color: mandatoryReceived === mandatoryDocs.length ? '#059669' : '#D97706',
-            bg: mandatoryReceived === mandatoryDocs.length ? '#ECFDF5' : '#FFFBEB',
-          },
-        ].map((s) => (
+            tone: mandatoryReceived === mandatoryDocs.length ? 'success' : 'warn' },
+        ].map((s) => {
+          const tok = metricCardTokens(T, s.tone)
+          return (
           <div
             key={s.label}
-            style={{
-              padding: '14px 16px',
-              background: s.bg,
-              borderRadius: '10px',
-              border: `1px solid ${s.color}30`,
-            }}
+            style={metricTileStyle(T, s.tone)}
           >
-            <div style={{ fontSize: '24px', fontWeight: 900, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: '24px', fontWeight: 900, color: tok.color }}>{s.value}</div>
             <div
               style={{
                 fontSize: '11px',
                 fontWeight: 700,
-                color: s.color,
-                opacity: 0.7,
+                color: tok.color,
+                opacity: 0.85,
                 marginTop: '3px',
                 textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-              }}
+                letterSpacing: '0.06em' }}
             >
               {s.label}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       <div
@@ -117,8 +99,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '16px',
-        }}
+          marginBottom: '16px' }}
       >
         <SubTabNav
           tabs={showCommTab ? ['Requirements', 'Communication'] : ['Requirements']}
@@ -133,10 +114,11 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
       </div>
 
       {subTab === 'Requirements' && (
-        <div style={{ border: `1px solid ${T.border}`, borderRadius: '10px', overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
+        <div className="premium-grid" style={{ borderRadius: '10px' }}>
+          <div className="premium-grid__scroll">
+          <table style={{ minWidth: '1100px' }}>
             <thead>
-              <tr style={{ background: '#FAFAFA', borderBottom: `2px solid ${T.border}` }}>
+              <tr>
                 {[
                   '#',
                   'Requirement Name',
@@ -149,16 +131,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                 ].map((h) => (
                   <th
                     key={h}
-                    style={{
-                      padding: '10px 14px',
-                      textAlign: 'left',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: T.textSubtle,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      whiteSpace: h.includes('Date') ? 'nowrap' : undefined,
-                    }}
+                    style={{ whiteSpace: h.includes('Date') ? 'nowrap' : undefined }}
                   >
                     {h}
                   </th>
@@ -168,31 +141,16 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
             <tbody>
               {allDocs.map((doc, i) => {
                 const s = reqStatus[doc.id] || 'Pending'
-                const sc = statusColor(s)
-                const dt = docTypeStyle(doc.docType)
                 const triggerDate = reqTriggerDates[doc.id] || defaultTrigger
                 return (
-                  <tr
-                    key={doc.id}
-                    style={{
-                      borderBottom: `1px solid ${T.borderSubtle}`,
-                      background: i % 2 === 0 ? '#FAFAFA' : '#fff',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#F0F6FF'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = i % 2 === 0 ? '#FAFAFA' : '#fff'
-                    }}
-                  >
+                  <tr key={doc.id}>
                     <td
                       style={{
                         padding: '12px 14px',
                         fontSize: '12px',
                         fontWeight: 700,
                         color: T.textSubtle,
-                        verticalAlign: 'top',
-                      }}
+                        verticalAlign: 'top' }}
                     >
                       {i + 1}
                     </td>
@@ -204,24 +162,12 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                         color: T.textSecondary,
                         lineHeight: 1.5,
                         maxWidth: '360px',
-                        verticalAlign: 'top',
-                      }}
+                        verticalAlign: 'top' }}
                     >
                       {doc.name}
                     </td>
                     <td style={{ padding: '12px 14px', verticalAlign: 'top' }}>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '3px 10px',
-                          borderRadius: '99px',
-                          background: dt.bg,
-                          color: dt.color,
-                          border: `1px solid ${dt.border}`,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
+                      <span style={statusPillStyle(T, doc.docType === 'Mandatory' ? 'danger' : 'warn', { fontSize: '11px', padding: '3px 10px' })}>
                         {doc.docType}
                       </span>
                     </td>
@@ -232,8 +178,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                         fontWeight: 600,
                         color: T.textMuted,
                         verticalAlign: 'top',
-                        whiteSpace: 'nowrap',
-                      }}
+                        whiteSpace: 'nowrap' }}
                     >
                       {doc.source}
                     </td>
@@ -241,18 +186,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                       <select
                         value={s}
                         onChange={(e) => setStatus(doc.id, e.target.value)}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: '7px',
-                          border: `1.5px solid ${sc.border}`,
-                          background: sc.bg,
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          color: sc.color,
-                          fontFamily: 'Inter,sans-serif',
-                          cursor: 'pointer',
-                          outline: 'none',
-                        }}
+                        style={toneControlStyle(T, s === 'Received' ? 'success' : s === 'Waived' ? 'info' : s === 'NA' ? 'neutral' : 'warn')}
                       >
                         <option value="Pending">Pending</option>
                         <option value="Received">Received</option>
@@ -266,8 +200,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                         fontSize: '12px',
                         fontWeight: 600,
                         color: T.textMuted,
-                        verticalAlign: 'top',
-                      }}
+                        verticalAlign: 'top' }}
                     >
                       System
                     </td>
@@ -276,15 +209,13 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                         type="date"
                         value={triggerDate}
                         onChange={(e) => setTriggerDate(doc.id, e.target.value)}
-                        style={{
+                        style={fieldInputStyle(T, {
                           padding: '6px 10px',
-                          border: `1px solid ${T.border}`,
                           borderRadius: '6px',
                           fontSize: '12px',
-                          fontFamily: 'Inter,sans-serif',
                           outline: 'none',
-                          background: '#fff',
-                        }}
+                          minWidth: '130px',
+                        })}
                       />
                     </td>
                     <td style={{ padding: '12px 14px', verticalAlign: 'top' }}>
@@ -294,17 +225,15 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                         onChange={(e) => setReceivedDate(doc.id, e.target.value)}
                         disabled={s !== 'Received'}
                         placeholder="dd-mm-yyyy"
-                        style={{
+                        style={fieldInputStyle(T, {
                           padding: '6px 10px',
-                          border: `1px solid ${T.border}`,
                           borderRadius: '6px',
                           fontSize: '12px',
-                          fontFamily: 'Inter,sans-serif',
                           outline: 'none',
-                          background: s === 'Received' ? '#fff' : '#F1F5F9',
+                          background: s === 'Received' ? T.inputBg : T.inputBgReadonly,
                           cursor: s === 'Received' ? 'pointer' : 'not-allowed',
                           minWidth: '130px',
-                        }}
+                        })}
                       />
                     </td>
                   </tr>
@@ -312,6 +241,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -323,29 +253,25 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                 key: 'commEmailSent',
                 label: 'Email Sent to Claimant',
                 type: 'select',
-                opts: ['Yes', 'No', 'Pending'],
-              },
+                opts: ['Yes', 'No', 'Pending'] },
               { key: 'commEmailDate', label: 'Email Sent Date', type: 'date' },
               {
                 key: 'commSmsSent',
                 label: 'SMS Sent to Claimant',
                 type: 'select',
-                opts: ['Yes', 'No', 'Pending'],
-              },
+                opts: ['Yes', 'No', 'Pending'] },
               { key: 'commSmsDate', label: 'SMS Sent Date', type: 'date' },
               {
                 key: 'commLetterSent',
                 label: 'Letter Dispatched',
                 type: 'select',
-                opts: ['Yes', 'No', 'Pending'],
-              },
+                opts: ['Yes', 'No', 'Pending'] },
               { key: 'commLetterDate', label: 'Letter Dispatch Date', type: 'date' },
               {
                 key: 'commWhatsapp',
                 label: 'WhatsApp Notified',
                 type: 'select',
-                opts: ['Yes', 'No', 'NA'],
-              },
+                opts: ['Yes', 'No', 'NA'] },
             ].map((f) => (
               <div key={f.key}>
                 <label
@@ -353,9 +279,8 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                     display: 'block',
                     fontSize: '12px',
                     fontWeight: 600,
-                    color: '#334155',
-                    marginBottom: '5px',
-                  }}
+                    color: T.textSecondary,
+                    marginBottom: '5px' }}
                 >
                   {f.label}
                 </label>
@@ -369,12 +294,11 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                       padding: '0 10px',
                       border: `1.5px solid ${T.border}`,
                       borderRadius: '7px',
-                      background: '#fff',
+                      background: T.inputBg,
                       fontSize: '13px',
                       fontFamily: 'Inter,sans-serif',
                       outline: 'none',
-                      cursor: 'pointer',
-                    }}
+                      cursor: 'pointer' }}
                   >
                     <option value="">-- Select --</option>
                     {f.opts.map((o) => (
@@ -392,12 +316,11 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                       padding: '0 10px',
                       border: `1.5px solid ${T.border}`,
                       borderRadius: '7px',
-                      background: '#F8FAFC',
+                      background: T.inputBgReadonly,
                       fontSize: '13px',
                       fontFamily: 'Inter,sans-serif',
                       outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
+                      boxSizing: 'border-box' }}
                   />
                 )}
               </div>
@@ -409,8 +332,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                   fontSize: '12px',
                   fontWeight: 600,
                   color: '#334155',
-                  marginBottom: '5px',
-                }}
+                  marginBottom: '5px' }}
               >
                 Communication Remarks
               </label>
@@ -424,13 +346,12 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
                   padding: '8px 10px',
                   border: `1.5px solid ${T.border}`,
                   borderRadius: '7px',
-                  background: '#F8FAFC',
+                  background: T.inputBg,
                   fontSize: '13px',
                   fontFamily: 'Inter,sans-serif',
                   outline: 'none',
                   resize: 'vertical',
-                  boxSizing: 'border-box',
-                }}
+                  boxSizing: 'border-box' }}
               />
             </div>
           </div>
@@ -444,8 +365,7 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
           borderTop: `1px solid ${T.border}`,
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: '10px',
-        }}
+          gap: '10px' }}
       >
         {mandatoryReceived < mandatoryDocs.length && subTab === 'Requirements' && (
           <div
@@ -453,13 +373,12 @@ export default function RequirementsTab({ data, update, onComplete, userRole }) 
               marginRight: 'auto',
               fontSize: '12px',
               fontWeight: 600,
-              color: '#D97706',
-              background: '#FFFBEB',
-              border: '1px solid #FDE68A',
+              ...alertBannerStyle(T, 'warn'),
               borderRadius: '8px',
-              padding: '8px 14px',
+              padding: '10px 14px',
               display: 'flex',
               alignItems: 'center',
+              lineHeight: 1.5,
             }}
           >
             ⚠️ {mandatoryDocs.length - mandatoryReceived} mandatory requirement(s) still pending

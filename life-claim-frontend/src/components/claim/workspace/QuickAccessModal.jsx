@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { WS, EditableField } from './workspaceUi'
+import { useWorkspaceTokens, EditableField } from './workspaceUi'
 import { normalizeDateForInput } from '../../../util/workspaceDisplay'
 
 const WHATSAPP_OPTIONS = ['Yes', 'No']
@@ -9,6 +9,7 @@ const COUNTRY_OPTIONS = ['India', 'Other']
 const NATIONALITY_OPTIONS = ['Indian', 'Other']
 
 function SectionTitle({ children, first }) {
+  const WS = useWorkspaceTokens()
   return (
     <div style={{ gridColumn: '1 / -1', fontSize: '10px', fontWeight: 800, color: WS.textSubtle, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: first ? 0 : '2px', paddingBottom: '2px', borderBottom: `1px solid ${WS.borderSubtle || WS.border}` }}>
       {children}
@@ -22,6 +23,7 @@ function hasValue(...vals) {
 
 /** Assessor quick edits → policyData (intimation, claimant, proof, witness). */
 export default function QuickAccessModal({ open, onClose, policyData, onSave, disabled }) {
+  const WS = useWorkspaceTokens()
   const [form, setForm] = useState({})
 
   useEffect(() => {
@@ -119,7 +121,7 @@ export default function QuickAccessModal({ open, onClose, policyData, onSave, di
       onClick={onClose}
     >
       <div
-        style={{ background: '#fff', borderRadius: '16px', width: 'min(1080px, 96vw)', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}
+        style={{ background: WS.card, borderRadius: '16px', width: 'min(1080px, 96vw)', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${WS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -151,7 +153,7 @@ export default function QuickAccessModal({ open, onClose, policyData, onSave, di
           <EditableField label="Witness Instance No" value={form.witnessInstanceNo} onChange={(v) => set('witnessInstanceNo', v)} disabled={disabled} />
         </div>
         <div style={{ padding: '12px 20px', borderTop: `1px solid ${WS.border}`, display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: '#F8FAFC', fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Cancel</button>
+          <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: '8px', border: `1px solid ${WS.border}`, background: WS.hoverBg, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Cancel</button>
           <button type="button" onClick={handleSave} disabled={disabled} style={{ padding: '9px 18px', borderRadius: '8px', border: 'none', background: disabled ? '#CBD5E1' : WS.primary, color: '#fff', fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'Inter,sans-serif' }}>Save</button>
         </div>
       </div>

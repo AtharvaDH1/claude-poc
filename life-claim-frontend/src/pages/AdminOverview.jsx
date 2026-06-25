@@ -7,38 +7,16 @@ import {
   AlertTriangle, Clock, Users, FileText, ClipboardList,
   Layers, CheckCircle, XCircle, TrendingUp,
 } from 'lucide-react'
+import { useTheme } from '../context/ThemeContext'
+import { outlineButtonStyle, metricCardTokens, statusPillStyle } from '../ui/pageTokens'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-  textSecondary: '#334155',
-  textSubtle: '#94A3B8',
-}
 
 const GRID_4 = { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '16px' }
 const GRID_2 = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }
-
-const SLA_VIEWS = [
-  { view: 'slaBreached', label: 'SLA breached (>3 days)', color: '#DC2626', icon: AlertTriangle },
-  { view: 'slaAtRisk', label: 'SLA at risk (1–3 days)', color: '#D97706', icon: Clock },
-  { view: 'openByRole', label: 'Open by role', color: T.primary, icon: Users },
-  { view: 'rejected30d', label: 'Rejected (30 days)', color: '#64748B', icon: FileText },
-]
-
-const KPI_CONFIG = [
-  { label: 'Total claims', key: 'totalClaims', icon: Layers, color: '#1D4ED8', light: '#EFF6FF' },
-  { label: 'Pending', key: 'pending', icon: Clock, color: '#D97706', light: '#FFFBEB' },
-  { label: 'Approved', key: 'approved', icon: CheckCircle, color: '#059669', light: '#ECFDF5' },
-  { label: 'Rejected', key: 'rejected', icon: XCircle, color: '#DC2626', light: '#FEF2F2' },
-]
 
 const ChartTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -57,6 +35,7 @@ const ChartTip = ({ active, payload, label }) => {
 }
 
 function Panel({ children, style }) {
+  const { tokens: T } = useTheme()
   return (
     <div style={{
       background: T.card,
@@ -75,6 +54,7 @@ function Panel({ children, style }) {
 }
 
 function PanelHeader({ title, subtitle, right }) {
+  const { tokens: T } = useTheme()
   return (
     <div style={{
       padding: '16px 20px',
@@ -95,9 +75,24 @@ function PanelHeader({ title, subtitle, right }) {
 }
 
 export default function AdminOverview() {
+  const { tokens: T } = useTheme()
   const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  const SLA_VIEWS = useMemo(() => [
+    { view: 'slaBreached', label: 'SLA breached (>3 days)', color: '#DC2626', icon: AlertTriangle },
+    { view: 'slaAtRisk', label: 'SLA at risk (1–3 days)', color: '#D97706', icon: Clock },
+    { view: 'openByRole', label: 'Open by role', color: T.primary, icon: Users },
+    { view: 'rejected30d', label: 'Rejected (30 days)', color: '#64748B', icon: FileText },
+  ], [T.primary])
+
+  const KPI_CONFIG = useMemo(() => [
+    { label: 'Total claims', key: 'totalClaims', icon: Layers, tone: 'info' },
+    { label: 'Pending', key: 'pending', icon: Clock, tone: 'warn' },
+    { label: 'Approved', key: 'approved', icon: CheckCircle, tone: 'success' },
+    { label: 'Rejected', key: 'rejected', icon: XCircle, tone: 'danger' },
+  ], [])
 
   useEffect(() => {
     adminService.getSummary().then(setSummary).finally(() => setLoading(false))
@@ -175,13 +170,14 @@ export default function AdminOverview() {
               {KPI_CONFIG.map((k) => {
                 const Icon = k.icon
                 const value = s[k.key] ?? 0
+                const tok = metricCardTokens(T, k.tone)
                 return (
                   <Panel key={k.label}>
                     <div style={{ padding: '16px' }}>
-                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: k.light, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                        <Icon size={17} style={{ color: k.color }} />
+                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: tok.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                        <Icon size={17} style={{ color: tok.color }} />
                       </div>
-                      <div style={{ fontSize: '28px', fontWeight: 900, color: k.color, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
+                      <div style={{ fontSize: '28px', fontWeight: 900, color: tok.color, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
                       <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '6px', fontWeight: 600 }}>{k.label}</div>
                     </div>
                   </Panel>
@@ -289,7 +285,7 @@ export default function AdminOverview() {
                   title="SLA health"
                   subtitle={`${s.pending || 0} pending claims`}
                   right={(
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#059669', background: '#ECFDF5', padding: '3px 8px', borderRadius: '99px' }}>
+                    <div style={statusPillStyle(T, 'success', { padding: '3px 8px' })}>
                       <TrendingUp size={10} /> {s.pending || 0} pending
                     </div>
                   )}
@@ -351,13 +347,13 @@ export default function AdminOverview() {
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', paddingTop: '4px' }}>
               <Link
                 to="/superuser/claim-search"
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', background: '#EFF6FF', color: T.primary, fontWeight: 700, fontSize: '13px', textDecoration: 'none' }}
+                style={{ ...outlineButtonStyle(T, { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', background: T.primaryLight, color: T.primary, fontWeight: 700, fontSize: '13px', textDecoration: 'none', border: `1px solid ${T.primaryBorder}` }) }}
               >
                 <FileText size={16} /> Claim assignment
               </Link>
               <Link
                 to="/audit-log"
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, color: T.textMuted, fontWeight: 700, fontSize: '13px', textDecoration: 'none' }}
+                style={{ ...outlineButtonStyle(T, { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', textDecoration: 'none' }) }}
               >
                 <ClipboardList size={16} /> Login sessions
               </Link>

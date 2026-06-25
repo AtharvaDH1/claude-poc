@@ -3,6 +3,7 @@ const session = require('express-session');
 const Keycloak = require('keycloak-connect');
 const authService = require('../services/authService');
 const jwt = require('jsonwebtoken');
+const { readAccessToken } = require('../util/authCookies');
 
 let keycloak;
 const SESSION_IDLE_TIMEOUT_MINUTES = Number(process.env.SESSION_IDLE_TIMEOUT_MINUTES || 5);
@@ -73,9 +74,17 @@ const hasAnyRole = (roles) => (token, request) => {
 const parseRoleSpec = (spec) => spec && typeof spec === 'string' ? spec.replace(/^realm:/, '') : null;
 
 // Flexible protect: try backend JWT first, then Keycloak. Supports any user, role string, or hasAnyRole()
+function ensureBearerFromCookie(req) {
+  if (!req.headers.authorization) {
+    const token = readAccessToken(req);
+    if (token) req.headers.authorization = `Bearer ${token}`;
+  }
+  return readAccessToken(req);
+}
+
 function protect(roleSpec) {
   return async (req, res, next) => {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || (req.cookies && req.cookies.token);
+    const token = ensureBearerFromCookie(req);
     // If the incoming token is a Keycloak-style token (typically RS256 with a kid),
     // skip backend JWT verification (HS256) and validate via Keycloak directly.
     if (token) {

@@ -1,14 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Field, Input, Select, Grid, Btn, InfoCard, T } from './shared'
+import { Field, Input, Select, Grid, Btn, InfoCard, useRegTokens } from './shared'
 import { fetchPolicyDetails, fetchAgentRepudiation } from '../../services/policyService'
 import { asArray } from '../../util/buildRegistrationPayload'
 import { getPolicySummaryItems } from '../../util/normalizePolicyResponse'
+import { buildPolicyRegistrationPrefill, countPrefillFields } from '../../util/prefillRegistrationFromPolicy'
 import { useToast } from '../../components/Toast'
+import { tonePanelStyle, toneLabelStyle, toneValueStyle } from '../../ui/pageTokens'
 
 /**
  * v1 RegisterForm gate — Life Asia policy fetch before the 4-step wizard.
  */
 export default function RegisterFormGate({ initialPolicyNo = '', onProceed }) {
+  const T = useRegTokens()
   const toast = useToast()
   const [policyNo, setPolicyNo] = useState(initialPolicyNo)
   const [claimType, setClaimType] = useState('Death')
@@ -58,15 +61,14 @@ export default function RegisterFormGate({ initialPolicyNo = '', onProceed }) {
       toast('warning', 'Claim setup', 'Select claim type and information type.')
       return
     }
+    const prefill = buildPolicyRegistrationPrefill(policy, {})
     onProceed({
       policy: {
         ...policy,
         registerForm: {
           policyId: policy.policyId || policyNo.trim(),
           claimType,
-          informationType,
-        },
-      },
+          informationType } },
       policyData: {
         policyId: policy.policyId || policyNo.trim(),
         claimType,
@@ -78,8 +80,11 @@ export default function RegisterFormGate({ initialPolicyNo = '', onProceed }) {
         initialPolicyStatus: policy.premiumStatus,
         riskCommencementDate: policy.riskCommencementDate,
         issueDate: policy.issueDate,
-      },
-    })
+        ...prefill } })
+    const n = countPrefillFields(prefill)
+    if (n > 0) {
+      toast('info', 'Fields prefilled', `${n} contract and eagle field(s) filled from Life Asia.`)
+    }
   }
 
   return (
@@ -122,28 +127,21 @@ export default function RegisterFormGate({ initialPolicyNo = '', onProceed }) {
           </div>
           <div
             style={{
-              padding: '14px 16px',
-              background: '#ECFDF5',
-              borderRadius: '10px',
-              border: '1px solid #A7F3D0',
+              ...tonePanelStyle(T, 'success'),
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-              gap: '12px',
-            }}
+              gap: '12px' }}
           >
             {policySummary.map((item) => (
               <div key={item.label}>
-                <div style={{ fontSize: '10px', color: '#047857', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <div style={toneLabelStyle(T, 'success')}>
                   {item.label}
                 </div>
                 <div
                   style={{
-                    fontSize: '13px',
-                    fontWeight: item.highlight ? 800 : 700,
-                    color: item.highlight ? T.primary : '#065F46',
-                    marginTop: '2px',
-                    fontFamily: item.highlight ? 'monospace' : 'inherit',
-                  }}
+                    ...toneValueStyle(T, 'success', { fontWeight: item.highlight ? 800 : 700, marginTop: '2px' }),
+                    color: item.highlight ? T.primary : (T.approved.text ?? T.approved.color),
+                    fontFamily: item.highlight ? 'monospace' : 'inherit' }}
                 >
                   {item.value}
                 </div>

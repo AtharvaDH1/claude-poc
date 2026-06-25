@@ -147,4 +147,17 @@ async function rejectData(selectedData, caseStatus) {
     return approveData(selectedData, caseStatus);
 }
 
-export { ExcelUploaderService, searchWithUserInput, approveData, rejectData };
+async function resetAddDemoData() {
+    const response = await wrapper.fetchWithToken('/capsAddDetails/resetDemoData', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    });
+    const result = await response.json();
+    if (!result?.success) {
+        throw new Error(result?.error || result?.message || 'Reset failed');
+    }
+    return result;
+}
+
+export { ExcelUploaderService, searchWithUserInput, approveData, rejectData, resetAddDemoData };

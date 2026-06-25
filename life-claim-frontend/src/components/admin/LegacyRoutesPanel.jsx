@@ -1,3 +1,5 @@
+import { useTheme } from '../../context/ThemeContext'
+import { alertBannerStyle, statusPillStyle } from '../../ui/pageTokens'
 import {
   V2_ACTIVE_ROUTES,
   V2_ROUTE_ALIASES,
@@ -5,16 +7,9 @@ import {
   V1_SUPERSEDED_PATTERNS,
 } from '../../config/legacyRoutes'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-  textSubtle: '#94A3B8',
-}
 
 export default function LegacyRoutesPanel() {
+  const { tokens: T } = useTheme()
   return (
     <div style={{ marginTop: '28px', paddingTop: '24px', borderTop: `1px solid ${T.border}` }}>
       <div style={{ fontWeight: 800, fontSize: '15px', color: T.textPrimary, marginBottom: '4px' }}>
@@ -31,7 +26,7 @@ export default function LegacyRoutesPanel() {
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {V2_ACTIVE_ROUTES.map((r) => (
-            <span key={r.path} style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '6px', background: '#ECFDF5', color: '#065F46', fontFamily: 'monospace' }}>
+            <span key={r.path} style={statusPillStyle(T, 'success', { fontSize: '11px', padding: '4px 8px', borderRadius: '6px', fontFamily: 'monospace' })}>
               {r.path}
             </span>
           ))}
@@ -51,8 +46,8 @@ export default function LegacyRoutesPanel() {
         </ul>
       </div>
 
-      <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-        <div style={{ fontWeight: 700, fontSize: '13px', color: '#92400E', marginBottom: '8px' }}>Dormant pages (file exists, no route)</div>
+      <div style={{ ...alertBannerStyle(T, 'warn'), borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+        <div style={{ fontWeight: 700, fontSize: '13px', color: T.pending.text ?? T.pending.color, marginBottom: '8px' }}>Dormant pages (file exists, no route)</div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
           <thead>
             <tr>
@@ -63,8 +58,8 @@ export default function LegacyRoutesPanel() {
           </thead>
           <tbody>
             {DORMANT_FRONTEND_PAGES.map((row) => (
-              <tr key={row.id} style={{ borderTop: '1px solid #FDE68A' }}>
-                <td style={{ padding: '8px', fontWeight: 600, color: '#78350F' }}>{row.id}</td>
+              <tr key={row.id} style={{ borderTop: `1px solid ${T.pending.border}` }}>
+                <td style={{ padding: '8px', fontWeight: 600, color: T.pending.text ?? T.pending.color }}>{row.id}</td>
                 <td style={{ padding: '8px', fontFamily: 'monospace' }}>{row.file}</td>
                 <td style={{ padding: '8px', color: T.textMuted }}>{row.backend}</td>
               </tr>

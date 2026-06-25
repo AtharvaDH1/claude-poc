@@ -22,9 +22,10 @@ import {
   deleteMarketing,
 } from '../services/generalInfoService'
 import { Building2, Search, Plus, Trash2, Pencil } from 'lucide-react'
-import { UI_T as T } from '../ui/theme'
+import { useTheme } from '../context/ThemeContext'
 
 function ContactSection({ title, rows, valueKey, idKey, onDelete, onAdd, onUpdate, addLabel, addPlaceholder, hospitalId }) {
+  const { tokens: T } = useTheme()
   const [value, setValue] = useState('')
   const [editing, setEditing] = useState(null)
   const [editVal, setEditVal] = useState('')
@@ -41,7 +42,7 @@ function ContactSection({ title, rows, valueKey, idKey, onDelete, onAdd, onUpdat
             const rowId = row[idKey] ?? row.HOSPITAL_ID ?? hospitalId
             const isEdit = editing === i
             return (
-              <li key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#F8FAFC', borderRadius: '8px', marginBottom: '6px', border: `1px solid ${T.border}`, gap: '8px' }}>
+              <li key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: T.hoverBg, borderRadius: '8px', marginBottom: '6px', border: `1px solid ${T.border}`, gap: '8px' }}>
                 {isEdit ? (
                   <input value={editVal} onChange={(e) => setEditVal(e.target.value)} style={{ flex: 1, height: '32px', padding: '0 8px', borderRadius: '6px', border: `1px solid ${T.border}`, fontSize: '13px' }} />
                 ) : (
@@ -73,6 +74,7 @@ function ContactSection({ title, rows, valueKey, idKey, onDelete, onAdd, onUpdat
 }
 
 export default function HospitalContacts() {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const [pageTab, setPageTab] = useState('contacts')
   const [hospitalId, setHospitalId] = useState('')
@@ -125,7 +127,7 @@ export default function HospitalContacts() {
       <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif', maxWidth: '900px' }}>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           {['contacts', 'general'].map((t) => (
-            <button key={t} type="button" onClick={() => setPageTab(t)} style={{ padding: '10px 16px', borderRadius: '8px', border: pageTab === t ? 'none' : `1px solid ${T.border}`, background: pageTab === t ? T.primary : '#F8FAFC', color: pageTab === t ? '#fff' : T.textSecondary, fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', textTransform: 'capitalize' }}>
+            <button key={t} type="button" onClick={() => setPageTab(t)} style={{ padding: '10px 16px', borderRadius: '8px', border: pageTab === t ? 'none' : `1px solid ${T.border}`, background: pageTab === t ? T.primary : T.hoverBg, color: pageTab === t ? '#fff' : T.textSecondary, fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', textTransform: 'capitalize' }}>
               {t === 'contacts' ? 'Contacts' : 'General & marketing'}
             </button>
           ))}
@@ -158,7 +160,7 @@ export default function HospitalContacts() {
             {genInfo.length === 0 && processAuto.length === 0 ? (
               <div style={{ fontSize: '13px', color: T.textMuted, marginBottom: '16px' }}>No general info rows (table may be empty for this hospital).</div>
             ) : (
-              <pre style={{ fontSize: '11px', background: '#F8FAFC', padding: '12px', borderRadius: '8px', overflow: 'auto', maxHeight: '160px', marginBottom: '16px' }}>{JSON.stringify({ genInfo, processAuto }, null, 2)}</pre>
+              <pre style={{ fontSize: '11px', background: T.hoverBg, padding: '12px', borderRadius: '8px', overflow: 'auto', maxHeight: '160px', marginBottom: '16px' }}>{JSON.stringify({ genInfo, processAuto }, null, 2)}</pre>
             )}
             <button type="button" onClick={saveGenInfo} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: T.primary, color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer', fontFamily: 'Inter,sans-serif', marginBottom: '24px' }}>Save general info</button>
 
@@ -175,7 +177,7 @@ export default function HospitalContacts() {
                 ))}
               </ul>
             )}
-            <button type="button" onClick={async () => { await addMarketing({ hospital_id: hospitalId.trim(), campaign_type: `Campaign_${Date.now()}` }); refresh() }} style={{ marginTop: '12px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: '#F8FAFC', fontWeight: 700, fontSize: '12px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>+ Add marketing row</button>
+            <button type="button" onClick={async () => { await addMarketing({ hospital_id: hospitalId.trim(), campaign_type: `Campaign_${Date.now()}` }); refresh() }} style={{ marginTop: '12px', padding: '8px 16px', borderRadius: '8px', border: `1px solid ${T.border}`, background: T.hoverBg, fontWeight: 700, fontSize: '12px', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>+ Add marketing row</button>
           </div>
         )}
       </div>

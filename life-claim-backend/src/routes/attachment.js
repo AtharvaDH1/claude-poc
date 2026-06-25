@@ -1,11 +1,12 @@
-const express = require('express')
-const router = express.Router()
-const authMiddleware = require('../middleware/authMiddleware');
-const attachmentController = require('../controllers/attachmentsController')
+const express = require('express');
+const router = express.Router();
+const { protect, hasAnyRole } = require('../middleware/keycloak');
+const attachmentController = require('../controllers/attachmentsController');
 
+const operationalRoles = ['Pre Assessor', 'Assessor', 'Verifier'];
+const operational = protect(hasAnyRole(operationalRoles));
 
-router.get('/:mailId', authMiddleware.authenticate, attachmentController.getAllAttachments);
+router.get('/:mailId', operational, attachmentController.getAllAttachments);
+router.patch('/:mailId', operational, attachmentController.patchAttachments);
 
-router.patch('/:mailId', authMiddleware.authenticate, attachmentController.patchAttachments)
-
-module.exports = router 
+module.exports = router;

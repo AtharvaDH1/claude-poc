@@ -148,6 +148,32 @@ const validateChangeStatusBody = validateBody((body) => {
   return errors;
 });
 
+const validateClaimNoBody = validateBody((body) => {
+  const errors = {};
+  const claimNo = asTrimmed(body.claimNo || body.claimNumber || body.claimId);
+  if (!claimNumberPattern.test(claimNo)) {
+    errors.claimNo = 'claimNo format is invalid.';
+  }
+  return errors;
+});
+
+const validatePolicyIdBody = validateBody((body) => {
+  const errors = {};
+  const policyId = asTrimmed(body.policyID || body.policyId || body.policyNumber);
+  if (!policyId || !maxLen(policyId, 50)) {
+    errors.policyID = 'policyID is required and must be <= 50 chars.';
+  }
+  return errors;
+});
+
+const validateFraudClaimBody = validateBody((body) => {
+  const errors = {};
+  if (!claimNumberPattern.test(asTrimmed(body.claimNumber))) {
+    errors.claimNumber = 'claimNumber format is invalid.';
+  }
+  return errors;
+});
+
 module.exports = {
   validateKeycloakTokenBody,
   validateAuthenticateBody,
@@ -157,4 +183,7 @@ module.exports = {
   validateClaimByUsernameBody,
   validateAssignClaimsBody,
   validateChangeStatusBody,
+  validateClaimNoBody,
+  validatePolicyIdBody,
+  validateFraudClaimBody,
 };

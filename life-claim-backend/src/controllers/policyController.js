@@ -6,7 +6,18 @@ const { mapLifeAsiaPolicyResponse } = require('../services/policyMapper');
 
 const getPolicyDetails = async (req, res, next) => {
   try {
-    const { data, formattedPolicyNo } = await fetchPolicySearch(req.params.policyID);
+    const policyID = req.params.policyID;
+    const { data, formattedPolicyNo } = await fetchPolicySearch(policyID);
+    res.json(mapLifeAsiaPolicyResponse(data, formattedPolicyNo));
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getPolicyDetailsFromBody = async (req, res, next) => {
+  try {
+    const policyID = req.body.policyID || req.body.policyId || req.body.policyNumber;
+    const { data, formattedPolicyNo } = await fetchPolicySearch(policyID);
     res.json(mapLifeAsiaPolicyResponse(data, formattedPolicyNo));
   } catch (error) {
     next(error);
@@ -32,5 +43,6 @@ const getAgentRepudiationDetails = async (req, res) => {
 
 module.exports = {
   getPolicyDetails,
+  getPolicyDetailsFromBody,
   getAgentRepudiationDetails,
 };

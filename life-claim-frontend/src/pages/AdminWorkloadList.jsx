@@ -4,14 +4,9 @@ import AppLayout from '../layouts/AppLayout'
 import { useToast } from '../components/Toast'
 import adminService from '../services/adminService'
 import { ArrowLeft } from 'lucide-react'
+import { useTheme } from '../context/ThemeContext'
+import { PremiumGrid, PremiumGridScroll, PremiumGridFooter } from '../ui/PremiumDataGrid'
 
-const T = {
-  primary: '#1D4ED8',
-  card: '#fff',
-  border: '#E2E8F0',
-  textPrimary: '#0F172A',
-  textMuted: '#64748B',
-}
 
 const VIEW_LABELS = {
   slaBreached: 'SLA breached (>3 days pending)',
@@ -30,6 +25,7 @@ const SUMMARY_KEYS = {
 const PAGE_SIZE = 10
 
 export default function AdminWorkloadList() {
+  const { tokens: T } = useTheme()
   const [params] = useSearchParams()
   const view = params.get('view') || ''
   const validView = Boolean(VIEW_LABELS[view])
@@ -88,40 +84,42 @@ export default function AdminWorkloadList() {
         ) : claims.length === 0 ? (
           <div style={{ padding: '32px', color: T.textMuted }}>No claims for this view.</div>
         ) : (
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: '10px', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#FAFAFA' }}>
-                  {['Claim', 'Policy', 'Status', 'Role', 'Assigned'].map((h) => (
-                    <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pageClaims.map((c) => {
-                  const cn = c.claimNumber || c.CLAIM_NUMBER
-                  return (
-                    <tr key={cn} style={{ borderTop: '1px solid #F1F5F9' }}>
-                      <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: '12px', color: T.primary }}>{cn}</td>
-                      <td style={{ padding: '10px 14px', fontSize: '12px' }}>{c.policyNumber || c.POLICY_NUMBER || '—'}</td>
-                      <td style={{ padding: '10px 14px', fontSize: '12px' }}>{c.status || c.STATUS}</td>
-                      <td style={{ padding: '10px 14px', fontSize: '12px' }}>{c.role || c.ROLE || '—'}</td>
-                      <td style={{ padding: '10px 14px', fontSize: '12px' }}>{c.assignedTo || c.ASSIGNED_TO || '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <PremiumGrid>
+            <PremiumGridScroll>
+              <table>
+                <thead>
+                  <tr>
+                    {['Claim', 'Policy', 'Status', 'Role', 'Assigned'].map((h) => (
+                      <th key={h}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageClaims.map((c) => {
+                    const cn = c.claimNumber || c.CLAIM_NUMBER
+                    return (
+                      <tr key={cn}>
+                        <td><div className="premium-grid__cell-primary">{cn}</div></td>
+                        <td style={{ fontSize: '12px' }}>{c.policyNumber || c.POLICY_NUMBER || '—'}</td>
+                        <td style={{ fontSize: '12px' }}>{c.status || c.STATUS}</td>
+                        <td style={{ fontSize: '12px' }}>{c.role || c.ROLE || '—'}</td>
+                        <td style={{ fontSize: '12px' }}>{c.assignedTo || c.ASSIGNED_TO || '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </PremiumGridScroll>
             {totalPages > 1 && (
-              <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${T.border}` }}>
-                <span style={{ fontSize: '12px', color: T.textMuted }}>Page {page + 1} of {totalPages}</span>
+              <PremiumGridFooter>
+                <span>Page {page + 1} of {totalPages}</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${T.border}`, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Prev</button>
-                  <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${T.border}`, cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>Next</button>
+                  <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)} className="premium-grid__pill">Prev</button>
+                  <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)} className="premium-grid__pill">Next</button>
                 </div>
-              </div>
+              </PremiumGridFooter>
             )}
-          </div>
+          </PremiumGrid>
         )}
       </div>
     </AppLayout>

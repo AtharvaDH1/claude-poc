@@ -9,6 +9,14 @@ const {
   assertPolicySearchHasData,
 } = require('../transactionApiClient');
 const { notifyClaimRegistered } = require('../claimRegistrationNotifyService');
+const { formatProductName } = require('../../util/formatProductName');
+
+const DETAILS_REMARKS_MAX = 500;
+
+function trimInitiationRemarks(value) {
+    if (value == null || value === '') return null;
+    return String(value).trim().slice(0, DETAILS_REMARKS_MAX) || null;
+}
 
 /**
  * Shared logic to fetch data from Life Asia and update/create records
@@ -67,7 +75,7 @@ const enrichCaseData = async (caseId, policyNo, username = 'System') => {
         case_id: caseId,
         app_no: contract.ApplicationNo || 'N/A',
         policy_no: formattedPolicyNo,
-        product_name: contract.ProductName || 'N/A',
+        product_name: formatProductName(contract.ProductName) || 'N/A',
         product_code: contract.ProductCode || 'N/A',
         policy_duration: String(contract.Term || '0'),
         rcd: contract.RCD ? new Date(contract.RCD) : new Date('1900-01-01'),
@@ -158,7 +166,7 @@ const processSingleRecord = async (record) => {
             case_status: 'Assessor Action Pending',
             created_by: record.created_by || 'System',
             created_on: new Date(),
-            initiation_remarks: record.initiation_remarks
+            initiation_remarks: trimInitiationRemarks(record.initiation_remarks)
         });
 
         // Use the shared enrichment logic

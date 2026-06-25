@@ -9,8 +9,8 @@ if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// Security: Whitelist allowed file extensions
-const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.zip'];
+// Security: Whitelist allowed file extensions (.zip removed — macro/archive risk)
+const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx', '.xls', '.xlsx', '.csv'];
 // Security: Limit file size to 10MB to prevent Denial of Service
 const MAX_FILE_SIZE = 10 * 1024 * 1024; 
 const MAX_UPLOAD_FILES = 1;

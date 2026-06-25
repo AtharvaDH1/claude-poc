@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Accordion, ROField, EditableField, SimpleTable, WS } from '../workspaceUi'
+import { Accordion, ROField, EditableField, SimpleTable, useWorkspaceTokens, workspaceFieldStyle, workspaceTheadRowStyle } from '../workspaceUi'
 import { mapAssessmentForWorkspace } from '../../../../util/workspaceDisplay'
 
-const FRAUD_FLAG_PLACEHOLDER = [{ sl: '—', date: '—', remarks: 'Fraud flags not loaded (backend fetch disabled)', score: '—', response: '—' }]
+const FRAUD_FLAG_PLACEHOLDER = [{ sl: '—', date: '—', remarks: 'Fraud flags not available', score: '—', response: '—' }]
 
 export default function AssessmentWorkspaceTab({ assessment, canEdit, onPatch }) {
+  const WS = useWorkspaceTokens()
   const [open, setOpen] = useState('questions')
   const toggle = (id) => setOpen((p) => (p === id ? '' : id))
   const questions = assessment?.assessment || assessment?.claimQuestions || {}
@@ -36,9 +37,9 @@ export default function AssessmentWorkspaceTab({ assessment, canEdit, onPatch })
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#FAFAFA' }}>
+                <tr style={workspaceTheadRowStyle(WS)}>
                   {['#', 'Questions', 'Answer'].map((h) => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: WS.textSubtle }}>{h}</th>
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: WS.textMuted }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -49,7 +50,7 @@ export default function AssessmentWorkspaceTab({ assessment, canEdit, onPatch })
                     <td style={{ padding: '10px 12px', fontSize: '13px', color: WS.textSecondary }}>{row.question}</td>
                     <td style={{ padding: '10px 12px', width: '100px' }}>
                       {canEdit ? (
-                        <select value={row.answer === '—' ? '' : row.answer} onChange={(e) => patchQuestion(row.key, e.target.value)} style={{ height: '32px', borderRadius: '6px', border: `1px solid ${WS.border}`, fontSize: '12px', width: '100%' }}>
+                        <select value={row.answer === '—' ? '' : row.answer} onChange={(e) => patchQuestion(row.key, e.target.value)} style={workspaceFieldStyle(WS, { height: '32px', borderRadius: '6px', fontSize: '12px', width: '100%' })}>
                           <option value="">—</option>
                           {['Yes', 'No'].map((o) => (
                             <option key={o} value={o}>{o}</option>
@@ -101,7 +102,7 @@ export default function AssessmentWorkspaceTab({ assessment, canEdit, onPatch })
         )}
       </Accordion>
 
-      <Accordion title="Fraud & priority flag remarks" subtitle="Fraud flags placeholder until backend enables fetch" open={open === 'fraud'} onToggle={() => toggle('fraud')}>
+      <Accordion title="Fraud & priority flag remarks" subtitle="Fraud flags will appear when available" open={open === 'fraud'} onToggle={() => toggle('fraud')}>
         <div style={{ marginBottom: '14px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: WS.textSubtle, textTransform: 'uppercase', marginBottom: '8px' }}>Fraud flags</div>
           <SimpleTable

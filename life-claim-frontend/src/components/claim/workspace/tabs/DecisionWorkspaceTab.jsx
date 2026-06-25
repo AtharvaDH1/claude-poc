@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 
-import { WS, ROField, EditableField, SubTabNav } from '../workspaceUi'
+import { ROField, EditableField, SubTabNav, useWorkspaceTokens } from '../workspaceUi'
 
 import AcuityDecisionPanel from '../AcuityDecisionPanel'
 
 import { formatCalcAmountSummary } from '../../../../util/workspaceDisplay'
+import { alertBannerStyle } from '../../../../ui/pageTokens'
+import { useTheme } from '../../../../context/ThemeContext'
 
 import { DECISION_SUB_TAB, getDecisionSubTabs } from '../../../../util/decisionSubTabs'
 
@@ -60,6 +62,8 @@ export default function DecisionWorkspaceTab({
 
 }) {
 
+  const WS = useWorkspaceTokens()
+  const { tokens: T } = useTheme()
   const decisionTabs = getDecisionSubTabs(userRoles, { userRole, claimRole: claimRole || claim?.claimRole })
 
   const [subTab, setSubTab] = useState(decisionTabs[0])
@@ -106,15 +110,15 @@ export default function DecisionWorkspaceTab({
 
             {claim?.sysRecommendation ? (
 
-              <div style={{ padding: '16px', borderRadius: '10px', background: claim.sysRecommendation === 'Approve' ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${claim.sysRecommendation === 'Approve' ? '#A7F3D0' : '#FECACA'}` }}>
+              <div style={{ padding: '16px', borderRadius: '10px', ...alertBannerStyle(T, claim.sysRecommendation === 'Approve' ? 'success' : 'danger') }}>
 
-                <div style={{ fontSize: '15px', fontWeight: 900, color: claim.sysRecommendation === 'Approve' ? '#065F46' : '#991B1B' }}>
+                <div style={{ fontSize: '15px', fontWeight: 900, color: claim.sysRecommendation === 'Approve' ? T.approved.text : T.rejected.text }}>
 
                   {claim.sysRecommendation}
 
                 </div>
 
-                <div style={{ fontSize: '12px', marginTop: '6px', color: WS.textMuted }}>
+                <div style={{ fontSize: '12px', marginTop: '6px', color: claim.sysRecommendation === 'Approve' ? T.approved.text : T.rejected.text, opacity: 0.9 }}>
 
                   Payable {fmtRs(claim.sysPayableAmount)} · Risk {claim.sysRiskScore || '—'}
 
@@ -140,9 +144,9 @@ export default function DecisionWorkspaceTab({
 
           {calcRows.length > 0 && (
 
-            <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '10px', border: `1px solid ${WS.border}` }}>
+            <div style={{ padding: '16px', background: WS.surfaceMuted, borderRadius: '10px', border: `1px solid ${WS.border}` }}>
 
-              <div style={{ fontSize: '12px', fontWeight: 700, color: WS.textSubtle, marginBottom: '12px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: WS.textMuted, marginBottom: '12px' }}>
 
                 Payable amount breakdown (Transaction API)
 
@@ -152,9 +156,9 @@ export default function DecisionWorkspaceTab({
 
                 {calcRows.map((row) => (
 
-                  <div key={row.label} style={{ padding: '10px 12px', background: '#fff', borderRadius: '8px', border: `1px solid ${WS.borderSubtle}` }}>
+                  <div key={row.label} style={{ padding: '10px 12px', background: WS.hoverBg, borderRadius: '8px', border: `1px solid ${WS.border}` }}>
 
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: WS.textSubtle, textTransform: 'uppercase' }}>{row.label}</div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: WS.textMuted, textTransform: 'uppercase' }}>{row.label}</div>
 
                     <div style={{ fontSize: '14px', fontWeight: 800, color: WS.textPrimary, marginTop: '4px' }}>{row.value}</div>
 
@@ -200,7 +204,7 @@ export default function DecisionWorkspaceTab({
 
               <label style={{ fontSize: '11px', fontWeight: 700, color: WS.textSecondary }}>Reason / remarks</label>
 
-              <textarea value={accessorReason} onChange={(e) => setAccessorReason(e.target.value)} readOnly={!assessorCanEdit} rows={4} style={{ width: '100%', marginTop: '4px', padding: '10px', border: `1.5px solid ${WS.border}`, borderRadius: '8px', fontFamily: 'Inter,sans-serif', boxSizing: 'border-box', background: assessorCanEdit ? '#fff' : '#F8FAFC', color: assessorCanEdit ? WS.textPrimary : WS.textMuted }} />
+              <textarea value={accessorReason} onChange={(e) => setAccessorReason(e.target.value)} readOnly={!assessorCanEdit} rows={4} style={{ width: '100%', marginTop: '4px', padding: '10px', border: `1.5px solid ${WS.border}`, borderRadius: '8px', fontFamily: 'Inter,sans-serif', boxSizing: 'border-box', background: assessorCanEdit ? WS.inputBg : WS.inputBgReadonly, color: assessorCanEdit ? WS.textPrimary : WS.textMuted }} />
 
             </div>
 
@@ -236,7 +240,7 @@ export default function DecisionWorkspaceTab({
 
               <label style={{ fontSize: '11px', fontWeight: 700 }}>Remarks</label>
 
-              <textarea value={verificationRemarks} onChange={(e) => setVerificationRemarks(e.target.value)} readOnly={!verifierCanEdit} rows={3} style={{ width: '100%', marginTop: '4px', padding: '10px', border: `1px solid ${WS.border}`, borderRadius: '8px', fontFamily: 'Inter,sans-serif', boxSizing: 'border-box', background: verifierCanEdit ? '#fff' : '#F8FAFC', color: verifierCanEdit ? WS.textPrimary : WS.textMuted }} />
+              <textarea value={verificationRemarks} onChange={(e) => setVerificationRemarks(e.target.value)} readOnly={!verifierCanEdit} rows={3} style={{ width: '100%', marginTop: '4px', padding: '10px', border: `1px solid ${WS.border}`, borderRadius: '8px', fontFamily: 'Inter,sans-serif', boxSizing: 'border-box', background: verifierCanEdit ? WS.inputBg : WS.inputBgReadonly, color: verifierCanEdit ? WS.textPrimary : WS.textMuted }} />
 
             </div>
 
@@ -278,9 +282,9 @@ export default function DecisionWorkspaceTab({
 
           </div>
 
-          <div style={{ padding: '16px', borderRadius: '10px', background: submitGuard.ok ? '#ECFDF5' : '#FFFBEB', border: `1px solid ${submitGuard.ok ? '#A7F3D0' : '#FDE68A'}` }}>
+          <div style={{ padding: '16px', borderRadius: '10px', ...alertBannerStyle(T, submitGuard.ok ? 'success' : 'warn') }}>
 
-            <div style={{ fontSize: '13px', fontWeight: 600, color: submitGuard.ok ? '#065F46' : '#92400E', marginBottom: workflowGuard?.ok ? '12px' : 0 }}>{submitGuard.hint}</div>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: submitGuard.ok ? T.approved.text : T.pending.text, marginBottom: workflowGuard?.ok ? '12px' : 0 }}>{submitGuard.hint}</div>
 
             {workflowGuard?.ok && (
 

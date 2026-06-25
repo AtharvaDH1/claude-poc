@@ -15,10 +15,9 @@ const fileUploadService = {
     formData.append('documentId', documentId ?? '');
     formData.append('files', file);
 
-    const token = sessionStorage.getItem('token');
     const response = await fetch(`${API_URL || ''}/api/upload/uploadFile`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
       body: formData,
     });
 

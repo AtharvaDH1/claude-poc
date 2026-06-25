@@ -1,4 +1,4 @@
-import { WS } from './workspaceUi'
+import { useWorkspaceTokens } from './workspaceUi'
 import { Download } from 'lucide-react'
 import { buildCaseSummaryReport } from '../../../util/caseSummaryText'
 import { downloadCaseSummaryPdf } from '../../../util/downloadCaseSummaryPdf'
@@ -6,9 +6,10 @@ import { useToast } from '../../Toast'
 import { useState } from 'react'
 
 function SummaryCell({ label, value }) {
+  const WS = useWorkspaceTokens()
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: '9px', fontWeight: 700, color: WS.textSubtle, textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2 }}>{label}</div>
+      <div style={{ fontSize: '9px', fontWeight: 700, color: WS.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2 }}>{label}</div>
       <div style={{ fontSize: '11px', fontWeight: 600, color: WS.textSecondary, marginTop: '1px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value}>
         {value || '—'}
       </div>
@@ -18,6 +19,7 @@ function SummaryCell({ label, value }) {
 
 /** Always-visible compact case summary for the top of claim workspace. */
 export default function CaseSummaryPanel({ claim, demogs }) {
+  const WS = useWorkspaceTokens()
   const toast = useToast()
   const [downloading, setDownloading] = useState(false)
   const report = buildCaseSummaryReport(claim, demogs)
@@ -53,7 +55,7 @@ export default function CaseSummaryPanel({ claim, demogs }) {
         justifyContent: 'space-between',
         gap: '8px',
         padding: '6px 12px',
-        background: '#FAFAFA',
+        background: WS.surfaceSubtle,
         borderBottom: `1px solid ${WS.borderSubtle}`,
       }}>
         <span style={{ fontSize: '11px', fontWeight: 800, color: WS.textPrimary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Case summary</span>
@@ -68,7 +70,7 @@ export default function CaseSummaryPanel({ claim, demogs }) {
             padding: '4px 10px',
             borderRadius: '6px',
             border: `1px solid ${WS.border}`,
-            background: '#fff',
+            background: WS.card,
             fontSize: '11px',
             fontWeight: 700,
             cursor: downloading ? 'wait' : 'pointer',

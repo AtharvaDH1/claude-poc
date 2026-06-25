@@ -61,8 +61,26 @@ function ClaimViewRedirect() {
 
   const { claimId } = useParams()
 
-  return <Navigate to={`/registration-fetch/${encodeURIComponent(claimId || '')}`} replace />
+  return <Navigate to="/registration-fetch" replace state={{ claimId: String(claimId || ''), from: 'legacyUrl' }} />
 
+}
+
+/** Legacy /registration-fetch/:claimId → non-PII URL. */
+function ClaimWorkspaceLegacyRedirect() {
+  const { claimId } = useParams()
+  return <Navigate to="/registration-fetch" replace state={{ claimId: String(claimId || ''), from: 'legacyUrl' }} />
+
+}
+
+/** Legacy /case/:id → non-PII ADD case workspace URL. */
+function AddCaseLegacyRedirect() {
+  const { id } = useParams()
+  return <Navigate to="/add-case" replace state={{ caseId: String(id || ''), from: 'legacyUrl' }} />
+}
+
+function RegistrationLegacyRedirect() {
+  const { claimId } = useParams()
+  return <Navigate to="/registration" replace state={{ claimId: String(claimId || ''), from: 'legacyUrl' }} />
 }
 
 function SuperuserClaimSearchRoute() {
@@ -226,11 +244,12 @@ export default function App() {
 
               <Route path="/registration" element={<ProtectedRoute {...op} requiredRole={['Pre Assessor']}><Registration/></ProtectedRoute>} />
 
-              <Route path="/registration/:claimId" element={<ProtectedRoute {...op} requiredRole={['Pre Assessor']}><Registration/></ProtectedRoute>} />
+              <Route path="/registration/:claimId" element={<ProtectedRoute {...op} requiredRole={['Pre Assessor']}><RegistrationLegacyRedirect/></ProtectedRoute>} />
 
               <Route path="/claim-view/:claimId" element={<ProtectedRoute {...op}><ClaimViewRedirect/></ProtectedRoute>} />
 
-              <Route path="/registration-fetch/:claimId" element={<ProtectedRoute {...op}><ClaimView/></ProtectedRoute>} />
+              <Route path="/registration-fetch" element={<ProtectedRoute {...op}><ClaimView/></ProtectedRoute>} />
+              <Route path="/registration-fetch/:claimId" element={<ProtectedRoute {...op}><ClaimWorkspaceLegacyRedirect/></ProtectedRoute>} />
 
               <Route path="/pool-selection" element={<ProtectedRoute {...op} requiredRole={['Assessor','Verifier']}><PoolSelection/></ProtectedRoute>} />
 
@@ -238,7 +257,8 @@ export default function App() {
 
               <Route path="/add-screen" element={<ProtectedRoute {...op} requiredRole={['Assessor','Verifier']}><AddScreen/></ProtectedRoute>} />
 
-              <Route path="/case/:id" element={<ProtectedRoute {...op} requiredRole={['Assessor','Verifier']}><CaseDetails/></ProtectedRoute>} />
+              <Route path="/add-case" element={<ProtectedRoute {...op} requiredRole={['Assessor','Verifier']}><CaseDetails/></ProtectedRoute>} />
+              <Route path="/case/:id" element={<ProtectedRoute {...op} requiredRole={['Assessor','Verifier']}><AddCaseLegacyRedirect/></ProtectedRoute>} />
 
 
 

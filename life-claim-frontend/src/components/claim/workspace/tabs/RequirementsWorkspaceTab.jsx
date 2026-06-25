@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useToast } from '../../../Toast'
-import { Accordion, SimpleTable, WS } from '../workspaceUi'
+import { Accordion, SimpleTable, useWorkspaceTokens, workspaceFieldStyle, workspaceTheadRowStyle } from '../workspaceUi'
 import {
   mapRequirementsForWorkspace,
   patchRequirementRowStatus,
@@ -11,6 +11,7 @@ import {
 } from '../../../../util/workspaceDisplay'
 
 export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatch }) {
+  const WS = useWorkspaceTokens()
   const toast = useToast()
   const [open, setOpen] = useState('base')
   const toggle = (id) => setOpen((p) => (p === id ? '' : id))
@@ -40,7 +41,7 @@ export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatc
   return (
     <div>
       {canEdit && pendingCount > 0 && (
-        <div style={{ marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '12px', fontWeight: 600, color: '#92400E' }}>
+        <div style={{ marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', background: WS.pending.bg, border: `1px solid ${WS.pending.border}`, fontSize: '12px', fontWeight: 600, color: WS.pending.text }}>
           {pendingCount} requirement(s) still Pending — change each to Received or Waived before submit.
         </div>
       )}
@@ -51,24 +52,24 @@ export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatc
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#FAFAFA' }}>
+                <tr style={workspaceTheadRowStyle(WS)}>
                   {['Requirement Name', 'Doc Type', 'Source', 'Status', 'Triggered By', 'Trigger Date', 'Receipt Date'].map((h) => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: WS.textSubtle, whiteSpace: 'nowrap' }}>{h}</th>
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: WS.textMuted, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {reqRows.map((row, i) => (
                   <tr key={row.id || i} style={{ borderBottom: `1px solid ${WS.borderSubtle}` }}>
-                    <td style={{ padding: '10px 12px', fontSize: '12px', maxWidth: '280px' }}>{row.name}</td>
-                    <td style={{ padding: '10px 12px', fontSize: '12px' }}>{row.docType}</td>
-                    <td style={{ padding: '10px 12px', fontSize: '12px' }}>{row.source}</td>
+                    <td style={{ padding: '10px 12px', fontSize: '12px', maxWidth: '280px', color: WS.textPrimary }}>{row.name}</td>
+                    <td style={{ padding: '10px 12px', fontSize: '12px', color: WS.textSecondary }}>{row.docType}</td>
+                    <td style={{ padding: '10px 12px', fontSize: '12px', color: WS.textSecondary }}>{row.source}</td>
                     <td style={{ padding: '10px 12px' }}>
                       {canEdit ? (
                         <select
                           value={row.status === 'Pending' ? '' : row.status}
                           onChange={(e) => setReqStatus(i, e.target.value)}
-                          style={{ height: '32px', borderRadius: '6px', border: `1px solid ${WS.border}`, fontSize: '12px' }}
+                          style={workspaceFieldStyle(WS, { height: '32px', borderRadius: '6px', fontSize: '12px' })}
                         >
                           {row.status === 'Pending' && (
                             <option value="" disabled>
@@ -92,17 +93,15 @@ export default function RequirementsWorkspaceTab({ requirements, canEdit, onPatc
                           value={row.receiptDate || ''}
                           onChange={(e) => setReqReceiptDate(i, e.target.value)}
                           disabled={row.status !== 'Received'}
-                          style={{
+                          style={workspaceFieldStyle(WS, {
                             height: '32px',
                             padding: '0 8px',
                             borderRadius: '6px',
-                            border: `1px solid ${WS.border}`,
                             fontSize: '12px',
-                            fontFamily: 'Inter,sans-serif',
-                            background: row.status === 'Received' ? '#fff' : '#F1F5F9',
+                            background: row.status === 'Received' ? WS.inputBg : WS.inputBgReadonly,
                             cursor: row.status === 'Received' ? 'pointer' : 'not-allowed',
                             minWidth: '130px',
-                          }}
+                          })}
                         />
                       ) : (
                         <span style={{ fontSize: '12px', color: WS.textMuted }}>{row.receiptDate || '—'}</span>

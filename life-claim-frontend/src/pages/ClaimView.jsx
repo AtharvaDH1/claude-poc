@@ -38,21 +38,23 @@ import DemographicsWorkspaceTab from '../components/claim/workspace/tabs/Demogra
 import RequirementsWorkspaceTab from '../components/claim/workspace/tabs/RequirementsWorkspaceTab'
 import AssessmentWorkspaceTab from '../components/claim/workspace/tabs/AssessmentWorkspaceTab'
 import DecisionWorkspaceTab from '../components/claim/workspace/tabs/DecisionWorkspaceTab'
-import { WS } from '../components/claim/workspace/workspaceUi'
+import { useWorkspaceTokens } from '../components/claim/workspace/workspaceUi'
+import { useTheme } from '../context/ThemeContext'
 import AcuityDecisionPanel from '../components/claim/workspace/AcuityDecisionPanel'
 import { ShieldAlert, Receipt, UserPlus, FileText, Zap } from 'lucide-react'
 
 const TABS = ['Demographics', 'Requirements', 'Assessment', 'Decision & Summary']
 const LAZY_TABS = new Set(['Requirements', 'Assessment', 'Decision & Summary'])
 
-const STATUS_COLORS = {
-  Pending: { bg: '#FFFBEB', border: '#FDE68A', color: '#92400E' },
-  Approved: { bg: '#ECFDF5', border: '#A7F3D0', color: '#065F46' },
-  Rejected: { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B' },
-  'In Progress': { bg: '#EFF6FF', border: '#BFDBFE', color: '#1E40AF' },
-}
-
 export default function ClaimView() {
+  const WS = useWorkspaceTokens()
+  const { tokens: T } = useTheme()
+  const statusColors = {
+    Pending: { ...T.pending, color: T.pending.text },
+    Approved: { ...T.approved, color: T.approved.text },
+    Rejected: { ...T.rejected, color: T.rejected.text },
+    'In Progress': { ...T.info, color: T.info.color },
+  }
   const { claimId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -84,6 +86,13 @@ export default function ClaimView() {
   const [accessorAmount, setAccessorAmount] = useState('')
   const [verificationStatus, setVerificationStatus] = useState('')
   const [verificationRemarks, setVerificationRemarks] = useState('')
+  const resolvedClaimId =
+    String(location.state?.claimId || claimId || sessionStorage.getItem('activeClaimId') || '').trim()
+
+  useEffect(() => {
+    if (!resolvedClaimId) return
+    try { sessionStorage.setItem('activeClaimId', resolvedClaimId) } catch {}
+  }, [resolvedClaimId])
 
   useEffect(() => { workspaceRef.current = workspaceRaw }, [workspaceRaw])
   useEffect(() => { policyDataRef.current = policyData }, [policyData])
@@ -91,7 +100,7 @@ export default function ClaimView() {
   const syncFromView = useCallback((view, raw) => {
     setClaim(view)
     setWorkspaceRaw(raw)
-    const pd = buildPolicyDataFromRaw(raw, claimId, user)
+    const pd = buildPolicyDataFromRaw(raw, resolvedClaimId, user)
     setPolicyData(pd)
     policyDataRef.current = pd
     setAccessorDecision(view.accessorDecision || '')
@@ -105,21 +114,25 @@ export default function ClaimView() {
     setAccessorAmount(String(payable || ''))
     setVerificationStatus(view.verificationStatus || '')
     setVerificationRemarks(view.verificationRemarks || '')
-  }, [claimId, user])
+  }, [resolvedClaimId, user])
 
   useEffect(() => {
-    if (!claimId) return
+    if (!resolvedClaimId) {
+      toast('warning', 'Claim required', 'Open a claim from Claim Search, Dashboard, or My Tasks.')
+      navigate('/claim-search')
+      return
+    }
     setLoading(true)
     setSubmissionLocked(false)
     setLoadedTabs(new Set(['Demographics']))
-    getClaimWorkspaceInitial(claimId)
+    getClaimWorkspaceInitial(resolvedClaimId)
       .then(({ view, raw }) => syncFromView(view, raw))
       .catch(() => {
         toast('error', 'Load Failed', 'Could not load claim workspace.')
         navigate('/claim-search')
       })
       .finally(() => setLoading(false))
-  }, [claimId, navigate, toast, syncFromView])
+  }, [resolvedClaimId, navigate, toast, syncFromView])
 
   const EAGLE_TABLE_KEYS = [
     'hospitalDetailsTable', 'doctorDetailsTable', 'proofDetailsTable',
@@ -184,10 +197,10 @@ export default function ClaimView() {
 
   const handleTabChange = async (tab) => {
     setActiveTab(tab)
-    if (!claimId || !LAZY_TABS.has(tab) || loadedTabs.has(tab)) return
+    if (!resolvedClaimId || !LAZY_TABS.has(tab) || loadedTabs.has(tab)) return
     setTabLoading(true)
     try {
-      const { view, raw: next } = await getClaimWorkspaceTab(claimId, tab, workspaceRef.current || {})
+      const { view, raw: next } = await getClaimWorkspaceTab(resolvedClaimId, tab, workspaceRef.current || {})
       workspaceRef.current = next
       syncFromView(view, next)
       setLoadedTabs((p) => new Set([...p, tab]))
@@ -231,26 +244,26 @@ export default function ClaimView() {
       if (guard.mode === 'assessor') {
         await claimSearch.updateAssessor(
           { decision: mapAccessorDecisionToApi(accessorDecision), remarks: accessorReason },
-          claimId,
+          resolvedClaimId,
           username,
         )
       } else if (guard.mode === 'verifier') {
         await claimSearch.updateVerifier(
           { status: verificationStatus, remarks: verificationRemarks },
-          claimId,
+          resolvedClaimId,
           username,
         )
       }
       const payload = buildWorkspaceSubmitPayload(
         policyDataRef.current,
         edits,
-        claimId,
+        resolvedClaimId,
         username,
         guard.mode,
       )
       await updatePolicyService(payload)
       setSubmissionLocked(true)
-      setSubmitSuccess({ mode: guard.mode, claimId })
+      setSubmitSuccess({ mode: guard.mode, claimId: resolvedClaimId })
     } catch (e) {
       toast('error', 'Submit failed', e?.message || 'Could not complete submit.')
     } finally {
@@ -262,13 +275,13 @@ export default function ClaimView() {
     return (
       <AppLayout>
         <div style={{ padding: '60px', textAlign: 'center', fontFamily: 'Inter,sans-serif' }}>
-          <div style={{ fontSize: '14px', color: WS.textMuted, fontWeight: 600 }}>Loading claim {claimId}…</div>
+          <div style={{ fontSize: '14px', color: WS.textMuted, fontWeight: 600 }}>Loading claim workspace…</div>
         </div>
       </AppLayout>
     )
   }
 
-  const sc = STATUS_COLORS[claim.status] || STATUS_COLORS.Pending
+  const sc = statusColors[claim.status] || statusColors.Pending
   const userRoles = coalesceRoles(user?.roles, user?.role)
   const browseMode = areFieldsDisabled(location.state)
   const assessorCanEdit = enableAssessor(location.state, claim, userRoles)
@@ -296,8 +309,8 @@ export default function ClaimView() {
 
   const actionBtn = {
     display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '7px',
-    border: `1px solid ${WS.border}`, background: '#fff', fontWeight: 700, fontSize: '12px',
-    cursor: 'pointer', fontFamily: 'Inter,sans-serif', whiteSpace: 'nowrap',
+    border: `1px solid ${WS.border}`, background: WS.card, fontWeight: 700, fontSize: '12px',
+    cursor: 'pointer', fontFamily: 'Inter,sans-serif', whiteSpace: 'nowrap', color: WS.textSecondary,
   }
 
   return (
@@ -306,17 +319,17 @@ export default function ClaimView() {
         {/* Compact header row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => navigate(-1)} style={{ ...actionBtn, background: '#F8FAFC', padding: '6px 10px' }}>← Back</button>
+            <button type="button" onClick={() => navigate(-1)} style={{ ...actionBtn, background: WS.hoverBg, padding: '6px 10px' }}>← Back</button>
             <h1 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: WS.textPrimary }}>Claim workspace</h1>
             <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '99px', background: sc.bg, border: `1px solid ${sc.border}`, color: sc.color }}>{claim.status}</span>
             {modeHint && (
-              <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '99px', background: browseMode ? '#FFFBEB' : '#ECFDF5', border: `1px solid ${browseMode ? '#FDE68A' : '#A7F3D0'}`, color: browseMode ? '#92400E' : '#065F46' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '99px', background: browseMode ? T.pending.bg : T.approved.bg, border: `1px solid ${browseMode ? T.pending.border : T.approved.border}`, color: browseMode ? T.pending.text : T.approved.text }}>
                 {modeHint}
               </span>
             )}
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => setShowDocs(true)} style={actionBtn}>
+            <button type="button" onClick={() => setShowDocs(true)} style={actionBtn }>
               <FileText size={14} /> Documents
             </button>
             {showWorkspaceTools && (
@@ -324,16 +337,16 @@ export default function ClaimView() {
                 <button type="button" onClick={() => setShowQuick(true)} style={{ ...actionBtn, border: 'none', background: '#7C3AED', color: '#fff' }}>
                   <Zap size={14} /> Quick Access
                 </button>
-                <button type="button" onClick={() => setShowTxn(true)} style={actionBtn}>
+                <button type="button" onClick={() => setShowTxn(true)} style={actionBtn }>
                   <Receipt size={14} /> Transaction
                 </button>
-                <button type="button" onClick={() => setShowFraud(true)} style={{ ...actionBtn, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                <button type="button" onClick={() => setShowFraud(true)} style={{ ...actionBtn, background: T.rejected.bg, color: T.rejected.color, border: `1px solid ${T.rejected.border}` }}>
                   <ShieldAlert size={14} /> Fraud
                 </button>
               </>
             )}
             {!browseMode && hasSuperUserAccess(userRoles, user?.username) && (
-              <button type="button" onClick={() => setShowAssign(true)} style={actionBtn}>
+              <button type="button" onClick={() => setShowAssign(true)} style={actionBtn }>
                 <UserPlus size={14} /> Assign
               </button>
             )}
@@ -351,9 +364,9 @@ export default function ClaimView() {
         {/* Main tabs — primary content, visible immediately */}
         <div style={{ background: WS.card, borderRadius: '10px', border: `1px solid ${WS.border}`, overflow: 'hidden' }}>
           {tabLoading && (
-            <div style={{ padding: '6px 12px', fontSize: '11px', background: '#FFFBEB', color: '#92400E' }}>Loading tab data…</div>
+            <div style={{ padding: '6px 12px', fontSize: '11px', background: T.pending.bg, color: T.pending.text }}>Loading tab data…</div>
           )}
-          <div style={{ display: 'flex', borderBottom: `1px solid ${WS.border}`, overflowX: 'auto', background: '#FAFAFA' }}>
+          <div style={{ display: 'flex', borderBottom: `1px solid ${WS.border}`, overflowX: 'auto', background: WS.surfaceSubtle }}>
             {TABS.map((tab) => (
               <button
                 key={tab}
@@ -363,11 +376,11 @@ export default function ClaimView() {
                   padding: '10px 16px',
                   border: 'none',
                   borderBottom: activeTab === tab ? `2px solid ${WS.primary}` : '2px solid transparent',
-                  background: activeTab === tab ? '#fff' : 'transparent',
+                  background: activeTab === tab ? WS.card : 'transparent',
                   cursor: 'pointer',
                   fontSize: '12px',
                   fontWeight: activeTab === tab ? 700 : 600,
-                  color: activeTab === tab ? WS.primary : WS.textMuted,
+                  color: activeTab === tab ? WS.primary : WS.textSecondary,
                   fontFamily: 'Inter,sans-serif',
                   whiteSpace: 'nowrap',
                 }}
@@ -445,7 +458,7 @@ export default function ClaimView() {
       <FraudRuleManagerModal
         open={showFraud}
         onClose={() => setShowFraud(false)}
-        claimNumber={claimId}
+        claimNumber={resolvedClaimId}
         policyId={claim.policyId}
         fraudContext={{
           ...claim.fraudContext,
@@ -462,7 +475,7 @@ export default function ClaimView() {
         open={showTxn}
         onClose={() => setShowTxn(false)}
         policyId={claim.policyId}
-        claimId={claimId}
+        claimId={resolvedClaimId}
         txnDate={demogs?.intimation?.intimationDate || demogs?.intimation?.initiationDate || claim.intimationDate}
         calcAmt={calcResult}
       />
@@ -484,8 +497,8 @@ export default function ClaimView() {
         secondaryLabel="Stay on Claim"
         onSecondary={() => setSubmitSuccess(null)}
       />
-      <ClaimAssignModal open={showAssign} onClose={() => setShowAssign(false)} claimNumber={claimId} mode={verifierCanEdit ? 'verifier' : 'assessor'} />
-      <DocumentSideSlider open={showDocs} onClose={() => setShowDocs(false)} claimId={claimId} readOnly={!canEdit} />
+      <ClaimAssignModal open={showAssign} onClose={() => setShowAssign(false)} claimNumber={resolvedClaimId} mode={verifierCanEdit ? 'verifier' : 'assessor'} />
+      <DocumentSideSlider open={showDocs} onClose={() => setShowDocs(false)} claimId={resolvedClaimId} readOnly={!canEdit} />
     </AppLayout>
   )
 }

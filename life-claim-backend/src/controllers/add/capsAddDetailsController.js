@@ -1,4 +1,7 @@
 const CapsAddDetailsDoa = require('../../dataAccess/add/capsAddDetailsDao');
+const { resetAddDemoData } = require('../../dataAccess/add/addDemoResetDao');
+const { validateAddExcelPayload } = require('../../util/addDataEntryValidation');
+const { getUserContext } = require('../../middleware/claimAccessMiddleware');
 const exposeErrorDetails = process.env.NODE_ENV !== 'production';
 const internalError = (res, error) =>
   res.status(500).json({
@@ -9,10 +12,21 @@ const internalError = (res, error) =>
 
 const addExcelDataToTable = async (req, res, next) => {
     console.log('capAddDetailsController.js >> addExcelDataToTable request received');
-    const{ username, data} = req.body;
+    const { username, data } = req.body;
+    const { username: sessionUser } = getUserContext(req);
+    const effectiveUser = sessionUser || username;
+
+    const validation = validateAddExcelPayload(data);
+    if (!validation.ok) {
+        return res.status(400).json({ success: false, error: validation.error });
+    }
+
     console.log('capAddDetailsController.js >> addExcelDataToTable payload accepted');
     try {
-        const addValue = await CapsAddDetailsDoa.insertCapsAddDetails({username, data});
+        const addValue = await CapsAddDetailsDoa.insertCapsAddDetails({
+            username: effectiveUser,
+            data: validation.data,
+        });
         res.status(201).json({
             success: true,
             message: `Successfully inserted ${addValue.length} records`,
@@ -153,6 +167,28 @@ const assignCasesByCaseIdsController = async (req, res, next) => {
     }
 };
 
+const resetAddDemoDataController = async (req, res) => {
+    if (process.env.ADD_DEMO_RESET_ENABLED === 'false') {
+        return res.status(403).json({
+            success: false,
+            error: 'ADD demo reset is disabled on this environment.',
+        });
+    }
+
+    try {
+        const deleted = await resetAddDemoData();
+        const totalDeleted = Object.values(deleted).reduce((sum, n) => sum + n, 0);
+        res.status(200).json({
+            success: true,
+            message: `ADD demo data cleared (${totalDeleted} row(s) removed). You can upload fresh data now.`,
+            data: { deleted, totalDeleted },
+        });
+    } catch (e) {
+        console.error('Error in resetAddDemoDataController:', e);
+        internalError(res, e);
+    }
+};
+
 module.exports = {
     addExcelDataToTable,
     getCapsAddDetails,
@@ -161,5 +197,6 @@ module.exports = {
     getCapsAddDetailsPolicyNumberUsername,
     addCaseAssignmentBulk,
     assignCasesByCaseIdsController,
+    resetAddDemoDataController,
 };
 

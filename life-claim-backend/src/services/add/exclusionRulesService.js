@@ -1,20 +1,105 @@
 const CapsAddExclusionMaster = require('../../models/add/CapsAddExclusionMaster');
 const CapsAddDetails = require('../../models/add/CapsAddDetails');
 const CapsAddContractDetails = require('../../models/add/CapsAddContractDetails');
-const CapsAddLifeAssuredDetails = require('../../models/add/CapsAddLifeAssuredDetails');
 const db = require('../../config/dbConfig');
+const { evaluateAddExclusion, isRulesEngineEnabled } = require('../rulesEngineClient');
+
+const MASTER_TYPES = [
+    'Claim received',
+    'In-active policy status',
+    'Top advisor',
+    'Partner Exclusion',
+    'Product Norms',
+    'ULIP Policy',
+];
+
+const inListIgnoreCase = (value, list) => {
+    if (!value || !Array.isArray(list) || list.length === 0) return false;
+    const normalized = String(value).trim().toLowerCase();
+    return list.some((item) => item && String(item).trim().toLowerCase() === normalized);
+};
+
+const loadExclusionMasterLists = async () => {
+    const lists = {};
+    for (const exclusionType of MASTER_TYPES) {
+        const rows = await CapsAddExclusionMaster.findAll({
+            where: { exclusion_type: exclusionType },
+            attributes: ['exclusion_value'],
+        });
+        lists[exclusionType] = rows.map((row) => row.exclusion_value).filter(Boolean);
+    }
+    return lists;
+};
+
+const applyExclusionRulesJs = (facts) => {
+    let exclusionApplied = false;
+    let exclusionType = null;
+
+    if (inListIgnoreCase(facts.claimType, facts.claimReceivedValues)) {
+        return { exclusionApplied: true, exclusionType: 'Claim Received' };
+    }
+
+    if (inListIgnoreCase(facts.policyStatus, facts.inactivePolicyStatusValues)) {
+        return { exclusionApplied: true, exclusionType: 'In-active policy status' };
+    }
+
+    if (facts.contractPresent && facts.rcdYears >= 3) {
+        return { exclusionApplied: true, exclusionType: 'RCD more than 3 years' };
+    }
+
+    const prdCode = facts.productCode || '';
+    const prdUpper = prdCode.toUpperCase();
+    if (
+        facts.contractPresent &&
+        facts.premiumAmount &&
+        facts.premiumFrequency &&
+        prdCode &&
+        (prdUpper.startsWith('E') || prdUpper.startsWith('U')) &&
+        facts.annualPremium >= 500000
+    ) {
+        return { exclusionApplied: true, exclusionType: 'Annual Premium > 5 lakh saving cases' };
+    }
+
+    if (facts.lifeAssuredPresent && String(facts.residentialStatus || '').toUpperCase() === 'N') {
+        return { exclusionApplied: true, exclusionType: 'NRI customer' };
+    }
+
+    if (inListIgnoreCase(facts.advisorCode, facts.topAdvisorValues)) {
+        return { exclusionApplied: true, exclusionType: 'Top advisor' };
+    }
+
+    if (inListIgnoreCase(facts.partnerName, facts.partnerExclusionValues)) {
+        return { exclusionApplied: true, exclusionType: 'Partner Exclusion' };
+    }
+
+    if (
+        facts.contractPresent &&
+        prdCode &&
+        (inListIgnoreCase(prdCode, facts.productNormsValues) ||
+            prdUpper.startsWith('G') ||
+            prdUpper.startsWith('I'))
+    ) {
+        return { exclusionApplied: true, exclusionType: 'Product Norms' };
+    }
+
+    if (facts.lifeAssuredPresent && facts.ageInYears > 0 && facts.ageInYears <= 18) {
+        return { exclusionApplied: true, exclusionType: 'Minor Life Assured' };
+    }
+
+    if (facts.contractPresent && prdCode && inListIgnoreCase(prdCode, facts.ulipPolicyValues)) {
+        return { exclusionApplied: true, exclusionType: 'ULIP Policy' };
+    }
+
+    return { exclusionApplied, exclusionType };
+};
 
 /**
- * Applies exclusion rules to a case based on the Java logic
+ * Applies exclusion rules to a case via Drools (life-claim-rules), with JS fallback.
  * @param {number} caseId - The case ID to check
  * @returns {Promise<{exclusionApplied: boolean, exclusionType: string|null}>}
  */
 const checkForExclusionRule = async (caseId) => {
     try {
-        let exclusionApplied = false;
-        let exclusionType = null;
-
-        // Fetch case data with related tables using lowercase column names
         const queryText = `
             SELECT 
                 d.case_id,
@@ -36,17 +121,16 @@ const checkForExclusionRule = async (caseId) => {
         `;
 
         const [rows] = await db.query(queryText, [caseId]);
-        
+
         if (!rows || rows.length === 0) {
             console.log(`Case ID ${caseId} not found`);
             return { exclusionApplied: false, exclusionType: null };
         }
 
         const caseData = rows[0];
-        
         const hasContractDetails = caseData.policy_status !== null;
         const hasLifeAssuredDetails = caseData.dob !== null;
-        
+
         const claimType = caseData.policy_status || '';
         const policyStatus = caseData.policy_status || '';
         const residentialStatus = caseData.res_status || '';
@@ -58,7 +142,6 @@ const checkForExclusionRule = async (caseId) => {
         const riskCommencementDate = caseData.rcd ? new Date(caseData.rcd) : null;
         const laDob = caseData.dob ? new Date(caseData.dob) : null;
 
-        // Calculate annual premium
         let annualPremium = 0;
         if (hasContractDetails && premiumAmt && premiumFreq) {
             annualPremium = premiumAmt * premiumFreq;
@@ -70,11 +153,11 @@ const checkForExclusionRule = async (caseId) => {
             }
         }
 
-        let difference_In_Years = 0;
+        let differenceInYears = 0;
         if (hasContractDetails && riskCommencementDate) {
             const currentDate = new Date();
             const differenceInMillisec = currentDate.getTime() - riskCommencementDate.getTime();
-            difference_In_Years = Math.floor(differenceInMillisec / (1000 * 60 * 60 * 24 * 365));
+            differenceInYears = Math.floor(differenceInMillisec / (1000 * 60 * 60 * 24 * 365));
         }
 
         let ageInYears = 0;
@@ -84,114 +167,53 @@ const checkForExclusionRule = async (caseId) => {
             ageInYears = Math.floor(ageInMillis / (1000 * 60 * 60 * 24 * 365));
         }
 
-        // Rule 1: Claim received
-        if (!exclusionApplied) {
-            const exclusionValues = await CapsAddExclusionMaster.findAll({
-                where: { exclusion_type: 'Claim received' },
-                attributes: ['exclusion_value']
-            });
-            for (const exclusion of exclusionValues) {
-                if (claimType && claimType.toLowerCase() === exclusion.exclusion_value.toLowerCase()) {
-                    exclusionType = 'Claim Received';
+        const masterLists = await loadExclusionMasterLists();
+        const facts = {
+            caseId,
+            contractPresent: hasContractDetails,
+            lifeAssuredPresent: hasLifeAssuredDetails,
+            claimType,
+            policyStatus,
+            rcdYears: differenceInYears,
+            annualPremium,
+            premiumAmount: premiumAmt,
+            premiumFrequency: premiumFreq,
+            productCode: prdCode,
+            residentialStatus,
+            advisorCode: advisor,
+            partnerName: partner,
+            ageInYears,
+            claimReceivedValues: masterLists['Claim received'],
+            inactivePolicyStatusValues: masterLists['In-active policy status'],
+            topAdvisorValues: masterLists['Top advisor'],
+            partnerExclusionValues: masterLists['Partner Exclusion'],
+            productNormsValues: masterLists['Product Norms'],
+            ulipPolicyValues: masterLists['ULIP Policy'],
+        };
+
+        let exclusionApplied = false;
+        let exclusionType = null;
+
+        if (isRulesEngineEnabled()) {
+            try {
+                const droolsResult = await evaluateAddExclusion(facts);
+                if (droolsResult?.excluded) {
                     exclusionApplied = true;
-                    break;
+                    exclusionType = droolsResult.exclusionType || null;
                 }
+            } catch (rulesErr) {
+                console.warn(
+                    'exclusionRulesService >> Drools failed, using JS fallback:',
+                    rulesErr.message
+                );
+                const jsResult = applyExclusionRulesJs(facts);
+                exclusionApplied = jsResult.exclusionApplied;
+                exclusionType = jsResult.exclusionType;
             }
-        }
-
-        // Rule 2: In-active policy status
-        if (!exclusionApplied) {
-            const exclusionValues = await CapsAddExclusionMaster.findAll({
-                where: { exclusion_type: 'In-active policy status' },
-                attributes: ['exclusion_value']
-            });
-            for (const exclusion of exclusionValues) {
-                if (policyStatus && policyStatus.toLowerCase() === exclusion.exclusion_value.toLowerCase()) {
-                    exclusionType = 'In-active policy status';
-                    exclusionApplied = true;
-                    break;
-                }
-            }
-        }
-
-        if (!exclusionApplied && difference_In_Years >= 3) {
-            exclusionType = 'RCD more than 3 years';
-            exclusionApplied = true;
-        }
-
-        if (!exclusionApplied && hasContractDetails && premiumAmt && premiumFreq && prdCode && 
-            (prdCode.toUpperCase().startsWith('E') || prdCode.toUpperCase().startsWith('U')) && 
-            annualPremium >= 500000) {
-            exclusionType = 'Annual Premium > 5 lakh saving cases';
-            exclusionApplied = true;
-        }
-
-        if (!exclusionApplied && hasLifeAssuredDetails && residentialStatus && residentialStatus.toUpperCase() === 'N') {
-            exclusionType = 'NRI customer';
-            exclusionApplied = true;
-        }
-
-        if (!exclusionApplied && advisor) {
-            const exclusionValues = await CapsAddExclusionMaster.findAll({
-                where: { exclusion_type: 'Top advisor' },
-                attributes: ['exclusion_value']
-            });
-            for (const exclusion of exclusionValues) {
-                if (advisor.toLowerCase() === exclusion.exclusion_value.toLowerCase()) {
-                    exclusionType = 'Top advisor';
-                    exclusionApplied = true;
-                    break;
-                }
-            }
-        }
-
-        if (!exclusionApplied && partner) {
-            const exclusionValues = await CapsAddExclusionMaster.findAll({
-                where: { exclusion_type: 'Partner Exclusion' },
-                attributes: ['exclusion_value']
-            });
-            for (const exclusion of exclusionValues) {
-                if (partner.toLowerCase() === exclusion.exclusion_value.toLowerCase()) {
-                    exclusionType = 'Partner Exclusion';
-                    exclusionApplied = true;
-                    break;
-                }
-            }
-        }
-
-        if (!exclusionApplied && hasContractDetails && prdCode) {
-            const exclusionValues = await CapsAddExclusionMaster.findAll({
-                where: { exclusion_type: 'Product Norms' },
-                attributes: ['exclusion_value']
-            });
-            for (const exclusion of exclusionValues) {
-                if (prdCode.toLowerCase() === exclusion.exclusion_value.toLowerCase() ||
-                    prdCode.toUpperCase().startsWith('G') ||
-                    prdCode.toUpperCase().startsWith('I')) {
-                    exclusionType = 'Product Norms';
-                    exclusionApplied = true;
-                    break;
-                }
-            }
-        }
-
-        if (!exclusionApplied && hasLifeAssuredDetails && ageInYears > 0 && ageInYears <= 18) {
-            exclusionType = 'Minor Life Assured';
-            exclusionApplied = true;
-        }
-
-        if (!exclusionApplied && hasContractDetails && prdCode) {
-            const exclusionValues = await CapsAddExclusionMaster.findAll({
-                where: { exclusion_type: 'ULIP Policy' },
-                attributes: ['exclusion_value']
-            });
-            for (const exclusion of exclusionValues) {
-                if (prdCode.toLowerCase() === exclusion.exclusion_value.toLowerCase()) {
-                    exclusionType = 'ULIP Policy';
-                    exclusionApplied = true;
-                    break;
-                }
-            }
+        } else {
+            const jsResult = applyExclusionRulesJs(facts);
+            exclusionApplied = jsResult.exclusionApplied;
+            exclusionType = jsResult.exclusionType;
         }
 
         if (exclusionType) {
@@ -202,11 +224,10 @@ const checkForExclusionRule = async (caseId) => {
         }
 
         return { exclusionApplied, exclusionType };
-
     } catch (error) {
         console.error('Error in checkForExclusionRule:', error);
         throw error;
     }
 };
 
-module.exports = { checkForExclusionRule };
+module.exports = { checkForExclusionRule, applyExclusionRulesJs, loadExclusionMasterLists };

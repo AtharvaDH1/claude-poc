@@ -150,7 +150,8 @@ const getCapsAddDetailsByDecision = async (caseType, attribute, value, limit, of
 
         const whereClause = `f.decision = :caseType AND ${dbColumn} = :value
             AND UPPER(COALESCE(d.case_status, '')) NOT LIKE '%APPROVED BY APPROVER%'
-            AND UPPER(COALESCE(d.case_status, '')) NOT LIKE '%REJECTED BY APPROVER%'`;
+            AND UPPER(COALESCE(d.case_status, '')) NOT LIKE '%REJECTED BY APPROVER%'
+            AND UPPER(COALESCE(d.case_status, '')) NOT LIKE '%CASE CLOSED%'`;
         const replacements = { caseType, value: searchValue };
 
         const countRows = await CapsAddDetails.sequelize.query(

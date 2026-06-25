@@ -5,6 +5,7 @@ const CapsAddDecision = require('../../models/add/CapsAddDecision');
 const CapsAddAssessorPoolCases = require('../../models/add/CapsAddAssessorPoolCases');
 const CapsAddFindings = require('../../models/add/CapsAddFindings');
 const db = require('../../config/dbConfig');
+const { formatProductName } = require('../../util/formatProductName');
 
 //using raw query to get the data from the database
 const getAssessmentPoolDataRaw = async (attribute, value) => {
@@ -368,7 +369,7 @@ const getCaseDetailsById = async (caseId) => {
             contract: {
                 applicationNo: data.APP_NO,
                 policyNo: data.POLICY_NUMBER,
-                productName: data.PRODUCT_NAME,
+                productName: formatProductName(data.PRODUCT_NAME),
                 productCode: data.PRODUCT_CODE,
                 policyStatus: data.POLICY_STATUS,
                 policyDuration: data.POLICY_DURATION,

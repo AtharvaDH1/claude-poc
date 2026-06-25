@@ -18,13 +18,6 @@ import { resolveDisplayRole, SUPERUSER_LABEL } from '../util/superuserRole'
 import { mapDashboardActivities } from '../util/mapDashboardActivity'
 import { getActivityStyle } from '../util/activityStyles'
 
-const SIDEBAR_T = {
-  sidebar: '#0F172A', sidebarBorder: 'rgba(255,255,255,0.06)',
-  sidebarHover: 'rgba(255,255,255,0.05)', sidebarActive: 'rgba(29,78,216,0.28)',
-  sidebarActiveText: '#93C5FD',
-  primaryHover: '#1E40AF',
-}
-
 const NAV_ITEMS = [
   { id:'dashboard',        path:'/dashboard',        icon:LayoutDashboard, label:'Dashboard',        operational: true },
   { id:'superuser-overview', path:'/superuser',            icon:BarChart3,       label: SUPERUSER_LABEL + ' Overview', roles:['superuser'], superuserNav: true },
@@ -62,8 +55,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
-  const { theme, setTheme, tokens: shellT } = useTheme()
-  const T = { ...SIDEBAR_T, ...shellT }
+  const { theme, setTheme, tokens: T, isDark } = useTheme()
 
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [sidebarExpanded, setSidebarExpanded] = useState(true)
@@ -109,7 +101,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
 
   if (!user) {
     return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', fontFamily:'Inter,sans-serif', color:'#64748B' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', fontFamily:'Inter,sans-serif', color: 'var(--text-muted)' }}>
         Loading…
       </div>
     )
@@ -308,12 +300,12 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                   {notifications.length === 0 ? (
                     <div style={{ padding:'20px 16px', fontSize:'12px', color:T.textMuted, textAlign:'center' }}>No activity in the last 24 hours</div>
                   ) : notifications.map(a => {
-                    const s = getActivityStyle(a.type)
+                    const s = getActivityStyle(a.type, isDark)
                     return (
                       <div
                         key={a.id}
                         style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}`, cursor: 'pointer', transition: 'background 0.1s' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
+                        onMouseEnter={e => e.currentTarget.style.background = T.hoverBg}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
                         <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -349,7 +341,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                   <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.borderSubtle}` }}>
                     <div style={{ fontWeight: 700, fontSize: '13px', color: T.textPrimary }}>{user?.name}</div>
                     <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{user?.email}</div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '8px', background: '#EFF6FF', border: '1px solid #DBEAFE', borderRadius: '99px', padding: '2px 10px', fontSize: '11px', fontWeight: 700, color: T.primary }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '8px', background: T.primaryLight, border: `1px solid ${T.primaryBorder}`, borderRadius: '99px', padding: '2px 10px', fontSize: '11px', fontWeight: 700, color: T.primary }}>
                       <Star size={9} /> {resolveDisplayRole(user?.roles, user?.role)}
                     </div>
                   </div>
@@ -387,7 +379,7 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                                 marginTop: '2px',
                                 borderRadius: '8px',
                                 border: active ? `1px solid ${T.primary}` : '1px solid transparent',
-                                background: active ? (theme === 'dark' ? 'rgba(59,130,246,0.15)' : '#EFF6FF') : 'transparent',
+                                background: active ? T.primaryLight : 'transparent',
                                 cursor: 'pointer',
                                 fontSize: '12px',
                                 fontWeight: active ? 700 : 500,
@@ -411,8 +403,8 @@ export default function AppLayout({ children, pageTitle, pageSubtitle }) {
                     </button>
                     <button
                       onClick={handleSignOut}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: '#DC2626', fontFamily: 'Inter,sans-serif' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: T.danger, fontFamily: 'Inter,sans-serif' }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.dangerHover}
                       onMouseLeave={e => e.currentTarget.style.background = 'none'}
                     >
                       <LogOut size={14} /> Sign out

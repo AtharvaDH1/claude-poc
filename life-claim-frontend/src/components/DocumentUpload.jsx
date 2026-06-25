@@ -4,8 +4,9 @@ import documentService from '../services/documentService'
 import fileUploadService from '../services/FileUploadService'
 import { validateUploadFile } from '../util/validateUploadFile'
 import { openDocumentPreview, openPreviewLoadingTab } from '../services/documentPreviewService'
+import { useTheme } from '../context/ThemeContext'
+import { selectFieldStyle } from '../ui/pageTokens'
 
-const T = { primary:'#1D4ED8', border:'#E2E8F0', borderSubtle:'#F1F5F9', textPrimary:'#0F172A', textSecondary:'#334155', textMuted:'#64748B', textSubtle:'#94A3B8' }
 
 const FILE_ICONS = { pdf:'📄', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', default:'📎' }
 const getIcon = name => FILE_ICONS[name.split('.').pop()?.toLowerCase()] || FILE_ICONS.default
@@ -27,6 +28,7 @@ function mapDoc(row, i) {
 }
 
 export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
+  const { tokens: T } = useTheme()
   const toast = useToast()
   const inputRef = useRef(null)
   const [docs, setDocs] = useState([])
@@ -113,7 +115,7 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
         </div>
         <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
           <select value={documentType} onChange={e => setDocumentType(e.target.value)}
-            style={{ height:'36px', padding:'0 10px', border:`1px solid ${T.border}`, borderRadius:'8px', fontSize:'12px', fontFamily:'Inter,sans-serif', color:T.textSecondary }}>
+            style={selectFieldStyle(T, { height:'36px', padding:'0 10px', borderRadius:'8px', fontSize:'12px' })}>
             {documentTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <button onClick={() => inputRef.current?.click()} disabled={uploading || !claimId}
@@ -133,7 +135,7 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
             onDragLeave={() => setDragging(false)}
             onDrop={e => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files) }}
             onClick={() => inputRef.current?.click()}
-            style={{ border:`2px dashed ${dragging?T.primary:'#CBD5E1'}`, borderRadius:'10px', padding:'24px', textAlign:'center', background:dragging?'#EFF6FF':'#FAFAFA', cursor:'pointer', transition:'all 0.2s', marginBottom:'16px' }}>
+            style={{ border:`2px dashed ${dragging?T.primary:T.border}`, borderRadius:'10px', padding:'24px', textAlign:'center', background:dragging?T.primaryLight:T.inputBg, cursor:'pointer', transition:'all 0.2s', marginBottom:'16px' }}>
             <div style={{ fontSize:'24px', marginBottom:'8px' }}>📂</div>
             <div style={{ fontSize:'13px', fontWeight:600, color:T.textMuted }}>Drop files here or click to browse</div>
             <div style={{ fontSize:'11px', color:T.textSubtle, marginTop:'4px' }}>PDF, Word, Excel, Images · Max 10MB per file</div>
@@ -143,7 +145,7 @@ export default function DocumentUpload({ claimId, label = 'Claim Documents' }) {
             <div style={{ border:`1px solid ${T.border}`, borderRadius:'10px', overflow:'hidden' }}>
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
-                  <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                  <tr style={{ background:T.surfaceMuted, borderBottom:`2px solid ${T.border}` }}>
                     {['Document','Type','Size','Uploaded By','Date','Action'].map(h => (
                       <th key={h} style={{ padding:'9px 14px', textAlign:'left', fontSize:'11px', fontWeight:700, color:T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
                     ))}

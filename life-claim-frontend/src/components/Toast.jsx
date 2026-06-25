@@ -1,17 +1,38 @@
-import { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
+import { createContext, useContext, useCallback, useEffect, useState } from 'react'
+import { useTheme } from '../context/ThemeContext'
+import { alertBannerStyle } from '../ui/pageTokens'
 
 const ToastCtx = createContext(null)
 
-const ICONS = {
-  success: { Icon: CheckCircle, color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
-  error:   { Icon: XCircle,     color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
-  warning: { Icon: AlertCircle, color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
-  info:    { Icon: Info,        color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
+const TOAST_TONES = {
+  success: CheckCircle,
+  error: XCircle,
+  warning: AlertCircle,
+  info: Info,
+}
+
+function toastTone(type) {
+  if (type === 'error') return 'danger'
+  if (type === 'warning') return 'warn'
+  return type === 'success' ? 'success' : 'info'
+}
+
+function toastAccent(T, type) {
+  const map = {
+    success: T.success,
+    error: T.danger,
+    warning: T.warning,
+    info: T.primary,
+  }
+  return map[type] || T.primary
 }
 
 function ToastItem({ id, type = 'info', title, message, onRemove }) {
-  const { Icon, color, bg, border } = ICONS[type] || ICONS.info
+  const { tokens: T } = useTheme()
+  const Icon = TOAST_TONES[type] || Info
+  const accent = toastAccent(T, type)
+  const banner = alertBannerStyle(T, toastTone(type))
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -31,64 +52,56 @@ function ToastItem({ id, type = 'info', title, message, onRemove }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: '12px',
-      background: bg, border: `1px solid ${border}`,
+      background: T.isDark ? T.card : banner.background,
+      border: banner.border,
+      borderLeft: `4px solid ${accent}`,
       borderRadius: '10px', padding: '12px 14px',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
-      minWidth: '280px', maxWidth: '360px',
+      boxShadow: T.toastShadow,
+      minWidth: '300px', maxWidth: '400px',
       transform: visible ? 'translateX(0)' : 'translateX(120%)',
       opacity: visible ? 1 : 0,
       transition: 'all 0.3s cubic-bezier(0.34,1.2,0.64,1)',
       position: 'relative', overflow: 'hidden',
     }}>
-      {/* Progress bar */}
       <div style={{
         position: 'absolute', bottom: 0, left: 0,
-        height: '2px', background: color,
+        height: '2px', background: accent,
         animation: 'toastProgress 3.5s linear forwards',
-        opacity: 0.4,
+        opacity: 0.5,
       }} />
-      <Icon size={16} style={{ color, flexShrink: 0, marginTop: '1px' }} />
+      <Icon size={18} style={{ color: accent, flexShrink: 0, marginTop: '1px' }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{title}</div>
-        {message && <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px', fontWeight: 500 }}>{message}</div>}
+        {title && <div style={{ fontSize: '13px', fontWeight: 700, color: T.textPrimary, marginBottom: message ? '4px' : 0 }}>{title}</div>}
+        {message && <div style={{ fontSize: '12px', color: T.textSecondary, lineHeight: 1.5 }}>{message}</div>}
       </div>
       <button onClick={() => { setVisible(false); setTimeout(() => onRemove(id), 300) }}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: '2px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-        onMouseEnter={e => e.currentTarget.style.color = '#64748B'}
-        onMouseLeave={e => e.currentTarget.style.color = '#94A3B8'}>
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textSubtle, padding: '2px', flexShrink: 0 }}>
         <X size={14} />
       </button>
-
-      <style>{`@keyframes toastProgress { from { width: 100%; } to { width: 0%; } }`}</style>
     </div>
   )
 }
 
-let toastSeq = 0
-
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
-
+  const remove = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), [])
   const toast = useCallback((type, title, message) => {
-    toastSeq += 1
-    const id = `${Date.now()}-${toastSeq}`
-    setToasts((p) => [...p, { id, type, title, message }])
+    const id = `${Date.now()}-${Math.random()}`
+    setToasts((t) => [...t, { id, type, title, message }])
   }, [])
-
-  const remove = useCallback((id) => setToasts(p => p.filter(t => t.id !== id)), [])
 
   return (
     <ToastCtx.Provider value={toast}>
       {children}
-      <div style={{
-        position: 'fixed', bottom: '24px', right: '24px',
-        display: 'flex', flexDirection: 'column', gap: '8px',
-        zIndex: 9999, alignItems: 'flex-end',
-      }}>
-        {toasts.map(t => <ToastItem key={t.id} {...t} onRemove={remove} />)}
+      <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {toasts.map((t) => <ToastItem key={t.id} {...t} onRemove={remove} />)}
       </div>
     </ToastCtx.Provider>
   )
 }
 
-export const useToast = () => useContext(ToastCtx)
+export function useToast() {
+  const ctx = useContext(ToastCtx)
+  if (!ctx) throw new Error('useToast must be used within ToastProvider')
+  return ctx
+}

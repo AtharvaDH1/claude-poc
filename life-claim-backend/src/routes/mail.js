@@ -1,12 +1,13 @@
-const express = require('express')
-const router = express.Router()
-const authMiddleware = require('../middleware/authMiddleware');
-const mailsController = require('../controllers/mailsController')
+const express = require('express');
+const router = express.Router();
+const { protect, hasAnyRole } = require('../middleware/keycloak');
+const mailsController = require('../controllers/mailsController');
 
-router.get('/', authMiddleware.authenticate, mailsController.getAllMails)
+const operationalRoles = ['Pre Assessor', 'Assessor', 'Verifier'];
+const operational = protect(hasAnyRole(operationalRoles));
 
-router.get('/count', authMiddleware.authenticate,  mailsController.getMailsCount) //not used yet
+router.get('/', operational, mailsController.getAllMails);
+router.get('/count', operational, mailsController.getMailsCount);
+router.get('/:id', operational, mailsController.getMailById);
 
-router.get('/:id',authMiddleware.authenticate,  mailsController.getMailById) //not used yet
-
-module.exports = router
+module.exports = router;

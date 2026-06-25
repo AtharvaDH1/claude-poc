@@ -1,3 +1,4 @@
+import { formatProductName } from '../util/formatProductName'
 import { workflowStatusFromRow, workflowRoleFromRow } from '../util/claimSearchMap'
 import { computeDaysOpen } from '../util/claimDaysOpen'
 import { acuityFromClaimRow } from '../util/acuity'
@@ -100,7 +101,7 @@ export function mapClaimViewFromWorkspace(claimNumber, raw) {
     causeDescription: cause.causeDescription || '—',
     causeCategory: cause.causeCategory || '—',
     causeSubType: cause.causeSubType || '—',
-    productName: claimRow.productName || '—',
+    productName: formatProductName(claimRow.productName) || '—',
     sumAssured: claimRow.sumAssured || claimRow.SUM_ASSURED,
     advisorCode: claimRow.advisorCode || '—',
     uwDecision: claimRow.uwDecision || '—',

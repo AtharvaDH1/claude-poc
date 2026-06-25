@@ -11,27 +11,27 @@ const keycloakLoginLockout = require('../services/keycloakLoginLockout');
 const { verifyRecaptchaToken } = require('../services/recaptchaService');
 const { validateKeycloakTokenBody, validateAuthenticateBody } = require('../middleware/requestValidation');
 const loginCrypto = require('../services/loginCrypto');
+const jwt = require('jsonwebtoken');
 const { protect } = require('../middleware/keycloak');
 const { extractKeycloakRoles, extractKeycloakUsername } = require('../util/keycloakRoles');
 const { isRetiredAdminUsername } = require('../util/superuserRoles');
+const {
+  setAuthCookies,
+  clearAuthCookies,
+  storeAuthSession,
+  clearAuthSession,
+  extractUserProfile,
+  readAccessToken,
+  readRefreshToken,
+} = require('../util/authCookies');
 
 const router = express.Router();
 const SINGLE_SESSION_ENFORCED = process.env.SINGLE_SESSION_ENFORCED !== 'false';
 
-const cookieOptsForClear = () => {
-  const useHttps = process.env.USE_HTTPS === 'true';
-  return {
-    httpOnly: true,
-    // Ensure Secure is set automatically on HTTPS, without breaking local HTTP workflows.
-    secure: process.env.NODE_ENV === 'production' ? true : (useHttps ? true : 'auto'),
-    sameSite: 'lax',
-    path: '/api',
-  };
-};
-
-/** Clears legacy httpOnly JWT cookie (VAPT: session / forceful browsing hygiene). No auth required. */
+/** Clears httpOnly auth cookies (VAPT: session hygiene). No auth required. */
 router.post('/clear-token-cookie', (req, res) => {
-  res.clearCookie('token', cookieOptsForClear());
+  clearAuthCookies(res);
+  clearAuthSession(req);
   res.status(204).send();
 });
 
@@ -143,7 +143,8 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
     );
 
     // Mirror login-audit behavior for Keycloak-based login flow.
-    const payload = decodeJwtPayload(response.data?.access_token || '');
+    const accessToken = response.data?.access_token || '';
+    const payload = decodeJwtPayload(accessToken) || jwt.decode(accessToken) || null;
     const username = extractKeycloakUsername(payload) || req.body?.username;
     const roles = extractKeycloakRoles(payload);
     const sessionId = payload?.sid || payload?.jti || null;
@@ -171,7 +172,26 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
       });
     }
 
-    res.json(response.data);
+    setAuthCookies(res, response.data);
+    storeAuthSession(req, response.data);
+    const userProfile =
+      extractUserProfile(payload) ||
+      (username
+        ? {
+            sub: payload?.sub || username,
+            preferred_username: username,
+            roles,
+            email: payload?.email || null,
+            given_name: payload?.given_name || null,
+            family_name: payload?.family_name || null,
+            exp: payload?.exp || null,
+          }
+        : null);
+    res.json({
+      expires_in: response.data.expires_in,
+      token_type: response.data.token_type,
+      user: userProfile,
+    });
   } catch (error) {
     if (error.response) {
       const data = error.response.data || {};
@@ -223,8 +243,7 @@ router.post('/keycloak/token', authTokenLimiter, validateKeycloakTokenBody, asyn
 });
 
 router.post('/logout-audit', logoutAuditLimiter, async (req, res) => {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  const token = readAccessToken(req);
   const payload = token ? decodeJwtPayload(token) : null;
   const username = payload?.preferred_username || payload?.sub || null;
   if (!username) {
@@ -284,11 +303,13 @@ router.post('/authenticate', protect(), validateAuthenticateBody, async (req, re
   }
 });
 
-/** Keycloak refresh_token grant (same proxy pattern as password login). */
+/** Keycloak refresh_token grant — refresh token read from httpOnly cookie when present. */
 router.post('/keycloak/refresh', authTokenLimiter, async (req, res) => {
   const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
   const tokenEndpoint = `${keycloakUrl.replace(/\/$/, '')}/realms/life-claims/protocol/openid-connect/token`;
-  const refreshToken = String(req.body?.refresh_token || req.body?.refreshToken || '').trim();
+  const refreshToken = String(
+    req.body?.refresh_token || req.body?.refreshToken || readRefreshToken(req) || '',
+  ).trim();
   if (!refreshToken) {
     return res.status(400).json({ error: 'invalid_request', message: 'refresh_token is required.' });
   }
@@ -302,7 +323,14 @@ router.post('/keycloak/refresh', authTokenLimiter, async (req, res) => {
       }),
       keycloakAxiosOptions()
     );
-    res.json(response.data);
+    const payload = decodeJwtPayload(response.data?.access_token || '');
+    setAuthCookies(res, response.data);
+    storeAuthSession(req, response.data);
+    res.json({
+      ok: true,
+      expires_in: response.data.expires_in,
+      user: extractUserProfile(payload),
+    });
   } catch (error) {
     if (error.response) {
       return res.status(error.response.status).json(error.response.data);
@@ -317,33 +345,42 @@ router.post('/keycloak/refresh', authTokenLimiter, async (req, res) => {
 /**
  * Keycloak single-session: detect if this browser's session id was replaced by a newer login.
  */
-router.get('/session-check', protect(), async (req, res) => {
-  if (!SINGLE_SESSION_ENFORCED) {
-    return res.json({ ok: true, singleSessionEnforced: false });
-  }
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) {
-    return res.status(401).json({ message: 'No token provided' });
-  }
-  const payload = decodeJwtPayload(token);
+router.get('/session-check', async (req, res) => {
+  const token = readAccessToken(req);
+  const payload = token ? (decodeJwtPayload(token) || jwt.decode(token)) : null;
+
   if (!payload) {
-    return res.status(401).json({ message: 'Invalid token' });
+    return res.status(401).json({ message: 'Invalid session.' });
   }
-  const username = payload.preferred_username || payload.sub;
+
+  const exp = Number(payload.exp) || 0;
+  if (exp && exp <= Math.floor(Date.now() / 1000)) {
+    clearAuthCookies(res);
+    clearAuthSession(req);
+    return res.status(401).json({ message: 'Session expired.' });
+  }
+
+  const user = extractUserProfile(payload);
+
+  if (!SINGLE_SESSION_ENFORCED) {
+    return res.json({ ok: true, singleSessionEnforced: false, user });
+  }
+
+  const username = user?.preferred_username || payload.sub;
   const sessionId = payload.sid || payload.jti || null;
   if (!username || !sessionId) {
-    return res.json({ ok: true });
+    return res.json({ ok: true, singleSessionEnforced: true, user });
   }
-  const user = await userDao.getUserByUsername(username);
-  const existing = user?.current_session_id || null;
+  const dbUser = await userDao.getUserByUsername(username);
+  const existing = dbUser?.current_session_id || null;
   if (existing && existing !== sessionId) {
+    clearAuthCookies(res);
     return res.status(401).json({
       message: 'Your session has expired because you logged in from another device.',
       concurrentLogout: true,
     });
   }
-  return res.json({ ok: true, singleSessionEnforced: true });
+  return res.json({ ok: true, singleSessionEnforced: true, user });
 });
 
 module.exports = router;

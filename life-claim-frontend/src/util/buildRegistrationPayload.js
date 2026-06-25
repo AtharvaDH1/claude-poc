@@ -496,9 +496,9 @@ export function buildRegistrationPayload(flat, policy) {
     claimQuestions: buildClaimQuestions(flat),
     systemDetails: buildSystemDetailsForDb(flat),
     accessorDetails: flat.accessorDetails || {
-      decision: flat.accessorDecision,
+      decision: flat.accessorDecision || (flat.preAssessorRemarks ? 'Pending Assessment' : undefined),
       reqDamt: flat.accessorAmount,
-      remarks: flat.accessorReason,
+      remarks: flat.accessorReason || flat.preAssessorRemarks,
     },
     verifierDetails: flat.verifierDetails || {
       sendMail: flat.sendMail !== 'No',

@@ -10,11 +10,11 @@ export const V2_ACTIVE_ROUTES = [
   { path: '/policy-search', label: 'Policy Search', roles: 'Pre Assessor' },
   { path: '/registration', label: 'New claim wizard', roles: 'Pre Assessor' },
   { path: '/claim-search', label: 'Claim Search' },
-  { path: '/registration-fetch/:claimId', label: 'Claim workspace' },
+  { path: '/registration-fetch', label: 'Claim workspace' },
   { path: '/pool-selection', label: 'Pool Selection', roles: 'Assessor/Verifier' },
   { path: '/my-task', label: 'My Tasks', roles: 'Assessor/Verifier' },
   { path: '/add-screen', label: 'Advance Intelligence', roles: 'Assessor/Verifier' },
-  { path: '/case/:id', label: 'CAPS case detail', roles: 'Assessor/Verifier' },
+  { path: '/add-case', label: 'CAPS case detail', roles: 'Assessor/Verifier' },
   { path: '/superuser', label: 'Super User overview', roles: 'superuser' },
   { path: '/superuser/claim-search', label: 'Claim assignment', roles: 'superuser' },
   { path: '/superuser/workload', label: 'Workload list', roles: 'superuser' },
@@ -25,7 +25,8 @@ export const V2_ACTIVE_ROUTES = [
 /** v1 URL aliases still supported. */
 export const V2_ROUTE_ALIASES = [
   { from: '/assessor-pool', to: '/pool-selection' },
-  { from: '/claim-view/:id', to: '/registration-fetch/:id' },
+  { from: '/claim-view/:id', to: '/registration-fetch' },
+  { from: '/case/:id', to: '/add-case' },
   { from: '/user-management', to: '/superuser' },
   { from: '/user-manager', to: '/superuser' },
   { from: '/admin/audit', to: '/audit-log' },

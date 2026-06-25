@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -23,30 +24,15 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts'
-
-/* ── Tokens ── */
-const T = {
-  sidebar: '#0F172A', sidebarBorder: 'rgba(255,255,255,0.06)',
-  sidebarHover: 'rgba(255,255,255,0.05)', sidebarActive: 'rgba(29,78,216,0.28)',
-  sidebarActiveText: '#93C5FD',
-  primary: '#1D4ED8', primaryHover: '#1E40AF',
-  pageBg: '#F1F5F9', card: '#FFFFFF',
-  border: '#E2E8F0', borderSubtle: '#F1F5F9',
-  textPrimary: '#0F172A', textSecondary: '#334155',
-  textMuted: '#64748B', textSubtle: '#94A3B8',
-  pending:  { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', text: '#92400E' },
-  approved: { color: '#059669', bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46' },
-  rejected: { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', text: '#991B1B' },
-}
-
-const METRICS = [
-  { key: 'total',      label: 'Total Claims',     icon: Layers,       accent: '#1D4ED8', light: '#EFF6FF' },
-  { key: 'pending',    label: 'Pending Review',   icon: Clock,        accent: '#D97706', light: '#FFFBEB' },
-  { key: 'approved',   label: 'Approved',         icon: CheckCircle,  accent: '#059669', light: '#ECFDF5' },
-  { key: 'rejected',   label: 'Rejected',         icon: XCircle,      accent: '#DC2626', light: '#FEF2F2' },
-]
+import { useTheme } from '../context/ThemeContext'
+import { outlineButtonStyle, alertBannerStyle, metricCardTokens } from '../ui/pageTokens'
+import {
+  PremiumGrid, PremiumGridToolbar, PremiumGridScroll, PremiumGridFooter,
+  PremiumGridEmpty, SortableTh, FilterPillGroup, FilterPill, GridIconBtn, GridStatusBadge,
+} from '../ui/PremiumDataGrid'
 
 const DATE_FILTERS = ['All', 'Today', 'This Week', 'This Month']
+const PAGE_SIZE = 10
 
 /* ── Hooks ── */
 function useCountUp(target, ms = 1200) {
@@ -86,6 +72,7 @@ function highlight(text, query) {
 
 /* ── MetricCard ── */
 function MetricCard({ config, value }) {
+  const { tokens: T } = useTheme()
   const count = useCountUp(value)
   const Icon = config.icon
   const [hov, setHov] = useState(false)
@@ -166,7 +153,7 @@ function ValueCard({ value, sla, overdue, avgDays }) {
   )
 }
 
-function claimStatusStyle(status) {
+function claimStatusStyle(status, T) {
   const s = String(status || '').toLowerCase()
   if (s.includes('approv') || s.includes('payout completed')) return T.approved
   if (s.includes('reject') || s.includes('repudi')) return T.rejected
@@ -176,7 +163,8 @@ function claimStatusStyle(status) {
 
 /* ── StatusBadge ── */
 function StatusBadge({ status }) {
-  const s = claimStatusStyle(status)
+  const { tokens: T } = useTheme()
+  const s = claimStatusStyle(status, T)
   const sl = String(status || '').toLowerCase()
   const Icon = sl.includes('approv') ? CheckCircle : sl.includes('reject') ? XCircle : Clock
   return (
@@ -192,15 +180,16 @@ function StatusBadge({ status }) {
 
 /* ── Chart Tooltip ── */
 const ChartTip = ({ active, payload, label }) => {
+  const { tokens: T } = useTheme()
   if (!active || !payload?.length) return null
   return (
-    <div style={{ background:'#1E293B', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'10px', padding:'12px 16px', fontSize:'12px', boxShadow:'0 8px 24px rgba(0,0,0,0.2)' }}>
-      <p style={{ color:'#94A3B8', fontWeight:600, marginBottom:'8px' }}>{label}</p>
+    <div style={{ background: T.chartTooltipBg, border: `1px solid ${T.chartTooltipBorder}`, borderRadius:'10px', padding:'12px 16px', fontSize:'12px', boxShadow: T.toastShadow }}>
+      <p style={{ color: T.textMuted, fontWeight:600, marginBottom:'8px' }}>{label}</p>
       {payload.map((p,i) => (
         <div key={i} style={{ display:'flex', alignItems:'center', gap:'8px', marginTop:'4px' }}>
           <div style={{ width:'8px', height:'8px', borderRadius:'50%', background:p.fill, flexShrink:0 }} />
-          <span style={{ color:'#94A3B8' }}>{p.name}:</span>
-          <span style={{ color:'#fff', fontWeight:700 }}>{p.value}</span>
+          <span style={{ color: T.textMuted }}>{p.name}:</span>
+          <span style={{ color: T.textPrimary, fontWeight:700 }}>{p.value}</span>
         </div>
       ))}
     </div>
@@ -209,6 +198,7 @@ const ChartTip = ({ active, payload, label }) => {
 
 /* ── Hover Preview ── */
 function HoverPreview({ claim, x, y }) {
+  const { tokens: T } = useTheme()
   if (!claim) return null
   const steps = buildClaimTimelineSteps(claim)
   // Keep preview within viewport
@@ -218,9 +208,9 @@ function HoverPreview({ claim, x, y }) {
   return (
     <div style={{
       position:'fixed', left, top, width:'278px', zIndex:9999,
-      background:'#fff', borderRadius:'14px', padding:'18px',
+      background: T.card, borderRadius:'14px', padding:'18px',
       border:`1px solid ${T.border}`,
-      boxShadow:'0 20px 48px rgba(0,0,0,0.14), 0 4px 12px rgba(0,0,0,0.06)',
+      boxShadow: T.dropdownShadow,
       pointerEvents:'none', animation:'previewPop 0.18s ease',
     }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'14px', paddingBottom:'12px', borderBottom:`1px solid ${T.borderSubtle}` }}>
@@ -268,6 +258,14 @@ export default function Dashboard() {
   const { user, hasRole } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
+  const { tokens: T, isDark } = useTheme()
+
+  const METRICS = useMemo(() => [
+    { key: 'total', label: 'Total Claims', icon: Layers, accent: T.primary, light: T.metricBlueBg },
+    { key: 'pending', label: 'Pending Review', icon: Clock, accent: T.warning, light: T.metricAmberBg },
+    { key: 'approved', label: 'Approved', icon: CheckCircle, accent: T.success, light: T.metricGreenBg },
+    { key: 'rejected', label: 'Rejected', icon: XCircle, accent: T.danger, light: T.metricRedBg },
+  ], [T])
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
@@ -290,6 +288,7 @@ export default function Dashboard() {
   const [activity, setActivity] = useState([])
   const [, setTimeTick] = useState(0)
   const [apiLoading, setApiLoading] = useState(false)
+  const [page, setPage] = useState(0)
 
   const workflowRole = resolveWorkflowRole(coalesceRoles(user?.roles, user?.role))
   const dashboardGreeting = workflowRole ? 'Hello' : `Good morning, ${user?.name?.split(' ')[0]} 👋`
@@ -329,6 +328,10 @@ export default function Dashboard() {
     const id = setInterval(() => setTimeTick((n) => n + 1), 30000)
     return () => clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    setPage(0)
+  }, [search, statusFilter, dateFilter, sortCol, sortDir])
 
   const highPriorityClaims = useMemo(
     () => allClaims.filter(c => c.priority === 'High' && c.bucket === 'pending'),
@@ -388,8 +391,11 @@ export default function Dashboard() {
       return 0
     })
 
-  const hasTableFilters = Boolean(search) || statusFilter !== 'All' || dateFilter !== 'All'
-  const tableRows = hasTableFilters ? filtered : filtered.slice(0, 20)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const tableRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  const rangeStart = filtered.length ? safePage * PAGE_SIZE + 1 : 0
+  const rangeEnd = Math.min((safePage + 1) * PAGE_SIZE, filtered.length)
 
   /* ── SortIcon ── */
   const SortIcon = ({ col }) => {
@@ -419,30 +425,36 @@ export default function Dashboard() {
     return <Navigate to={postLoginPath(user?.roles, user?.username)} replace />
   }
 
+  const quickBtn = outlineButtonStyle(T, {
+    padding: '9px 16px',
+    borderRadius: '8px',
+    fontSize: '12px',
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  })
+
   return (
     <AppLayout pageTitle="Dashboard">
       <div style={{ padding:'24px' }}>
 
           {/* Quick actions */}
           <div style={{ display:'flex', flexWrap:'wrap', gap:'10px', marginBottom:'20px' }}>
-            <button type="button" onClick={() => navigate('/claim-search')}
-              style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+            <button type="button" onClick={() => navigate('/claim-search')} style={quickBtn}>
               <Search size={14} /> Search Claims
             </button>
             {hasRole('Pre Assessor') && (
-              <button type="button" onClick={() => navigate('/policy-search')}
-                style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+              <button type="button" onClick={() => navigate('/policy-search')} style={quickBtn}>
                 <Plus size={14} /> Register New Claim
               </button>
             )}
             {hasRole(['Assessor', 'Verifier']) && (
               <>
-                <button type="button" onClick={() => navigate('/pool-selection')}
-                  style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+                <button type="button" onClick={() => navigate('/pool-selection')} style={quickBtn}>
                   <Layers size={14} /> Pool Selection
                 </button>
-                <button type="button" onClick={() => navigate('/my-task')}
-                  style={{ padding:'9px 16px', borderRadius:'8px', border:`1px solid ${T.border}`, background:'#fff', fontSize:'12px', fontWeight:700, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif', display:'flex', alignItems:'center', gap:'6px' }}>
+                <button type="button" onClick={() => navigate('/my-task')} style={quickBtn}>
                   <CheckSquare size={14} /> My Tasks
                 </button>
               </>
@@ -469,14 +481,14 @@ export default function Dashboard() {
           {!alertDismissed && highPriorityClaims.length > 0 && (
             <div style={{
               display:'flex', alignItems:'center', gap:'12px', padding:'12px 16px', borderRadius:'10px', marginBottom:'20px',
-              background:'#FFFBEB', border:'1px solid #FDE68A',
+              ...alertBannerStyle(T, 'warn'),
               animation:'fadeUp 0.3s ease',
             }}>
-              <div style={{ width:'32px', height:'32px', borderRadius:'8px', background:'#FEF3C7', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <AlertTriangle size={16} style={{ color:'#D97706' }}/>
+              <div style={{ width:'32px', height:'32px', borderRadius:'8px', background: T.pending.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <AlertTriangle size={16} style={{ color: T.warning }}/>
               </div>
               <div style={{ flex:1 }}>
-                <span style={{ fontSize:'13px', fontWeight:700, color:'#92400E' }}>
+                <span style={{ fontSize:'13px', fontWeight:700, color: T.pending.text ?? T.pending.color }}>
                   {highPriorityClaims.length} high-priority claim{highPriorityClaims.length>1?'s':''} need{highPriorityClaims.length===1?'s':''} immediate attention —&nbsp;
                 </span>
                 <span style={{ fontSize:'13px', color:'#B45309' }}>
@@ -578,9 +590,8 @@ export default function Dashboard() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 280px', gap:'16px' }}>
 
             {/* Claims table */}
-            {card(<>
-              {/* Table toolbar */}
-              <div style={{ padding:'14px 20px', borderBottom:`1px solid ${T.borderSubtle}` }}>
+            <PremiumGrid>
+              <PremiumGridToolbar>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', flexWrap:'wrap' }}>
                   <div>
                     <div style={{ fontWeight:700, fontSize:'14px', color:T.textPrimary }}>
@@ -588,39 +599,32 @@ export default function Dashboard() {
                       {search && <span style={{ fontSize:'12px', fontWeight:600, color:T.primary, marginLeft:'8px' }}>{filtered.length} results for "{search}"</span>}
                     </div>
                     <div style={{ fontSize:'12px', color:T.textMuted, marginTop:'2px', fontWeight:500 }}>
-                      {hasTableFilters
-                        ? `${tableRows.length} matching · ${derivedMetrics.total} total claims`
-                        : `${tableRows.length} of ${allClaims.length} recent · ${derivedMetrics.total} total claims`}
+                      {filtered.length === 0
+                        ? `${derivedMetrics.total} total claims`
+                        : totalPages > 1
+                          ? `${rangeStart}–${rangeEnd} of ${filtered.length} shown · ${derivedMetrics.total} total claims`
+                          : `${filtered.length} claim${filtered.length === 1 ? '' : 's'} · ${derivedMetrics.total} total`}
                     </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                    {/* Date filter */}
-                    <div style={{ display:'flex', gap:'4px', background:'#F8FAFC', border:`1px solid ${T.border}`, borderRadius:'8px', padding:'3px' }}>
-                      {DATE_FILTERS.map(d=>(
-                        <button key={d} onClick={() => setDateFilter(d)}
-                          style={{ padding:'4px 10px', borderRadius:'6px', border:'none', cursor:'pointer', fontSize:'11px', fontWeight:700, transition:'all 0.15s', fontFamily:'Inter,sans-serif', background: dateFilter===d ? '#fff' : 'transparent', color: dateFilter===d ? T.textPrimary : T.textSubtle, boxShadow: dateFilter===d ? '0 1px 3px rgba(0,0,0,0.08)':'none' }}>
-                          {d}
-                        </button>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
+                    <FilterPillGroup>
+                      {DATE_FILTERS.map(d => (
+                        <FilterPill key={d} active={dateFilter === d} onClick={() => setDateFilter(d)}>{d}</FilterPill>
                       ))}
-
-                    </div>
-                    {/* Status filter */}
-                    <div style={{ display:'flex', gap:'4px', background:'#F8FAFC', border:`1px solid ${T.border}`, borderRadius:'8px', padding:'3px' }}>
-                      {['All','Pending','Approved','Rejected'].map(s=>(
-                        <button key={s} onClick={() => setStatusFilter(s)}
-                          style={{ padding:'4px 10px', borderRadius:'6px', border:'none', cursor:'pointer', fontSize:'11px', fontWeight:700, transition:'all 0.15s', fontFamily:'Inter,sans-serif', background: statusFilter===s ? T.primary:'transparent', color: statusFilter===s ? '#fff':T.textSubtle, boxShadow: statusFilter===s ? '0 2px 6px rgba(29,78,216,0.25)':'none' }}>
-                          {s}
-                        </button>
+                    </FilterPillGroup>
+                    <FilterPillGroup>
+                      {['All', 'Pending', 'Approved', 'Rejected'].map(s => (
+                        <FilterPill key={s} variant="primary" active={statusFilter === s} onClick={() => setStatusFilter(s)}>{s}</FilterPill>
                       ))}
-                    </div>
+                    </FilterPillGroup>
                   </div>
                 </div>
-              </div>
+              </PremiumGridToolbar>
 
-              <div style={{ overflowX:'auto' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <PremiumGridScroll>
+                <table>
                   <thead>
-                    <tr style={{ background:'#FAFAFA', borderBottom:`2px solid ${T.border}` }}>
+                    <tr>
                       {[
                         { label:'Claim ID',  col:'id'       },
                         { label:'Claimant',  col:'claimant' },
@@ -631,74 +635,71 @@ export default function Dashboard() {
                         { label:'Days Open', col:'daysOpen' },
                         { label:'Actions',   col:null       },
                       ].map(({ label, col }) => (
-                        <th key={label}
-                          onClick={() => col && handleSort(col)}
-                          style={{ padding:'10px 16px', textAlign:'left', fontSize:'11px', fontWeight:700, color: sortCol===col ? T.primary : T.textSubtle, textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap', cursor: col ? 'pointer':'default', userSelect:'none', background: sortCol===col ? '#F0F6FF':'transparent', transition:'all 0.15s' }}>
-                          <div style={{ display:'flex', alignItems:'center' }}>
-                            {label}
-                            {col && <SortIcon col={col}/>}
-                          </div>
-                        </th>
+                        <SortableTh
+                          key={label}
+                          active={sortCol === col}
+                          onClick={col ? () => handleSort(col) : undefined}
+                          sortIcon={col ? <SortIcon col={col} /> : null}
+                        >
+                          {label}
+                        </SortableTh>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ padding:'48px 20px', textAlign:'center' }}>
-                          <div style={{ color:T.textSubtle, fontSize:'32px', marginBottom:'12px' }}>🔍</div>
-                          <div style={{ fontWeight:700, fontSize:'14px', color:T.textMuted }}>No claims found</div>
-                          <div style={{ fontSize:'13px', color:T.textSubtle, marginTop:'4px' }}>
-                            Try adjusting your search or filter
-                          </div>
-                          <button onClick={() => { setSearch(''); setStatusFilter('All'); setDateFilter('All') }}
-                            style={{ marginTop:'16px', padding:'8px 20px', borderRadius:'8px', border:`1px solid ${T.border}`, background:T.card, fontSize:'13px', fontWeight:600, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
-                            Clear filters
-                          </button>
+                        <td colSpan={8}>
+                          <PremiumGridEmpty
+                            title="No claims found"
+                            subtitle="Try adjusting your search or filter"
+                            action={(
+                              <button type="button" onClick={() => { setSearch(''); setStatusFilter('All'); setDateFilter('All'); setPage(0) }}
+                                style={{ marginTop:'16px', padding:'8px 20px', borderRadius:'8px', border:`1px solid ${T.border}`, background:T.card, fontSize:'13px', fontWeight:600, color:T.textSecondary, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>
+                                Clear filters
+                              </button>
+                            )}
+                          />
                         </td>
                       </tr>
                     ) : tableRows.map(claim => {
-                      const pr = { High:{ c:'#DC2626', bg:'#FEF2F2' }, Normal:{ c:'#64748B', bg:'#F8FAFC' }, Low:{ c:'#059669', bg:'#ECFDF5' } }[claim.priority] || {}
+                      const priorityTone = claim.priority === 'High' ? 'high' : claim.priority === 'Low' ? 'low' : 'neutral'
                       const overdue = claim.daysOpen > 10
                       return (
-                        <tr key={claim.id}
-                          style={{ borderBottom:`1px solid ${T.borderSubtle}`, transition:'background 0.1s', cursor:'pointer' }}
-                          onMouseEnter={e => { e.currentTarget.style.background='#F8FAFC'; setHoverClaim(claim); setMouse({x:e.clientX,y:e.clientY}) }}
-                          onMouseLeave={e => { e.currentTarget.style.background=''; setHoverClaim(null) }}
+                        <tr
+                          key={claim.id}
+                          className="is-clickable"
+                          onMouseEnter={e => { setHoverClaim(claim); setMouse({x:e.clientX,y:e.clientY}) }}
+                          onMouseLeave={() => setHoverClaim(null)}
                           onMouseMove={e => setMouse({x:e.clientX,y:e.clientY})}
                         >
-                          <td style={{ padding:'12px 16px' }}>
-                            <div style={{ fontSize:'12px', fontWeight:700, color:T.primary, fontFamily:'monospace' }}>{highlight(claim.id, search)}</div>
-                            <div style={{ fontSize:'11px', color:T.textSubtle, marginTop:'2px' }}>{claim.policy}</div>
+                          <td>
+                            <div className="premium-grid__cell-primary">{highlight(claim.id, search)}</div>
+                            <div className="premium-grid__cell-sub">{claim.policy}</div>
                           </td>
-                          <td style={{ padding:'12px 16px' }}>
-                            <div style={{ fontSize:'13px', fontWeight:600, color:T.textSecondary }}>{highlight(claim.claimant, search)}</div>
-                            <div style={{ fontSize:'11px', color:T.textSubtle, marginTop:'2px' }}>{claim.created}</div>
+                          <td>
+                            <div className="premium-grid__cell-strong" style={{ fontSize:'13px', fontWeight:600 }}>{highlight(claim.claimant, search)}</div>
+                            <div className="premium-grid__cell-sub">{claim.created}</div>
                           </td>
-                          <td style={{ padding:'12px 16px', fontSize:'12px', color:T.textMuted, fontWeight:500, whiteSpace:'nowrap' }}>{highlight(claim.type, search)}</td>
-                          <td style={{ padding:'12px 16px', fontSize:'13px', fontWeight:700, color:T.textSecondary, whiteSpace:'nowrap' }}>{fmtRs(claim.amount)}</td>
-                          <td style={{ padding:'12px 16px' }}><StatusBadge status={claim.status}/></td>
-                          <td style={{ padding:'12px 16px' }}>
-                            <span style={{ fontSize:'11px', fontWeight:700, padding:'3px 8px', borderRadius:'6px', background:pr.bg, color:pr.c }}>{claim.priority}</span>
-                          </td>
-                          <td style={{ padding:'12px 16px' }}>
-                            <span style={{ fontSize:'12px', fontWeight:700, color: overdue?'#DC2626':T.textMuted, background: overdue?'#FEF2F2':'transparent', padding: overdue?'2px 8px':'0', borderRadius:'99px' }}>
+                          <td style={{ whiteSpace:'nowrap', color:T.textMuted, fontWeight:500, fontSize:'12px' }}>{highlight(claim.type, search)}</td>
+                          <td className="premium-grid__cell-strong" style={{ whiteSpace:'nowrap' }}>{fmtRs(claim.amount)}</td>
+                          <td><StatusBadge status={claim.status}/></td>
+                          <td><GridStatusBadge tone={priorityTone}>{claim.priority}</GridStatusBadge></td>
+                          <td>
+                            <GridStatusBadge tone={overdue ? 'high' : 'neutral'}>
                               {claim.daysOpen}d {overdue && '⚠️'}
-                            </span>
+                            </GridStatusBadge>
                           </td>
-                          <td style={{ padding:'12px 16px' }}>
-                            <div style={{ display:'flex', gap:'4px' }}>
-                              {[
-                                { I:Eye, title:'View (read-only)', hc:'#1D4ED8', hb:'#EFF6FF', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'claimSearch' }) },
-                                ...(showWorkClaimAction ? [{ I:Edit3, title:'Work claim', hc:'#059669', hb:'#ECFDF5', fn: () => openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) }] : []),
-                              ].map(({I,title,hc,hb,fn},i)=>(
-                                <button key={i} title={title} onClick={e => { e.stopPropagation(); fn() }}
-                                  style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${T.border}`, background:'#F8FAFC', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, transition:'all 0.15s' }}
-                                  onMouseEnter={e => { e.currentTarget.style.background=hb; e.currentTarget.style.color=hc; e.currentTarget.style.borderColor=hc+'60' }}
-                                  onMouseLeave={e => { e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.color=T.textMuted; e.currentTarget.style.borderColor=T.border }}>
-                                  <I size={12}/>
-                                </button>
-                              ))}
+                          <td>
+                            <div className="premium-grid__actions">
+                              <GridIconBtn title="View (read-only)" onClick={e => { e.stopPropagation(); openClaimWorkspace(navigate, claim.id, { from: 'claimSearch' }) }}>
+                                <Eye size={13} />
+                              </GridIconBtn>
+                              {showWorkClaimAction && (
+                                <GridIconBtn variant="success" title="Work claim" onClick={e => { e.stopPropagation(); openClaimWorkspace(navigate, claim.id, { from: 'dashboard' }) }}>
+                                  <Edit3 size={13} />
+                                </GridIconBtn>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -706,20 +707,45 @@ export default function Dashboard() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </PremiumGridScroll>
 
-              {/* Pagination */}
-              <div style={{ padding:'12px 16px', borderTop:`1px solid ${T.borderSubtle}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                <span style={{ fontSize:'12px', color:T.textMuted, fontWeight:500 }}>
-                  Showing <strong>{tableRows.length}</strong> of <strong>{filtered.length}</strong> results
+              <PremiumGridFooter>
+                <span>
+                  {filtered.length === 0
+                    ? 'No results'
+                    : <>Showing <strong>{rangeStart}–{rangeEnd}</strong> of <strong>{filtered.length}</strong></>}
                 </span>
-                <div style={{ display:'flex', gap:'4px' }}>
-                  {[1,2,3].map(p=>(
-                    <button key={p} style={{ width:'28px', height:'28px', borderRadius:'6px', border:`1px solid ${p===1?T.primary:T.border}`, background: p===1?T.primary:T.card, color: p===1?'#fff':T.textMuted, fontSize:'12px', fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'all 0.15s' }}>{p}</button>
-                  ))}
-                </div>
-              </div>
-            </>)}
+                {totalPages > 1 && (
+                  <div style={{ display:'flex', gap:'4px', alignItems:'center' }}>
+                    {Array.from({ length: totalPages }, (_, i) => i).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        aria-label={`Page ${p + 1}`}
+                        aria-current={p === safePage ? 'page' : undefined}
+                        onClick={() => setPage(p)}
+                        style={{
+                          width:'28px',
+                          height:'28px',
+                          borderRadius:'6px',
+                          border:`1px solid ${p === safePage ? T.primary : T.border}`,
+                          background: p === safePage ? T.primary : T.card,
+                          color: p === safePage ? '#fff' : T.textMuted,
+                          fontSize:'12px',
+                          fontWeight:700,
+                          cursor:'pointer',
+                          fontFamily:'Inter,sans-serif',
+                          outline:'none',
+                          boxShadow: p === safePage ? 'none' : undefined,
+                        }}
+                      >
+                        {p + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </PremiumGridFooter>
+            </PremiumGrid>
 
             {/* Right: Activity + Quick Stats */}
             <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
@@ -738,7 +764,7 @@ export default function Dashboard() {
                     </div>
                   )}
                   {activity.map(a => {
-                    const s = getActivityStyle(a.type)
+                    const s = getActivityStyle(a.type, isDark)
                     return (
                       <div key={a.id} style={{ display:'flex', alignItems:'flex-start', gap:'10px' }}>
                         <div style={{ width:'30px', height:'30px', borderRadius:'8px', background:s.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -757,19 +783,21 @@ export default function Dashboard() {
               {/* Quick stats */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
                 {[
-                  { label:'Approval Rate', value:`${metrics.approvalRate || 0}%`, color:'#059669', bg:'#ECFDF5', border:'#A7F3D0', icon:'✅' },
-                  { label:'SLA Compliance',value:`${metrics.slaCompliance || 0}%`, color:'#1D4ED8', bg:'#EFF6FF', border:'#BFDBFE', icon:'🎯' },
-                  { label:'High Priority', value:String(metrics.fraudFlags || 0), color:'#DC2626', bg:'#FEF2F2', border:'#FECACA', icon:'🚩' },
-                  { label:'Avg. Days',     value:`${metrics.avgDaysOpen || 0}d`, color:'#D97706', bg:'#FFFBEB', border:'#FDE68A', icon:'⏱️' },
-                ].map(s=>(
-                  <div key={s.label} style={{ borderRadius:'10px', padding:'14px', background:s.bg, border:`1px solid ${s.border}`, cursor:'default', transition:'transform 0.15s' }}
+                  { label:'Approval Rate', value:`${metrics.approvalRate || 0}%`, tone:'success', icon:'✅' },
+                  { label:'SLA Compliance',value:`${metrics.slaCompliance || 0}%`, tone:'info', icon:'🎯' },
+                  { label:'High Priority', value:String(metrics.fraudFlags || 0), tone:'danger', icon:'🚩' },
+                  { label:'Avg. Days',     value:`${metrics.avgDaysOpen || 0}d`, tone:'warn', icon:'⏱️' },
+                ].map(s=>{
+                  const tok = metricCardTokens(T, s.tone)
+                  return (
+                  <div key={s.label} style={{ borderRadius:'10px', padding:'14px', background:tok.bg, border:`1px solid ${tok.border}`, cursor:'default', transition:'transform 0.15s' }}
                     onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
                     onMouseLeave={e => e.currentTarget.style.transform=''}>
                     <div style={{ fontSize:'18px', marginBottom:'4px' }}>{s.icon}</div>
-                    <div style={{ fontSize:'20px', fontWeight:900, color:s.color, letterSpacing:'-0.02em', lineHeight:1 }}>{s.value}</div>
+                    <div style={{ fontSize:'20px', fontWeight:900, color:tok.color, letterSpacing:'-0.02em', lineHeight:1 }}>{s.value}</div>
                     <div style={{ fontSize:'11px', color:T.textMuted, marginTop:'4px', fontWeight:600 }}>{s.label}</div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           </div>

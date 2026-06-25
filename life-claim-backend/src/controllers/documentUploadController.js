@@ -42,8 +42,6 @@ const hasAllowedBinarySignature = (hexPrefix, ext) => {
       return hexPrefix.startsWith('ffd8ff');
     case '.png':
       return hexPrefix.startsWith('89504e470d0a1a0a');
-    case '.zip':
-      return ZIP_SIGNATURES.some((sig) => hexPrefix.startsWith(sig));
     case '.doc':
     case '.xls':
       return hexPrefix.startsWith(OLE_SIGNATURE);
